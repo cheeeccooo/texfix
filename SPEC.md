@@ -21,8 +21,8 @@ Ciò che in `[O]` è marcato *→ probabilmente sparisce* è un'ipotesi: la deci
 
 ## 1. Che cos'è Texfix
 
-**[S]** Un programma per macOS che trasforma appunti di ogni tipo in appunti LaTeX da studiare, scritti con il
-pacchetto `styles`. Le fonti possono essere scansioni a mano, PDF di slide, documenti o `.tex` di altri autori. Un modello
+**[S]** Un programma per macOS che trasforma appunti di ogni tipo in appunti LaTeX da studiare, con uno stile
+predefinito semplice o con uno stile importato (come `styles`, §4.2). Le fonti possono essere scansioni a mano, PDF di slide, documenti o `.tex` di altri autori. Un modello
 (Claude) trascrive, fonde, controlla e impagina. L'utente guarda, sceglie e corregge in un editor con il PDF accanto.
 
 **[S]** Principi che valgono ovunque:
@@ -102,7 +102,7 @@ nome, `fatta` dentro `salvataggi/lezioni/<srcN>.json`, dubbi come stringhe «P1:
 - **[C]** *(se si leggono gli input dal main)* Vanno gestiti: un secondo documento nella cartella, un `\input` nel preambolo, uno commentato, uno che manca, l'ultima riga senza a capo. Prima c'erano quattro ricerche del main diverse e in disaccordo. Test: caso `main`.
 
 ### 3.2 Editor, PDF, compilazione
-- **[S]** Editor LaTeX con evidenziazione. Begin ed end delle box sono scritti nel colore della box nel PDF, letto da `styles`; eqbox e genericbox in grigio chiaro.
+- **[S]** Editor LaTeX con evidenziazione. Begin ed end delle box sono scritti nel colore della box nel PDF, letto dallo stile del progetto (§4.2). *[O] Oggi eqbox e genericbox sono in grigio chiaro.*
 - **[S]** Il PDF sta accanto all'editor. PDF e immagini si aprono in schede. Un divisore con tre posizioni (PDF pieno, alla pari, editor pieno); doppio clic: alla pari.
 - **[S]** Salto sorgente ↔ PDF: ⌘J o ⌘-clic su una riga porta al PDF, compilando prima se serve; ⌘-clic o doppio clic sul PDF porta al sorgente. Anche i collegamenti del PDF funzionano.
 - **[S]** Compila il file (⌘B): una lezione da sola, nel main ridotto. Compila tutto (⇧⌘B): il documento in `build/main.pdf`. Avvisi con la riga, avanzamento visibile.
@@ -184,7 +184,7 @@ Due pannelli con lo stesso codice, lezione per lezione. Il tasto nella barra c'�
 - **[O]** Il motore delle figure è un servizio (`ReviewService`) chiamato con richieste in stile HTTP (`api/save`, `api/card`…) anche dentro l'app, attraverso `ApiClient`. Una porta locale serve per `texfix-cli imgcrop gui`. *→ Probabilmente sparisce: chiamate dirette al modello dei dati.*
 
 ### 3.9 Impaginazione delle box
-- **[S]** Una box spezzata fra due pagine si sistema con delle mosse: a capo pagina prima della box, box che si può spezzare, spazio verticale, misura esatta, «lascia com'era», immagini, titolo, a mano. Le regole stanno in `regole/impaginazione.md`.
+- **[S]** Una box spezzata fra due pagine si sistema con delle mosse: a capo pagina prima della box, box che si può spezzare, spazio verticale, misura esatta, «lascia com'era», immagini, titolo, a mano. Le mosse sono regole strutturali (§4.1). Serve solo con uno stile le cui box non si spezzano da sole (§4.2).
 - **[S]** Un registro solo per progetto, sempre salvato, mai «chiuso». Si impagina solo ciò che è nuovo: le lezioni con box spezzate che il registro non ha, o che sono cambiate dopo. Le decisioni prese restano.
 - **[S]** Rivedi impaginazione (⇧⌘R, solo quando c'è qualcosa) e Riepilogo impaginazioni. Ogni mossa si accetta, si lascia com'era, si manda all'agente o si risolve a mano, e si cambia quando si vuole. Ogni scelta va subito nei file.
   - «Chiudi» chiude e basta, e si ricompila solo se un file è cambiato.
@@ -268,7 +268,7 @@ Due pannelli con lo stesso codice, lezione per lezione. Il tasto nella barra c'�
 - **[S]** Tag di provenienza nel PDF (sigla della fonte sulla cornice della box), da mostrare o nascondere, tutti o per sigla, con legenda. *Decisione D5: restano, ma ripensati in modo più sensato e integrato. Spunto: i marcatori dei blocchi sanno già fonte e pagina di ogni unità, quindi i tag potrebbero nascere da lì invece che da un meccanismo a parte, e collegarsi alla fonte (clic sul tag → la pagina della fonte).*
 
 ### 3.19 Interfaccia **[S]**
-- **Un tema solo** (chiaro e scuro, segue il sistema) con colori e misure in un posto; i pastelli e gli angoli arrotondati di `styles`.
+- **Un tema solo** (chiaro e scuro, segue il sistema) con colori e misure in un posto. *[O] Oggi prende i pastelli e gli angoli arrotondati di `styles`; con lo stile facoltativo il tema dell'app è suo.*
 - **Tutto ci sta, su ogni schermo.** Le finestre non superano lo schermo e non scendono sotto 480×380; il contenuto scorre e i tasti in fondo restano visibili. Il testo non esce mai dal bordo: va a capo o si accorcia con «…», mai i tasti. Il pannello Progetto non scende sotto 200 px (all'avvio 240–300), la chat non sotto 280 px.
 - **Scorrimento liscio**, fermo ai bordi, senza rimbalzi, senza campi che si prendono la rotella dentro una pagina che scorre.
 - **La barra in alto**: fissi solo Compila e Converti. I quattro «Rivedi» compaiono solo quando c'è qualcosa da decidere.
@@ -280,17 +280,83 @@ Due pannelli con lo stesso codice, lezione per lezione. Il tasto nella barra c'�
 
 ---
 
-## 4. Ciò che non è codice **[V]**
+## 4. Regole e stile
 
-- **`regole/`**: convenzioni (8 file), prompt dei worker in inglese con interruttori `{{#x}}…{{/x}}` e segnaposto `@CONV:n@`, `@STEM@`…, procedure dell'agente. Sono il prodotto: si possono spostare o accorpare, non cambiarne il senso. I prompt resi sono controllati byte per byte dai test golden.
-- **`styles`** si sviluppa in `~/Table/styles`; `resources/styles.sty` è una copia rilasciata da lì.
-- **Un `CLAUDE.md` nella radice di un progetto di appunti** prevale sulle regole dove dice altro.
+Anche le regole e il legame con `styles` vengono dalle skill: vanno riorganizzati, non riportati.
+
+### 4.1 Le regole: strutturali nell'app, editoriali nelle preferenze
+
+**[O]** Oggi `regole/` sono circa 1400 righe in markdown:
+- 8 file di convenzioni;
+- `distillazione.md` e `impaginazione.md`;
+- le procedure dell'agente (`guida`, `lavori`, `distill`, `reorganize`, `revisione-box`, `review_all`, `ritaglio`);
+- i prompt dei worker, con interruttori `{{#x}}` e segnaposto `@CONV:n@`;
+- `srctag.tex`.
+
+Tutto è mescolato: ciò che serve al programma per funzionare sta accanto a come l'utente vuole i suoi appunti, e
+molte procedure spiegano all'agente comandi da terminale.
+
+**[S]** Le regole si dividono in due:
+
+| | **Strutturali** | **Editoriali** |
+|---|---|---|
+| Che cosa sono | Ciò senza cui il programma non funziona o si rompe | Come l'utente vuole i suoi appunti |
+| Esempi | formato dei marcatori dei blocchi; forma dei dubbi, del piano e dell'esito che i worker e l'agente restituiscono; strumenti dell'agente e cosa non può fare; come si compila e quando un file è pulito; come si dichiarano le aggiunte e le correzioni; le mosse dell'impaginazione | prosa e tono; quanto aggiungere o correggere; notazione (es. grassetto per i vettori); quale box per che cosa; stile delle figure (colori, pgfplots, circuiti); larghezza delle righe; come si fondono le fonti |
+| Dove stanno | **nel codice dell'app** (o in testi interni non modificabili), con i test | **nelle Preferenze**, leggibili e modificabili |
+| Chi le cambia | chi sviluppa | l'utente |
+
+- **[S]** Nelle Preferenze le regole editoriali si leggono come testo impaginato, si modificano e si riportano al predefinito, una sezione alla volta. Valgono per tutti i progetti.
+- **[S]** Un progetto può aggiungere o cambiare regole sue: le «Regole del progetto» di §3.15. La gerarchia è una sola: predefinite dell'app → Preferenze → progetto. Un `CLAUDE.md` nella radice del progetto non serve più come meccanismo a parte.
+- **[S]** Le regole editoriali che dipendono dallo stile (quale box per che cosa, i rimandi come tag, la notazione con le macro dello stile) vengono dallo stile del progetto (§4.2), non da un testo fisso.
+- **[S]** I prompt dei worker e le istruzioni dell'agente si compongono da tre parti: la parte strutturale (dall'app), le regole editoriali (Preferenze e progetto) e le convenzioni dello stile. Nessun prompt ricopia una regola: la cita una volta.
+- **[S]** Le procedure dell'agente che oggi spiegano comandi (`texfix-cli …`) diventano descrizioni di strumenti (D2) e si riducono a ciò che serve per decidere.
+- **[O]** Varianti `v2`/`v3` dei prompt per versioni di `styles`. *→ Spariscono: lo stile del progetto dice ciò che serve.*
+
+### 4.2 Lo stile del progetto: `styles` facoltativo e importabile
+
+**[S]** **Un progetto nasce con uno stile predefinito semplice e classico**, che Texfix porta con sé: aspetto da
+`article`, teoremi, definizioni, dimostrazioni ed esempi come ambienti sobri, nessuna dipendenza esotica. Deve bastare
+da solo per tutto ciò che Texfix produce.
+
+**[S]** **Si può importare uno stile** (un `.sty`, come `styles`):
+- si importa dalle Preferenze, in una libreria di stili, oppure direttamente in un progetto;
+- il file va nella cartella del progetto, così il progetto compila anche senza Texfix;
+- si può tornare allo stile predefinito o passare a un altro.
+
+**[S]** **Il progetto si adatta allo stile.** Texfix conosce di ogni stile:
+- **il catalogo degli ambienti**, ciascuno con il suo ruolo (definizione, teorema, lemma, proposizione, dimostrazione, osservazione, esempio, esercizio, attenzione, riquadro generico, formula in evidenza…), gli argomenti e il colore;
+- **le macro** che offre (insiemi numerici, norme, vettori…);
+- **i comandi per figure e didascalie**, se ne ha;
+- **come si comportano le box** fra una pagina e l'altra (si spezzano o no).
+
+Da lì vengono le convenzioni dello stile che entrano nei prompt, i colori di begin ed end nell'editor e i nomi nei
+pannelli. Lo stesso contenuto, con un altro stile, usa gli ambienti di quello stile.
+
+**[S]** **Cambiare stile in un progetto con lezioni già scritte**: gli ambienti si riscrivono secondo i ruoli (definizione → l'ambiente
+di definizione del nuovo stile). È un lavoro con il suo passo della cronologia. Ciò che non ha un corrispondente
+diventa una domanda (vedi D9).
+
+**[S]** **Ciò che è di Texfix esce da `styles` ed entra in Texfix.** Funziona con qualunque stile, aggiunto dal
+programma al preambolo (oggi `generated.tex`; la forma la sceglie l'architettura):
+- i **tag di provenienza** (oggi `regole/srctag.tex` e il blocco `tag-provenienza`), ripensati come da D5;
+- la **diagnostica delle box spezzate** (`\AllowBoxBreak`, `\BoxBreakWarnings…`, i segni di rottura): deve funzionare con le box di qualunque stile, o dire che per quello stile non serve;
+- le **aggiunte e correzioni** dichiarate (`addedtext`, `correction`): servono a «Rivedi correzioni»; il loro aspetto si adatta allo stile;
+- i **segnaposto delle figure** (`\imgslot`) e `\lezione{N}{data}`;
+- la **diagnostica delle righe** (`\MathWarningsOn/Off`, `\overfullrule`) usata per trovare le righe fuori misura.
+
+**[S]** **`styles` si ripulisce** e diventa uno stile come gli altri, importabile. Il lavoro si fa nel suo repository
+(`~/Table/styles`), con il via dell'utente. La vecchia Texfix tiene la sua copia (`resources/styles.sty`) e i vecchi
+progetti la loro, quindi non cambiano.
+
+- **[C]** *(se le box dello stile non si spezzano, come nello stile predefinito)* L'impaginazione delle box (§3.9) non serve: il tasto e i pannelli non compaiono.
+- **[C]** *(se lo stile non ha i rimandi come tag)* I rimandi usano `\cref`.
+- **[C]** *(se lo stile cambia i colori)* I colori di begin ed end nell'editor e nei pannelli seguono lo stile; il tema dell'app resta il suo (i pastelli di `styles` non sono più il tema dell'app).
 
 ---
 
 ## 5. Prove e accettazione
 
-- **[V]** `tests/golden/` della vecchia app: uscite di riferimento del motore (assemblaggio, figure, oltre 8000 casi delle funzioni pure, hbox con compilazioni vere, prompt resi). Sono la **prova di accettazione** del motore nuovo: stesse uscite, salvo cambiamenti voluti e registrati.
+- **[O]** `tests/golden/` della vecchia app: uscite di riferimento del motore (assemblaggio, figure, oltre 8000 casi delle funzioni pure, hbox con compilazioni vere, prompt resi). *→ Con regole e stile riorganizzati (§4) molte uscite cambiano per scelta: valgono come riferimento per le funzioni pure e per i comportamenti che non dipendono dallo stile e dai prompt; per il resto la nuova app scrive i suoi test.*
 - **[S]** Prove senza mani dell'interfaccia: foto della finestra dopo una sequenza di gesti, anteprime dei singoli pannelli, preferenze di prova separate da quelle vere. La forma la decide l'architettura.
 - **[S]** Misure (`texfix_check bench`): i tempi di ciò che l'interfaccia rifà spesso non devono peggiorare.
 - **[S]** Mai provare su un documento vero: il progetto di prova o una copia.
@@ -326,6 +392,15 @@ motivo nuovo.
 | D5 | Tag di provenienza | Restano, ripensati in modo più sensato e integrato. |
 | D6 | Pausa | Tolta: bastano Ferma e Riprendi. |
 | D7 | Agente | Claude Code locale (il CLI `claude`). |
+
+Decisioni aggiunte lo stesso giorno: le regole si dividono fra strutturali (nell'app) ed editoriali (nelle
+Preferenze); `styles` diventa facoltativo e importabile, con uno stile predefinito semplice e classico, e ciò che è di
+Texfix esce da `styles` (§4).
+
+Domande aperte su questo:
+- **D8. Come Texfix conosce uno stile importato.** (a) Lo stile porta un piccolo file di descrizione (ambienti e ruoli, macro, colori) accanto al `.sty`; `styles` lo avrà, per gli altri lo si scrive all'importazione. (b) All'importazione Texfix legge il `.sty`, trova ambienti e macro, il modello propone i ruoli e l'utente li conferma; il risultato si salva come in (a). Proposta: (b), che produce (a), così ogni stile funziona e quelli già descritti non costano niente.
+- **D9. Cambiare stile a lezioni già scritte.** Riscrivere gli ambienti secondo i ruoli, con un passo di cronologia, va bene? Che cosa si fa di un ambiente senza corrispondente: lo sceglie l'utente caso per caso, o si usa il riquadro generico?
+- **D10. Lo stile predefinito.** «Semplice e classico» come `amsthm` su `article` (teoremi in corsivo, dimostrazioni con ∎, nessun colore), o con riquadri leggeri? Un esempio di documento che ti piace aiuterebbe.
 
 Le domande come erano poste:
 
