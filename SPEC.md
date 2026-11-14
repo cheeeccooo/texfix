@@ -183,9 +183,38 @@ Due pannelli con lo stesso codice, lezione per lezione. Il tasto nella barra c'�
 - **[S]** Riepilogo figure (menu Progetto): la panoramica.
 - **[O]** Il motore delle figure è un servizio (`ReviewService`) chiamato con richieste in stile HTTP (`api/save`, `api/card`…) anche dentro l'app, attraverso `ApiClient`. Una porta locale serve per `texfix-cli imgcrop gui`. *→ Probabilmente sparisce: chiamate dirette al modello dei dati.*
 
-### 3.9 Impaginazione delle box
-- **[S]** Una box spezzata fra due pagine si sistema con delle mosse: a capo pagina prima della box, box che si può spezzare, spazio verticale, misura esatta, «lascia com'era», immagini, titolo, a mano. Le mosse sono regole strutturali (§4.1). Serve solo con uno stile le cui box non si spezzano da sole (§4.2).
-- **[S]** Un registro solo per progetto, sempre salvato, mai «chiuso». Si impagina solo ciò che è nuovo: le lezioni con box spezzate che il registro non ha, o che sono cambiate dopo. Le decisioni prese restano.
+### 3.9 Impaginazione
+
+**[S]** **L'impaginazione è una filosofia che vale per tutto il documento, non solo per le box.** Il risultato deve
+essere una pagina bella da studiare, con qualunque stile, anche senza nessuna box. Il programma trova ciò che si
+impagina male e lo sistema con mosse misurate:
+- una box spezzata male fra due pagine (o che si potrebbe spezzare in un punto migliore);
+- un paragrafo che lascia una riga sola in fondo o in cima alla pagina, una frase troncata al cambio di pagina in un punto brutto;
+- una formula separata dalla frase che la introduce o la commenta;
+- un titolo in fondo alla pagina senza testo sotto;
+- un elenco che lascia una voce sola dall'altra parte;
+- una figura lontana da dove se ne parla, in un punto sbagliato, o che lascia un grande vuoto prima di sé; una didascalia separata dalla figura;
+- grandi spazi vuoti in fondo alla pagina.
+
+**[S]** Le regole sono quelle che oggi valgono per le box, generalizzate:
+- si cercano i punti in cui il testo si può tagliare bene (le «cuciture»: fine di un paragrafo, di un riquadro, di un elenco…);
+- per ogni problema si provano le mosse e si misura il risultato (vuoto lasciato nella colonna, distanza della figura dal suo richiamo…);
+- si sceglie la mossa più pulita.
+
+Le mosse possibili:
+- a capo pagina in un punto scelto;
+- una box o un paragrafo che si può spezzare lì;
+- spazio verticale;
+- misura esatta;
+- posizione e misura di una figura;
+- tenere insieme titolo e testo, formula e frase;
+- «lascia com'era»;
+- a mano.
+
+Le mosse e le misure sono regole strutturali (§4.1); quanto essere severi è una regola editoriale.
+
+**[S]** Si impagina da solo dopo Converti, se l'impostazione è «da sola». Si chiede all'utente solo ciò che resta incerto.
+- **[S]** Un registro solo per progetto, sempre salvato, mai «chiuso». Si impagina solo ciò che è nuovo: le lezioni che il registro non ha o che sono cambiate dopo. Le decisioni prese restano.
 - **[S]** Rivedi impaginazione (⇧⌘R, solo quando c'è qualcosa) e Riepilogo impaginazioni. Ogni mossa si accetta, si lascia com'era, si manda all'agente o si risolve a mano, e si cambia quando si vuole. Ogni scelta va subito nei file.
   - «Chiudi» chiude e basta, e si ricompila solo se un file è cambiato.
   - ⌘Z annulla l'ultima scelta del riepilogo quando il riepilogo è aperto.
@@ -314,14 +343,26 @@ molte procedure spiegano all'agente comandi da terminale.
 
 ### 4.2 Lo stile del progetto: `styles` facoltativo e importabile
 
-**[S]** **Un progetto nasce con uno stile predefinito semplice e classico**, che Texfix porta con sé: aspetto da
-`article`, teoremi, definizioni, dimostrazioni ed esempi come ambienti sobri, nessuna dipendenza esotica. Deve bastare
-da solo per tutto ciò che Texfix produce.
+**[S]** **Un progetto ha uno stile alla volta, o nessuno.** Senza stile è un **classico documento LaTeX matematico**
+(D10): `article`, teoremi, definizioni, dimostrazioni ed esempi con `amsthm`, nessun colore, nessuna dipendenza
+esotica. È il punto di partenza e deve bastare per tutto ciò che Texfix produce.
 
 **[S]** **Si può importare uno stile** (un `.sty`, come `styles`):
 - si importa dalle Preferenze, in una libreria di stili, oppure direttamente in un progetto;
 - il file va nella cartella del progetto, così il progetto compila anche senza Texfix;
-- si può tornare allo stile predefinito o passare a un altro.
+- si può tornare a nessuno stile o passare a un altro.
+
+**[S]** **All'importazione l'app fa domande all'utente** (D8). Legge il `.sty`, trova ambienti e macro, il modello
+propone i ruoli e le convenzioni, e l'utente risponde. Il risultato è la descrizione dello stile, salvata accanto al
+`.sty`; uno stile già descritto non chiede niente.
+
+**[S]** **L'agente può lavorare sullo stile del progetto**: modificarlo o crearlo da zero mentre il progetto cresce
+(un ambiente nuovo, un colore, una macro). Lo stile del progetto è un file del progetto come gli altri, seguito dalla
+cronologia. Dopo una modifica la descrizione si aggiorna, e ciò che cambia ruolo diventa una domanda.
+
+**[S]** **Profili di partenza.** Le scelte di un progetto (stile con la sua descrizione, regole editoriali,
+impostazioni del progetto) si salvano come profilo e un progetto nuovo può partire da un profilo. Così una
+configurazione provata si riusa.
 
 **[S]** **Il progetto si adatta allo stile.** Texfix conosce di ogni stile:
 - **il catalogo degli ambienti**, ciascuno con il suo ruolo (definizione, teorema, lemma, proposizione, dimostrazione, osservazione, esempio, esercizio, attenzione, riquadro generico, formula in evidenza…), gli argomenti e il colore;
@@ -332,23 +373,31 @@ da solo per tutto ciò che Texfix produce.
 Da lì vengono le convenzioni dello stile che entrano nei prompt, i colori di begin ed end nell'editor e i nomi nei
 pannelli. Lo stesso contenuto, con un altro stile, usa gli ambienti di quello stile.
 
-**[S]** **Cambiare stile in un progetto con lezioni già scritte**: gli ambienti si riscrivono secondo i ruoli (definizione → l'ambiente
-di definizione del nuovo stile). È un lavoro con il suo passo della cronologia. Ciò che non ha un corrispondente
-diventa una domanda (vedi D9).
+**[S]** **Cambiare stile riconverte il progetto** (D9). Tutte le lezioni si riscrivono per il nuovo stile: gli ambienti
+secondo i ruoli (definizione → l'ambiente di definizione del nuovo stile), le macro, i rimandi, poi si reimpagina. Ciò
+che non ha un corrispondente diventa una domanda all'utente. È un lavoro con il suo piano e un passo solo della
+cronologia.
 
 **[S]** **Ciò che è di Texfix esce da `styles` ed entra in Texfix.** Funziona con qualunque stile, aggiunto dal
 programma al preambolo (oggi `generated.tex`; la forma la sceglie l'architettura):
 - i **tag di provenienza** (oggi `regole/srctag.tex` e il blocco `tag-provenienza`), ripensati come da D5;
-- la **diagnostica delle box spezzate** (`\AllowBoxBreak`, `\BoxBreakWarnings…`, i segni di rottura): deve funzionare con le box di qualunque stile, o dire che per quello stile non serve;
+- la **diagnostica dell'impaginazione** (oggi solo per le box: `\AllowBoxBreak`, `\BoxBreakWarnings…`, i segni di rottura): deve vedere i problemi del §3.9 con qualunque stile, anche senza box;
 - le **aggiunte e correzioni** dichiarate (`addedtext`, `correction`): servono a «Rivedi correzioni»; il loro aspetto si adatta allo stile;
 - i **segnaposto delle figure** (`\imgslot`) e `\lezione{N}{data}`;
 - la **diagnostica delle righe** (`\MathWarningsOn/Off`, `\overfullrule`) usata per trovare le righe fuori misura.
 
 **[S]** **`styles` si ripulisce** e diventa uno stile come gli altri, importabile. Il lavoro si fa nel suo repository
-(`~/Table/styles`), con il via dell'utente. La vecchia Texfix tiene la sua copia (`resources/styles.sty`) e i vecchi
+(`~/Table/styles`, su un branch suo: l'utente lo ha chiesto). La vecchia Texfix tiene la sua copia (`resources/styles.sty`) e i vecchi
 progetti la loro, quindi non cambiano.
 
-- **[C]** *(se le box dello stile non si spezzano, come nello stile predefinito)* L'impaginazione delle box (§3.9) non serve: il tasto e i pannelli non compaiono.
+- **[C]** *(se il progetto non ha box)* L'impaginazione (§3.9) vale lo stesso per paragrafi, formule, titoli e figure; spariscono solo le mosse delle box.
+
+**[S]** **Il progetto di prova** (quello su cui si prova la nuova app, mai un documento vero) usa il **nuovo `styles`
+ripulito**, già descritto, e ha preferenze e regole editoriali che **riproducono il comportamento della vecchia
+Texfix**: convenzioni di scrittura e notazione, box per ruolo, rimandi come tag, figure, larghezza delle righe,
+impostazioni del progetto (Da studiare, Bilanciata, Ridisegna, Tieni, impaginazione da sola). Questa configurazione
+si salva come primo **profilo di partenza**, pronto per i progetti nuovi dell'utente. È anche la prova che regole e
+stile si separano bene: con questo profilo la nuova app deve scrivere appunti come la vecchia.
 - **[C]** *(se lo stile non ha i rimandi come tag)* I rimandi usano `\cref`.
 - **[C]** *(se lo stile cambia i colori)* I colori di begin ed end nell'editor e nei pannelli seguono lo stile; il tema dell'app resta il suo (i pastelli di `styles` non sono più il tema dell'app).
 
@@ -397,7 +446,15 @@ Decisioni aggiunte lo stesso giorno: le regole si dividono fra strutturali (nell
 Preferenze); `styles` diventa facoltativo e importabile, con uno stile predefinito semplice e classico, e ciò che è di
 Texfix esce da `styles` (§4).
 
-Domande aperte su questo:
+Decisioni successive (14/11/2026):
+- uno stile alla volta o nessuno; cambiare stile riconverte il progetto;
+- l'agente può modificare o creare lo stile del progetto;
+- **D8, D9**: all'importazione e alla riconversione l'app fa domande all'utente, che risponde;
+- **D10**: senza stile il progetto è un classico documento LaTeX matematico;
+- il progetto di prova usa il nuovo `styles` con preferenze che riproducono la vecchia Texfix, e diventa il primo profilo di partenza;
+- l'impaginazione vale per tutto il documento, non solo per le box (§3.9).
+
+Le domande D8–D10 come erano poste:
 - **D8. Come Texfix conosce uno stile importato.** (a) Lo stile porta un piccolo file di descrizione (ambienti e ruoli, macro, colori) accanto al `.sty`; `styles` lo avrà, per gli altri lo si scrive all'importazione. (b) All'importazione Texfix legge il `.sty`, trova ambienti e macro, il modello propone i ruoli e l'utente li conferma; il risultato si salva come in (a). Proposta: (b), che produce (a), così ogni stile funziona e quelli già descritti non costano niente.
 - **D9. Cambiare stile a lezioni già scritte.** Riscrivere gli ambienti secondo i ruoli, con un passo di cronologia, va bene? Che cosa si fa di un ambiente senza corrispondente: lo sceglie l'utente caso per caso, o si usa il riquadro generico?
 - **D10. Lo stile predefinito.** «Semplice e classico» come `amsthm` su `article` (teoremi in corsivo, dimostrazioni con ∎, nessun colore), o con riquadri leggeri? Un esempio di documento che ti piace aiuterebbe.
