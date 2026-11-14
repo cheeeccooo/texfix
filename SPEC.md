@@ -39,10 +39,14 @@ pacchetto `styles`. Le fonti possono essere scansioni a mano, PDF di slide, docu
 
 ---
 
-## 2. Il progetto su disco **[V]**
+## 2. Il progetto su disco **[O]**
 
-I progetti esistenti devono aprirsi. Questo è il formato attuale (dal 10/11/2026). Il modulo indicato è dove la vecchia
-app lo legge e lo scrive: lì sta lo schema esatto dei JSON.
+**Decisione D1: la nuova app non apre i progetti esistenti**, che restano alla vecchia app. Il formato qui sotto **non
+vincola**: la nuova app definisce il suo, il più semplice che serve agli scopi. Resta utile come elenco di ciò che va
+salvato. Restano vincolanti solo i `.tex` prodotti (le convenzioni di `regole/` e `styles`) e il fatto che un progetto
+sia una cartella leggibile anche senza Texfix (`main.tex` compila con latexmk).
+
+Il formato della vecchia app (dal 10/11/2026); il modulo indicato è dove lo legge e lo scrive.
 
 | Percorso | Che cosa | Modulo di oggi |
 |---|---|---|
@@ -72,7 +76,7 @@ app lo legge e lo scrive: lì sta lo schema esatto dei JSON.
 | `salvataggi/cronologia/` | cronologia di ⌘Z; vale una sessione, fuori da git | `History` |
 | `build/` | tutto ciò che si rifà; `build/main.pdf` | |
 
-**[V]** Nei `.tex` ci sono formati che i file salvati contengono già e che vanno letti così:
+**[O]** Formati dentro i `.tex` della vecchia app (la nuova può tenerli o sceglierne di migliori):
 - marcatori dei blocchi `% @L6.3 · appunti.pdf p.2` (§3.18);
 - `\lezione{N}{data}`;
 - `% resolvebox:` scritto dall'impaginazione;
@@ -83,7 +87,7 @@ app lo legge e lo scrive: lì sta lo schema esatto dei JSON.
 `converted_docs`, `to_distill`, salvataggi in `docs/` o `build/`, seed delle figure (una cartella per conversione e
 un archivio globale), blocchi `convert:…` di `generated.tex`, marcatori di `lessons.py` in STATO.md, il main con un altro
 nome, `fatta` dentro `salvataggi/lezioni/<srcN>.json`, dubbi come stringhe «P1: … — letto X».
-*→ Nella nuova app: o una migrazione sola all'apertura, o niente se l'utente non ha più progetti così (domanda D1).*
+*→ Sparisce (D1): nessuna migrazione, nessun caso limite legato ai formati di prima.*
 
 ---
 
@@ -149,7 +153,7 @@ nome, `fatta` dentro `salvataggi/lezioni/<srcN>.json`, dubbi come stringhe «P1:
 - **[S]** Figure dei `.tex`: «tieni» adatta il codice dell'autore alla colonna e lo asciuga solo se la resa resta uguale; «ridisegna» passa al disegnatore la resa del codice.
 - **[S]** Stile «Da studiare» (prosa, correzioni dichiarate, aggiunte marcate, rimandi, didascalie) o «Fedele» (uno a uno, niente aggiunte; restano correzioni, passaggi troncati, box per esempi ed esercizi, didascalie, rimandi e titoli che la fonte ha).
 - **[S]** I blocchi scritti hanno il marcatore di provenienza (§3.18).
-- **[O]** `pipe run` gira staccato (`--detach`) con cache su disco; l'app segue `build/artifacts/pipe/status.json`. Ci sono stadi numerati 1–9 con worker `claude -p` in parallelo e uno stato condiviso (`RunState`). *→ Nella nuova app il motore può girare nel processo; resta da decidere se una conversione deve sopravvivere alla chiusura dell'app (domanda D3).*
+- **[O]** `pipe run` gira staccato (`--detach`) con cache su disco; l'app segue `build/artifacts/pipe/status.json`. Ci sono stadi numerati 1–9 con worker `claude -p` in parallelo e uno stato condiviso (`RunState`). *→ Decisione D3: il motore gira nell'app; chiusa l'app, tutto si ferma. Alla riapertura il lavoro riprende da dove era, senza rifare né ripagare ciò che è già fatto (cache su disco del lavoro).*
 - **[O]** La «lettura guidata» (un file alla volta in attesa della revisione dei ritagli) resta solo per riprendere run vecchi. *→ Sparisce.*
 
 ### 3.7 Rivedi dubbi e Rivedi correzioni
@@ -230,7 +234,7 @@ Due pannelli con lo stesso codice, lezione per lezione. Il tasto nella barra c'�
 - **[S]** **L'agente è isolato.** Vede solo il progetto e le regole e può usare gli strumenti del motore. Niente Python, `pdflatex`, git o `~/.claude`. Il prompt di sistema è `regole/agente/guida.md`.
 - **[S]** Ogni procedura apre una sua chat con il suo nome.
 - **[S]** Le lezioni fatte si toccano solo dopo una conferma.
-- **[O]** È il CLI `claude` lanciato con `--setting-sources "" --disable-slash-commands --strict-mcp-config`. L'agente comunica con righe convenute (`TEXFIX: apri figure`, `TEXFIX: avanzamento N% — …`) e usa `texfix-cli` dalla shell. *→ Il CLI `claude` resta il motore (o l'Agent SDK: da decidere). Le righe convenute e `texfix-cli` come unica interfaccia sono eredità da ripensare.*
+- **[O]** È il CLI `claude` lanciato con `--setting-sources "" --disable-slash-commands --strict-mcp-config`. L'agente comunica con righe convenute (`TEXFIX: apri figure`, `TEXFIX: avanzamento N% — …`) e usa `texfix-cli` dalla shell. *→ Decisione D7: resta Claude Code locale (il CLI `claude`, con l'abbonamento dell'utente), per l'agente e per i worker. Decisione D2: `texfix-cli` serve solo all'agente, quindi non è più un programma per l'utente: diventa l'insieme di strumenti che l'app dà all'agente (la forma la sceglie l'architettura). Le righe convenute `TEXFIX:` sono da sostituire con strumenti.*
 
 ### 3.14 Cronologia (⌘Z, ⇧⌘Z)
 - **[S]** Un solo modo di tornare indietro. Si annullano e si ripetono i lavori, le decisioni e le modifiche a mano: Modifica › Annulla «…», Ripeti «…», Cronologia del progetto (vai a un passo).
@@ -254,14 +258,14 @@ Due pannelli con lo stesso codice, lezione per lezione. Il tasto nella barra c'�
   - a sinistra lo stato: spunta, cerchio che gira, × rossa con errori, triangolo con avvisi, pausa;
   - poi i messaggi brevi (la prima frase per 6 secondi, il resto in Console);
   - poi l'avanzamento del lavoro in corso con la percentuale;
-  - pausa e Interrompi.
+  - «Ferma».
 - **[S]** «Ferma» per ogni lavoro: subito, senza lasciare l'app «in corso».
 - **[S]** «Riprendi» compare quando un lavoro lungo si è interrotto.
-- **[O]** La pausa manda SIGSTOP ai processi e ai figli. *→ Vale solo se i lavori sono processi; da rivalutare (D6).*
+- **[O]** La pausa manda SIGSTOP ai processi e ai figli. *→ Decisione D6: la pausa sparisce; bastano «Ferma» e «Riprendi».*
 
 ### 3.18 Blocchi e tag di provenienza
 - **[S]** Ogni unità di una lezione (box, figura, tratto di testo) ha prima un marcatore con id stabile, fonte e pagina (o righe di un `.tex`). L'id resta della lezione d'origine anche se il blocco cambia file. La pipeline lo scrive; quelli che mancano li aggiunge il programma dopo una fusione. Righe vuote, commenti e righe di struttura non sono blocchi.
-- **[S]** Tag di provenienza nel PDF (sigla della fonte sulla cornice della box), da mostrare o nascondere, tutti o per sigla, con legenda. *(Domanda D5: si usano ancora?)*
+- **[S]** Tag di provenienza nel PDF (sigla della fonte sulla cornice della box), da mostrare o nascondere, tutti o per sigla, con legenda. *Decisione D5: restano, ma ripensati in modo più sensato e integrato. Spunto: i marcatori dei blocchi sanno già fonte e pagina di ogni unità, quindi i tag potrebbero nascere da lì invece che da un meccanismo a parte, e collegarsi alla fonte (clic sul tag → la pagina della fonte).*
 
 ### 3.19 Interfaccia **[S]**
 - **Un tema solo** (chiaro e scuro, segue il sistema) con colori e misure in un posto; i pastelli e gli angoli arrotondati di `styles`.
@@ -272,7 +276,7 @@ Due pannelli con lo stesso codice, lezione per lezione. Il tasto nella barra c'�
 - **Ciò che non si può fare è spento**, e la scorciatoia arriva comunque all'azione, che dice perché non può. Le condizioni leggono la memoria, non il disco.
 - **Pannelli fissi**, niente staccare. A sinistra un pannello con due linguette (Progetto, Version control); chiuso diventa un'icona al bordo. La chat chiusa è un tasto in alto a destra. Il pannello in basso chiuso si riapre dalla barra di stato.
 - **[C]** *(se si salva la disposizione delle finestre)* Uno stato salvato di una versione precedente si scarta. Prima faceva chiudere la finestra all'avvio.
-- **[O]** Widgets per editor, PDF, albero e revisioni; QML per chat, Converti, benvenuto, attività, piano e Rivedi; ponte `Qml::widget/dialog`. *→ Da decidere nell'architettura: due tecnologie d'interfaccia sono un costo.*
+- **[O]** Widgets per editor, PDF, albero e revisioni; QML per chat, Converti, benvenuto, attività, piano e Rivedi; ponte `Qml::widget/dialog`. *→ Decisione D4: QML dove possibile, Widgets solo dove servono davvero (editor, PDF); se l'architettura trova un approccio migliore e più sensato, si sceglie quello, motivandolo.*
 
 ---
 
@@ -300,7 +304,7 @@ Due pannelli con lo stesso codice, lezione per lezione. Il tasto nella barra c'�
 Ciò che la vecchia app fa per com'è nata, non per ciò che serve all'utente. Nella nuova app non deve esserci, salvo
 motivo nuovo.
 
-1. **L'app che parla al motore lanciando `texfix-cli`** e leggendo il suo output: righe `@@avanzamento`, JSON in coda all'uscita (`jsonTail`), `status.json` scritto da un processo e letto da un altro, codici d'uscita (0/5…). Il motore diventa una libreria chiamata direttamente; `texfix-cli` ne è un client.
+1. **L'app che parla al motore lanciando `texfix-cli`** e leggendo il suo output: righe `@@avanzamento`, JSON in coda all'uscita (`jsonTail`), `status.json` scritto da un processo e letto da un altro, codici d'uscita (0/5…). Il motore diventa una libreria chiamata direttamente; all'agente si danno strumenti (D2).
 2. **Servizi in stile HTTP dentro il processo** (`ReviewService`, `ApiClient`, `api/save`, `api/card`) e la porta locale (`HttpServer`).
 3. **Sessioni, rami, reset e backup propri** di ogni motore, accanto alla cronologia unica.
 4. **Protocollo a righe con l'agente** (`TEXFIX: …`) invece di strumenti.
@@ -311,7 +315,19 @@ motivo nuovo.
 
 ---
 
-## 7. Domande per l'utente
+## 7. Decisioni dell'utente (14/11/2026)
+
+| | Domanda | Decisione |
+|---|---|---|
+| D1 | Progetti di prima | Niente da migrare: i progetti esistenti restano alla vecchia app. La nuova sceglie il suo formato. |
+| D2 | `texfix-cli` dal terminale | Serve solo all'agente: diventa strumenti per l'agente, non un programma per l'utente. |
+| D3 | Lavori dopo la chiusura | Chiusa l'app, tutto si ferma; alla riapertura il lavoro riprende senza ripagare. |
+| D4 | Interfaccia | QML, Widgets solo dove servono; un approccio migliore e motivato è benvenuto. |
+| D5 | Tag di provenienza | Restano, ripensati in modo più sensato e integrato. |
+| D6 | Pausa | Tolta: bastano Ferma e Riprendi. |
+| D7 | Agente | Claude Code locale (il CLI `claude`). |
+
+Le domande come erano poste:
 
 - **D1. Progetti di prima.** Hai ancora progetti nel formato precedente al 10/11/2026 (`docs/to_be_converted`, seed delle figure, salvataggi in `docs/` o `build/`, dubbi come stringhe)? Se no, la nuova app legge solo il formato del §2 e tutte le migrazioni spariscono. Se sì, quali progetti?
 - **D2. `texfix-cli` dal terminale.** Lo usi tu, o serve solo all'agente? Se serve solo all'agente, può diventare un insieme di strumenti dati all'agente direttamente.
