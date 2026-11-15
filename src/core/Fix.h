@@ -19,6 +19,11 @@ struct Result {
 
 Result lesson(const Project &project, const Settings &settings, const Style &style, Model &model, const QString &file, JobControl *control);
 
+// Una formula in display troppo larga, spezzata senza modello: il contenuto di un \[…\] (senza allineamenti suoi) diventa
+// un `align*` che va a capo a ogni segno di relazione (a = b = c), o un `multline*` spezzato a un + o a un − fuori dalle
+// parentesi se la relazione è una sola. Vuoto se non c'è un punto in cui spezzare.
+QString splitDisplay(const QString &content);
+
 // Il paragrafo di testo che contiene le righe first..last (da 1): la prima e l'ultima riga; {0, 0} se non è testo.
 std::pair<int, int> paragraph(const QStringList &lines, int first, int last);
 

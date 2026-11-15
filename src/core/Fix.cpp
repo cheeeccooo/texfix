@@ -171,6 +171,47 @@ Result lesson(const Project &project, const Settings &settings, const Style &sty
         }
     }
 
+    // le righe: prima le formule in display troppo larghe, spezzate a un segno di relazione o a un +
+    if (current.errors == 0) {
+        for (int pass = 0; pass < 12 && current.rows > 0; ++pass) {
+            bool fixed = false;
+            for (const Issue &issue : std::as_const(current.issues)) {
+                if (issue.kind != Issue::WideLine)
+                    continue;
+                const QStringList lines = files::read(path).split('\n');
+                // il display che tocca l'avviso: da \[ a \], su una riga o su più
+                int open = -1, close = -1;
+                for (int i = qMin(int(lines.size()), issue.lastLine + 1) - 1; i >= qMax(0, issue.line - 12) && open < 0; --i)
+                    if (lines[i].contains("\\["))
+                        open = i;
+                for (int i = qMax(0, open); open >= 0 && i < lines.size() && i <= open + 14 && close < 0; ++i)
+                    if (lines[i].contains("\\]"))
+                        close = i;
+                if (open < 0 || close < 0 || close < issue.line - 2)
+                    continue;
+                const QString before = lines[open].left(lines[open].indexOf("\\[")), after = lines[close].mid(lines[close].indexOf("\\]") + 2);
+                const QString block = lines.mid(open, close - open + 1).join('\n');
+                const qsizetype a = block.indexOf("\\[") + 2, b = block.lastIndexOf("\\]");
+                if (!before.trimmed().isEmpty() || !after.trimmed().isEmpty() || b <= a)
+                    continue;                          // un display in mezzo a una riga di testo: non si tocca
+                const QString split = splitDisplay(block.mid(a, b - a));
+                if (split.isEmpty())
+                    continue;
+                QStringList piece;
+                for (const QString &row : split.split('\n'))
+                    piece << before + row;
+                const QStringList changed = lines.mid(0, open) + piece + lines.mid(close + 1);
+                if (attempt(project, file, changed.join('\n'), current, control)) {
+                    fixed = true;
+                    ++result.byMoves;
+                    break;
+                }
+            }
+            if (!fixed)
+                break;
+        }
+    }
+
     // le righe: prima spezzare il paragrafo a una fine di frase, misurando
     if (current.errors == 0) {
         for (int pass = 0; pass < 12 && current.rows > 0; ++pass) {
@@ -251,6 +292,87 @@ Result lesson(const Project &project, const Settings &settings, const Style &sty
     result.rowsAfter = current.rows;
     log(QStringLiteral("errori %1 → %2, righe fuori misura %3 → %4").arg(result.errorsBefore).arg(result.errorsAfter).arg(result.rowsBefore).arg(result.rowsAfter));
     return result;
+}
+
+}
+
+namespace tx::fix {
+
+QString splitDisplay(const QString &content)
+{
+    QString body = content.trimmed();
+    if (body.isEmpty() || body.contains("\\begin{") || body.contains('&') || body.contains("\\\\") || body.contains("\\tag") || body.contains("\\label"))
+        return {};
+    QString tail;                                      // la punteggiatura in fondo resta in fondo
+    while (!body.isEmpty() && QStringLiteral(".,;:").contains(body.back())) {
+        tail.prepend(body.back());
+        body.chop(1);
+    }
+    while (body.endsWith("\\,") || body.endsWith("\\;") || body.endsWith("\\ ") || body.endsWith(' ')) {
+        tail.prepend(body.endsWith(' ') ? QString() : body.right(2));
+        body.chop(body.endsWith(' ') ? 1 : 2);
+    }
+    // i punti fuori da graffe e parentesi: i segni di relazione, e i + e −
+    static const QStringList relations{"\\leq", "\\geq", "\\le", "\\ge", "\\neq", "\\ne", "\\approx", "\\simeq", "\\sim", "\\equiv", "\\implies",
+                                       "\\iff", "\\Rightarrow", "\\Leftrightarrow", "\\to", "\\propto"};
+    QList<qsizetype> rel, plus;
+    int depth = 0;
+    for (qsizetype i = 0; i < body.size(); ++i) {
+        const QChar c = body[i];
+        if (c == '{' || c == '(' || c == '[')
+            ++depth;
+        else if (c == '}' || c == ')' || c == ']')
+            --depth;
+        else if (c == '\\') {
+            const QStringView rest = QStringView(body).mid(i);
+            if (rest.startsWith(QLatin1String("\\left"))) {
+                ++depth;
+                i += 5;                                // \left( : la parentesi non conta due volte
+                continue;
+            }
+            if (rest.startsWith(QLatin1String("\\right"))) {
+                --depth;
+                i += 6;
+                continue;
+            }
+            bool found = false;
+            for (const QString &r : relations) {
+                if (rest.startsWith(r) && !(i + r.size() < body.size() && body[i + r.size()].isLetter())) {
+                    if (depth == 0 && i > 0)
+                        rel << i;
+                    i += r.size() - 1;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)                                // un comando qualunque: si salta il suo nome
+                while (i + 1 < body.size() && body[i + 1].isLetter())
+                    ++i;
+        } else if (depth == 0 && i > 0 && (c == '=' || c == '<' || c == '>')) {
+            rel << i;
+        } else if (depth == 0 && i > 0 && (c == '+' || c == '-')) {
+            const QChar before = body[i - 1];          // un segno dopo un altro segno, o un apice, non è un punto in cui spezzare
+            if (before != '^' && before != '_' && before != '=' && before != '{' && before != '(')
+                plus << i;
+        }
+    }
+    if (depth != 0)
+        return {};
+    if (rel.size() >= 2) {
+        QStringList rows{body.left(rel[0]).trimmed() + " &" + body.mid(rel[0], rel[1] - rel[0]).trimmed()};
+        for (qsizetype k = 1; k < rel.size(); ++k)
+            rows << "&" + body.mid(rel[k], (k + 1 < rel.size() ? rel[k + 1] : body.size()) - rel[k]).trimmed();
+        return "\\begin{align*}\n    " + rows.join(" \\\\\n    ") + tail + "\n\\end{align*}";
+    }
+    // una relazione sola (o nessuna): a capo al + o al − più vicino alla metà, dopo la relazione
+    qsizetype best = -1;
+    const qsizetype from = rel.isEmpty() ? 0 : rel[0];
+    for (qsizetype p : plus)
+        if (p > from + 1 && (best < 0 || qAbs(p - body.size() / 2) < qAbs(best - body.size() / 2)))
+            best = p;
+    if (best < 0)
+        return {};
+    return "\\begin{multline*}\n    " + body.left(best).trimmed() + " \\\\\n    " + body.mid(best).trimmed() + tail + "\n\\end{multline*}";
 }
 
 }

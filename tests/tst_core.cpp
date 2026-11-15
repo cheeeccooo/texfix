@@ -617,6 +617,38 @@ private slots:
         styleswitch::setLibraryHome({});
     }
 
+    // Una formula in display troppo larga si spezza senza modello: a ogni segno di relazione, o a un + fuori dalle parentesi.
+    void splitWideDisplay()
+    {
+        QCOMPARE(fix::splitDisplay(" a = b + c = \\frac{d}{e} \\le f. "),
+                 "\\begin{align*}\n    a &= b + c \\\\\n    &= \\frac{d}{e} \\\\\n    &\\le f.\n\\end{align*}");
+        QCOMPARE(fix::splitDisplay("f(x) = a_1 x + (b - c) x^{2} + d"),
+                 "\\begin{multline*}\n    f(x) = a_1 x \\\\\n    + (b - c) x^{2} + d\n\\end{multline*}");
+        QCOMPARE(fix::splitDisplay("\\left( a = b \\right)"), QString());              // niente fuori dalle parentesi
+        QCOMPARE(fix::splitDisplay("\\begin{aligned} a &= b \\\\ &= c \\end{aligned}"), QString());   // ha già i suoi a capo
+        if (!hasLatexmk())
+            QSKIP("latexmk non c'è");
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        QString sum = "S";
+        for (int i = 1; i <= 3; ++i)
+            sum += QStringLiteral(" = a_{%1} + b_{%1} + c_{%1} + d_{%1} + e_{%1} + f_{%1} + g_{%1} + h_{%1}").arg(i);
+        files::write(p.path("src/src1.tex"), "\\section{S}\nVale la catena\n\\[\n    " + sum + ".\n\\]\nFine.\n");
+        JobControl control;
+        qputenv("TEXFIX_CLAUDE", "/usr/bin/false");                                     // il modello non serve
+        Model model("veloce", root, &control);
+        const fix::Result r = fix::lesson(p, Settings(), Style::classic(), model, "src/src1.tex", &control);
+        qunsetenv("TEXFIX_CLAUDE");
+        QVERIFY(r.rowsBefore >= 1);
+        QCOMPARE(r.rowsAfter, 0);
+        QCOMPARE(r.byMoves, 1);
+        QVERIFY(files::read(p.path("src/src1.tex")).contains("\\begin{align*}\n    S &= a_{1}"));
+    }
+
     // L'impaginazione oltre i riquadri spezzati: una figura che non ci stava ed è passata oltre lascia un grande vuoto.
     // Non c'è una mossa sicura: si segnala, e si decide a mano o con l'agente.
     void layoutHole()
