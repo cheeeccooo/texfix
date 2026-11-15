@@ -39,6 +39,14 @@ QString draw(const Project &project, const Settings &settings, const Style &styl
 // Ritaglia la figura dalla pagina della fonte in imgs/<nome>.png e la inserisce.
 QString crop(const Project &project, Figure figure, const QString &pageImage);
 
+// Le figure di un .tex di un altro autore, dopo che la lezione è scritta. «Tieni» (Settings::texFigures): il codice
+// dell'autore resta, e un disegno più largo della colonna si restringe quanto basta. «Ridisegna»: il disegnatore la rifà
+// nello stile del progetto guardando la resa del codice; entra nel registro come le altre.
+struct Authored {
+    int kept = 0, fitted = 0, redrawn = 0, failed = 0;
+};
+Authored authored(const Project &project, const Settings &settings, const Style &style, Model &model, const QString &lesson, const QString &source);
+
 // Dov'è la resa di una figura per mostrarla: il ritaglio, o l'ultima prova di disegno (vuoto se non c'è).
 QString preview(const Project &project, const Figure &figure);
 // Il prompt del disegnatore, in tre parti.

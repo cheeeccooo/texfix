@@ -332,3 +332,107 @@ QString preview(const Project &project, const Figure &figure)
 }
 
 }
+
+namespace tx::figures {
+
+Authored authored(const Project &project, const Settings &settings, const Style &style, Model &model, const QString &lesson, const QString &source)
+{
+    Authored out;
+    const QString path = project.path(lesson), stem = QFileInfo(lesson).completeBaseName();
+    const QStringList wrappers{style.figureWrapper(), "figure", "center"};
+    static const RE drawing(R"(\\begin\{(tikzpicture|circuitikz)\})");
+    int from = 0;
+    for (int guard = 0; guard < 200; ++guard) {
+        QStringList lines = files::read(path).split('\n');
+        // la prossima figura dell'autore: un disegno dentro l'ambiente delle figure, senza il segno di una figura di Texfix
+        int begin = -1, end = -1, first = -1, last = -1;
+        QString wrapper, kind;
+        for (int i = from; i < lines.size() && begin < 0; ++i) {
+            for (const QString &w : wrappers) {
+                if (!lines[i].trimmed().startsWith("\\begin{" + w + "}") || lines[i].contains("% img "))
+                    continue;
+                int e = i + 1;
+                while (e < lines.size() && !lines[e].trimmed().startsWith("\\end{" + w + "}"))
+                    ++e;
+                if (e >= lines.size())
+                    continue;
+                for (int k = i + 1; k < e && first < 0; ++k)
+                    if (const auto m = drawing.match(lines[k]); m.hasMatch()) {
+                        first = k;
+                        kind = m.captured(1);
+                    }
+                if (first < 0)
+                    continue;
+                for (int k = e - 1; k >= first && last < 0; --k)
+                    if (lines[k].contains("\\end{" + kind + "}"))
+                        last = k;
+                if (last < 0) {
+                    first = -1;
+                    continue;
+                }
+                begin = i;
+                end = e;
+                wrapper = w;
+                break;
+            }
+        }
+        if (begin < 0)
+            break;
+        from = end + 1;
+        const QString code = lines.mid(first, last - first + 1).join('\n');
+        const QString work = QStringLiteral("%1-autore-%2").arg(stem).arg(guard + 1);
+        QString png;
+        bool tooWide = false;
+        if (!compile(project, work, code, &png, &tooWide).isEmpty()) {
+            ++out.failed;                              // non compila da sola: resta com'è, la vedranno gli errori della lezione
+            continue;
+        }
+        if (settings.texFigures == "ridisegna") {
+            // il disegnatore la rifà nello stile del progetto, guardando la resa del codice dell'autore
+            int next = 0;
+            for (const Figure &f : all(project))
+                if (f.id.startsWith(stem + '-'))
+                    next = qMax(next, f.id.section('-', -1).toInt());
+            Figure figure;
+            figure.id = QStringLiteral("%1-%2").arg(stem).arg(next + 1, 2, 10, QChar('0'));
+            figure.source = source;
+            figure.description = QStringLiteral("Figura dell'autore: va ridisegnata uguale (stessi elementi, etichette e proporzioni) nello stile del progetto.");
+            lines[begin] += " " + mark(figure.id);
+            files::write(path, lines.join('\n'));
+            save(project, figure);
+            if (draw(project, settings, style, model, figure, png).isEmpty()) {
+                ++out.redrawn;
+            } else {                                   // non è riuscita: resta il disegno dell'autore, senza segno
+                QStringList back = files::read(path).split('\n');
+                for (QString &line : back)
+                    if (line.endsWith(" " + mark(figure.id)))
+                        line.chop(mark(figure.id).size() + 1);
+                files::write(path, back.join('\n'));
+                figure.state = "disegnata";
+                figure.note = QStringLiteral("È rimasto il disegno dell'autore: ridisegnarlo non è riuscito.");
+                save(project, figure);
+                ++out.kept;
+            }
+            from = begin + 1;                          // il contenuto è cambiato: si riparte da dopo il suo inizio
+            continue;
+        }
+        // «tieni»: il codice dell'autore resta; se è più largo della colonna si restringe quanto basta
+        const bool alreadyFitted = first > 0 && lines[first - 1].trimmed().startsWith("\\resizebox");
+        if (tooWide && !alreadyFitted && !code.trimmed().startsWith("\\resizebox")) {
+            const QString fitted = "\\resizebox{\\linewidth}{!}{%\n" + code + "%\n}";
+            if (compile(project, work, fitted, &png, &tooWide).isEmpty() && !tooWide) {
+                for (int k = last; k >= first; --k)
+                    lines.removeAt(k);
+                lines.insert(first, fitted);
+                files::write(path, lines.join('\n'));
+                from = first + int(fitted.count('\n')) + 2;
+                ++out.fitted;
+                continue;
+            }
+        }
+        ++out.kept;
+    }
+    return out;
+}
+
+}

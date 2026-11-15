@@ -522,6 +522,31 @@ private slots:
         QVERIFY(newlesson::fuseMessage("src/src2.tex", 2, "", {"a.pdf", "b.pdf"}, {"b.pdf"}).contains("Fonti importanti: b.pdf"));
     }
 
+    // Le figure di un .tex di un altro autore con «Tieni»: il codice resta; un disegno più largo della colonna si
+    // restringe quanto basta, uno che ci sta non si tocca.
+    void authoredFigures()
+    {
+        if (!hasLatexmk())
+            QSKIP("latexmk non c'è");
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        const QString small = "\\begin{center}\n\\begin{tikzpicture}\n\\draw (0,0) -- (2,1);\n\\end{tikzpicture}\n\\end{center}\n";
+        const QString wide = "\\begin{center}\n\\begin{tikzpicture}\n\\draw (0,0) -- (30,1);\n\\end{tikzpicture}\n\\end{center}\n";
+        files::write(p.path("src/src1.tex"), "\\section{S}\nTesto.\n" + small + "Altro.\n" + wide + "Fine.\n");
+        JobControl control;
+        Model model("veloce", root, &control);
+        const figures::Authored a = figures::authored(p, Settings(), Style::classic(), model, "src/src1.tex", "autore.tex");
+        QCOMPARE(a.kept, 1);
+        QCOMPARE(a.fitted, 1);
+        QCOMPARE(a.failed, 0);
+        const QString text = files::read(p.path("src/src1.tex"));
+        QVERIFY(text.contains(small));
+        QVERIFY(text.contains("\\begin{center}\n\\resizebox{\\linewidth}{!}{%\n\\begin{tikzpicture}\n\\draw (0,0) -- (30,1);\n\\end{tikzpicture}%\n}\n\\end{center}"));
+        QCOMPARE(figures::authored(p, Settings(), Style::classic(), model, "src/src1.tex", "autore.tex").fitted, 0);   // di nuovo: niente da fare
+    }
+
     // L'impaginazione oltre i riquadri spezzati: una figura che non ci stava ed è passata oltre lascia un grande vuoto.
     // Non c'è una mossa sicura: si segnala, e si decide a mano o con l'agente.
     void layoutHole()

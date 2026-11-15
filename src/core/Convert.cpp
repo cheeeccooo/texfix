@@ -617,6 +617,13 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
                 const QString input = QStringLiteral("\\input{%1}\n\\clearpage\n\n").arg(work.file);
                 main = end < 0 ? main + '\n' + input : main.left(end) + input + main.mid(end);
                 files::write(m_project.path(Project::MAIN), main);
+                if (work.isTex) {                      // le figure dell'autore: tenute (e adattate alla colonna) o ridisegnate
+                    progress(0.96, QStringLiteral("sistemo le figure dell'autore"));
+                    const figures::Authored a = figures::authored(m_project, m_settings, m_style, model, work.file, QFileInfo(work.lesson.source).fileName());
+                    if (a.kept + a.fitted + a.redrawn + a.failed > 0)
+                        m_control->log(QStringLiteral("%1, figure dell'autore: %2 tenute, %3 adattate alla colonna, %4 ridisegnate, %5 che non compilano da sole")
+                                           .arg(work.file).arg(a.kept).arg(a.fitted).arg(a.redrawn).arg(a.failed));
+                }
                 // le figure, insieme: ridisegnate o ritagliate dalla pagina; quelle che non riescono restano segnaposto
                 progress(0.97, QStringLiteral("preparo le figure"));
                 std::vector<std::future<QString>> drawing;
