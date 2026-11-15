@@ -64,6 +64,7 @@ Style Style::load(const QString &path, bool *ok)
     s.captionCommand = root.value("didascalia").toString();
     s.conventions = root.value("convenzioni").toString();
     s.classOptions = root.value("opzioni_classe").toString();
+    s.breakCommand = root.value("comando_spezza").toString("\\pagebreak");
     return s;
 }
 
@@ -82,7 +83,8 @@ bool Style::save(const QString &path) const
                            {"ambiente_figura", figureEnvironment},
                            {"didascalia", captionCommand},
                            {"convenzioni", conventions},
-                           {"opzioni_classe", classOptions}};
+                           {"opzioni_classe", classOptions},
+                           {"comando_spezza", breakCommand}};
     return files::write(path, QString::fromUtf8(QJsonDocument(root).toJson()));
 }
 

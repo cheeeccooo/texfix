@@ -51,7 +51,7 @@ Due parti, un processo solo.
 | `core/Review` | ciò che resta da decidere: i dubbi (`salvataggi/dubbi/`: scegli una lettura, riapri, annulla la modifica) e le aggiunte e correzioni dichiarate (`salvataggi/correzioni.json`: tieni, togli, rimetti); i conti per lezione |
 | `core/Figures` | il registro delle figure (`salvataggi/figure.json`); il segno `% img <lezione>-NN` nella lezione; «Ridisegna» (TikZ: disegno, prova con `pdflatex`, revisione sulla resa) e «Ritaglia dalla fonte» (`imgs/<nome>.png`); i pacchetti chiesti dai disegni vanno in `progetto.json` e da lì in `texfix.sty` |
 | `core/Fix` | errori e righe fuori misura di una lezione: gli errori al modello (sostituzioni esatte), le righe prima spezzando il paragrafo a una fine di frase poi con varianti del modello; ogni mossa resta solo se, compilata (`Compiler::compileSync`), migliora |
-| `core/Layout` | l'impaginazione, con qualunque stile: dove cade ogni blocco nel PDF (SyncTeX, e l'area del testo scritta nel log da `texfix.sty`); un'unità a cavallo di due pagine va a pagina nuova (`\newpage % impaginazione` prima del marcatore) se il vuoto è al più il 25%, altrimenti la mossa resta proposta; registro `salvataggi/impaginazione.json` |
+| `core/Layout` | l'impaginazione, con qualunque stile: dove cade ogni blocco nel PDF (SyncTeX, e l'area del testo scritta nel log da `texfix.sty`); un'unità a cavallo di due pagine (o colonne) va a pagina nuova (`\newpage % impaginazione` prima del marcatore) se il vuoto è al più il 25%; altrimenti, o se è più lunga di una colonna, si spezza in un punto scelto: il comando dello stile (`comando_spezza`: `\tcbbreak` per `styles`, `\pagebreak` senza stile) sull'ultima cucitura fra due paragrafi prima del punto in cui passerebbe alla colonna dopo; se nessuna mossa regge resta proposta; registro `salvataggi/impaginazione.json` |
 | `core/AgentTools` | gli strumenti che l'app dà all'agente (`stato_progetto`, `compila_lezione`, `compila_documento`, `dubbi`, `impagina`), il protocollo a righe (MCP) e il prompt di sistema dell'agente |
 | `core/Plans` | i lavori con un piano: `salvataggi/lavori/<nome>/piano.json` (voci con spunta e istruzioni, domande, commento, esito); l'agente consegna piano ed esito con gli strumenti `consegna_piano` e `consegna_esito`; l'archivio in `salvataggi/esiti/` |
 | `core/NewLesson` | numero e data proposti o letti dai nomi e dal testo delle fonti (senza modello); i file portati in `fonti/coda`; `settle` chiude una lezione scritta dall'agente (documento, marcatori, fonti usate: lo strumento `chiudi_lezione`); i messaggi delle procedure di fusione e integrazione |
@@ -161,9 +161,9 @@ conferma, con il perché), «Ricorda come regola del progetto» dopo una decisio
 Manca: la resa compilata dei pezzi e del prima e dopo, la lista che si aggiorna riga per riga.
 
 Di §3.9 c'è: l'unità spezzata fra due pagine, «Rivedi impaginazione» (`qml/LayoutView.qml`), l'impaginazione da sola
-dopo Converti, righe sole in cima o in fondo evitate da `texfix.sty`. Manca tutto il resto del §3.9: titoli in fondo
-alla pagina, formule e frasi, figure lontane, grandi vuoti, le altre mosse (spezzare in un punto scelto, spazio,
-misura delle figure), mandare all'agente, risolvere a mano con le prove.
+dopo Converti, righe sole in cima o in fondo evitate da `texfix.sty`. Manca del §3.9: titoli in fondo
+alla pagina, formule e frasi, figure lontane, grandi vuoti, le altre cuciture (dopo una formula o un elenco chiuso,
+prima di una figura), le altre mosse (spazio, misura delle figure), mandare all'agente, risolvere a mano con le prove.
 
 Di §3.13 c'è: il pannello chat (`qml/ChatPane.qml`) con streaming, righe degli strumenti, Sonnet o Opus, ⌘↩, «Ferma»,
 l'ultima chat che torna all'apertura; il turno dell'agente è un passo della cronologia. Tre modi, come in Claude Code (`Chat::mode`, per tutti i progetti): Automatico (predefinito, `--permission-mode auto`),

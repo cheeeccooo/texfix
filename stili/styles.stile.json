@@ -2,6 +2,7 @@
     "formato": 1,
     "nome": "styles",
     "opzioni_classe": "twocolumn",
+    "comando_spezza": "\\tcbbreak",
     "rimandi": "tag",
     "ambiente_figura": "tikzgraph",
     "didascalia": "\\figcaption[fig:etichetta]{…} sulla riga subito dopo \\end{tikzgraph}",

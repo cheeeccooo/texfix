@@ -22,6 +22,8 @@ struct Move {
     double hole = 0;                       // il vuoto lasciato (o che lascerebbe) in fondo alla pagina
     QString state;                         // fatta | proposta | accettata | lasciata
     int line = 0;                          // la riga del blocco nella lezione; 0 se non c'è più
+    QString sign = SIGN;                   // la riga scritta nella lezione: un a capo prima del blocco, o uno spezzamento dentro
+    QString after;                         // per uno spezzamento dentro: la riga dopo cui sta
 };
 struct Result {
     int found = 0, done = 0, proposed = 0;

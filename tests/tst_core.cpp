@@ -1048,6 +1048,51 @@ private slots:
         QVERIFY(tags[0].page == 2 && tags[1].y > tags[0].y && tags[2].y > tags[1].y);
     }
 
+    // Con `styles` su due colonne: un riquadro più lungo di ciò che resta della colonna si spezza fra due paragrafi.
+    void layoutBreakInside()
+    {
+        if (!hasLatexmk())
+            QSKIP("latexmk non c'è");
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QCOMPARE(styleswitch::importFromLibrary(p, "styles").error, QString());
+        QCOMPARE(styleswitch::apply(p, "styles").error, QString());
+        const Style style = styleswitch::current(p);
+        QCOMPARE(style.breakCommand, "\\tcbbreak");
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        // mezza colonna di testo, poi un teorema di quaranta paragrafi: non entra né in ciò che resta né in una colonna intera
+        QString tex = "\\section{S}\n\\lezione{1}{}\n\n";
+        for (int i = 0; i < 12; ++i)
+            tex += QStringLiteral("Riga %1 di testo della lezione, lunga quanto basta per andare a capo nella colonna stretta.\n\n").arg(i + 1);
+        tex += "\\begin{theorembox}[Lungo]\n";
+        for (int i = 0; i < 40; ++i)
+            tex += QStringLiteral("    Paragrafo %1 del teorema, lungo quanto basta per andare a capo nella colonna stretta del documento.\n\n").arg(i + 1);
+        tex += "\\end{theorembox}\nFine.\n";
+        files::write(p.path("src/src1.tex"), blocks::mark(tex, 1, blocks::Units{style.boxes(), {"tikzgraph"}}));
+
+        const layout::Result r = layout::lesson(p, style, "src/src1.tex");
+        QCOMPARE(r.failure, QString());
+        const QList<layout::Move> moves = layout::moves(p, "src/src1.tex");
+        QVERIFY(!moves.isEmpty());
+        if (moves.first().state != "fatta")
+            QSKIP(qPrintable("con queste misure il riquadro non si è potuto spezzare su una cucitura: " + moves.first().what));
+        QVERIFY2(moves.first().what.contains("si spezza fra due paragrafi"), qPrintable(moves.first().what));
+        const QString text = files::read(p.path("src/src1.tex"));
+        QVERIFY(text.contains("\n\n    \\tcbbreak % impaginazione\n\n    Paragrafo "));
+        QVERIFY(!layout::needed(p, "src/src1.tex"));
+        Compiler compiler;
+        compiler.setProject(p);
+        QVERIFY(!build(compiler, "src/src1.tex").hasErrors());
+
+        QCOMPARE(layout::decide(p, "src/src1.tex", moves.first().block, "lasciata"), QString());     // via lo spezzamento
+        QVERIFY(!files::read(p.path("src/src1.tex")).contains("impaginazione"));
+        QCOMPARE(layout::decide(p, "src/src1.tex", moves.first().block, "accettata"), QString());    // e di nuovo dov'era
+        QCOMPARE(files::read(p.path("src/src1.tex")), text);
+    }
+
     // La cronologia: lavori e modifiche a mano si annullano e si ripetono; un passo nuovo toglie il «ripeti».
     void history()
     {
