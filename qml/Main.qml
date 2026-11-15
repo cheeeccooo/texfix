@@ -191,7 +191,7 @@ ApplicationWindow {
         id: materialDialog
         title: "Aggiungi materiale"
         fileMode: FileDialog.OpenFiles
-        onAccepted: Workspace.addSources(Workspace.localPaths(selectedFiles))
+        onAccepted: Workspace.sortMaterial(Workspace.addSources(Workspace.localPaths(selectedFiles)))
     }
     FileDialog {
         id: sourcesDialog

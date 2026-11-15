@@ -15,6 +15,7 @@
 #include "core/Project.h"
 #include "core/Rules.h"
 #include "core/Settings.h"
+#include "core/Sort.h"
 #include "core/Style.h"
 #include "core/StyleSwitch.h"
 #include "core/SyncTex.h"
@@ -659,6 +660,69 @@ private slots:
         QCOMPARE(newlesson::nextNumber(p), 4);
         QVERIFY(agent::call(p, Style::classic(), "chiudi_lezione", {{"lezione", "src/src1.tex"}}, nullptr, &error).contains("già tutto a posto"));
         QVERIFY(newlesson::fuseMessage("src/src2.tex", 4, "02/10/2026", {"fonti/coda/a.pdf", "fonti/coda/b.md"}).contains("\\lezione{4}{02/10/2026}"));
+    }
+
+    // Aggiungi materiale: il piano che divide il materiale fra lezioni nuove e da completare; «Avvia» prepara le fonti.
+    void sortMaterial()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        files::write(p.path("src/src1.tex"), "\\section{Limiti}\n\\lezione{1}{01/10/2026}\n\\subsection{Definizione}\n");
+        files::write(p.path("fonti/coda/A.md"), "Serie numeriche.\n");
+        files::write(p.path("fonti/coda/B.md"), "Ancora limiti.\n");
+        const QJsonObject answer{{"groups", QJsonArray{
+            QJsonObject{{"dest", "new"}, {"date", "03/10/2026"}, {"title", "Serie"}, {"why", "argomento nuovo"}, {"pieces", QJsonArray{QJsonObject{{"file", "A.md"}, {"from", 1}, {"to", 1}}}}},
+            QJsonObject{{"dest", "lesson"}, {"lesson", 1}, {"why", "stesso argomento"}, {"pieces", QJsonArray{QJsonObject{{"file", "B.md"}, {"from", 1}, {"to", 1}}}}}}}};
+        const QJsonObject line{{"type", "result"}, {"result", QString::fromUtf8(QJsonDocument(answer).toJson())}, {"total_cost_usd", 0.02}};
+        files::writeBytes(dir.filePath("risposta.json"), QJsonDocument(line).toJson(QJsonDocument::Compact) + '\n');
+        files::write(dir.filePath("claude"), QString("#!/bin/sh\ncat > '%1/richiesta'\ncat '%1/risposta.json'\n").arg(dir.path()));
+        QFile(dir.filePath("claude")).setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
+
+        JobControl control;
+        sort::Outcome o = sort::plan(p, Settings(), {"fonti/coda/A.md", "fonti/coda/B.md"}, &control);
+        QCOMPARE(o.failure, QString());
+        QCOMPARE(o.cost, 0.02);
+        QVERIFY(files::read(dir.filePath("richiesta")).contains("lecture 1, date 01/10/2026"));
+        QJsonObject plan = plans::load(p, o.plan);
+        QCOMPARE(plan.value("tipo").toString(), "materiale");
+        const QJsonArray sections = plan.value("sezioni").toArray();
+        QCOMPARE(sections.size(), 2);
+        QCOMPARE(sections[0].toObject().value("titolo").toString(), "Lezione nuova · Serie · lezione del 03/10/2026 — argomento nuovo");
+        QCOMPARE(sections[1].toObject().value("titolo").toString(), "Lezione 1 · Limiti: da completare — stesso argomento");
+        QCOMPARE(sections[0].toObject().value("voci").toArray().first().toObject().value("testo").toString(), "A.md");
+
+        // «Avvia»: la lezione nuova si converte con numero e data, quella da completare va all'agente
+        sort::Prepared prepared = sort::prepare(p, plan);
+        QCOMPARE(prepared.failure, QString());
+        QCOMPARE(prepared.sources, QStringList{"fonti/coda/A.md"});
+        QCOMPARE(prepared.wanted.value("fonti/coda/A.md").number, 2);
+        QCOMPARE(prepared.wanted.value("fonti/coda/A.md").date, "03/10/2026");
+        QCOMPARE(prepared.agent.size(), 1);
+        QVERIFY(prepared.agent.first().startsWith("Integra in `src/src1.tex` queste fonti nuove: fonti/coda/B.md."));
+
+        // un'istruzione sotto una voce: la lezione nuova passa dall'agente, e il piano di prima la porta al modello
+        QJsonArray edited = sections;
+        QJsonObject first = edited[0].toObject();
+        QJsonArray entries = first.value("voci").toArray();
+        QJsonObject entry = entries[0].toObject();
+        entry["nota"] = "è la lezione del 4 ottobre";
+        entries[0] = entry;
+        first["voci"] = entries;
+        edited[0] = first;
+        plan["sezioni"] = edited;
+        prepared = sort::prepare(p, plan);
+        QVERIFY(prepared.sources.isEmpty());
+        QCOMPARE(prepared.agent.size(), 2);
+        QVERIFY(prepared.agent.first().contains("Istruzioni dell'utente: A.md: è la lezione del 4 ottobre"));
+        QVERIFY(sort::previousPlan(plan).contains("- A.md pages 1-1 — USER: è la lezione del 4 ottobre"));
+        o = sort::plan(p, Settings(), {"fonti/coda/A.md", "fonti/coda/B.md"}, &control, sort::previousPlan(plan));
+        QVERIFY(files::read(dir.filePath("richiesta")).contains("YOUR PREVIOUS PLAN, WITH THE USER'S INSTRUCTIONS"));
+        qunsetenv("TEXFIX_CLAUDE");
     }
 
     // La cronologia: lavori e modifiche a mano si annullano e si ripetono; un passo nuovo toglie il «ripeti».

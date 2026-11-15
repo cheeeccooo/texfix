@@ -33,6 +33,7 @@ qt_add_library(texfix_core STATIC
     src/core/AgentTools.cpp
     src/core/Plans.cpp
     src/core/NewLesson.cpp
+    src/core/Sort.cpp
 )
 # Le regole editoriali predefinite entrano nel motore come :/regole/…
 file(GLOB_RECURSE RULE_FILES CONFIGURE_DEPENDS RELATIVE ${CMAKE_SOURCE_DIR} regole/*.md)

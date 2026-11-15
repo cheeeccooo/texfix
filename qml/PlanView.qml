@@ -176,6 +176,13 @@ Rectangle {
                     primary: true
                     enabled: !Workspace.busy
                     onClicked: {
+                        if (root.plan.tipo === "materiale") {     // un piano di Texfix, non dell'agente
+                            if (root.instructions)
+                                Workspace.reviseSortPlan(root.planId)
+                            else
+                                Workspace.startSortPlan(root.planId)
+                            return root.closeAsked()
+                        }
                         root.chatAsked()
                         Chat.send(Workspace.planMessage(root.planId, root.instructions ? "rivedi" : "avvia"))
                         if (root.instructions)

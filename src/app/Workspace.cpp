@@ -9,6 +9,7 @@
 #include "core/Plans.h"
 #include "core/Review.h"
 #include "core/Rules.h"
+#include "core/Sort.h"
 #include "core/StyleSwitch.h"
 #include "core/SyncTex.h"
 
@@ -20,6 +21,7 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QDate>
+#include <QJsonArray>
 #include <QRegularExpression>
 #include <QTime>
 #include <QUrl>
@@ -48,6 +50,7 @@ Workspace::Workspace()
 
     connect(this, &Workspace::compilingChanged, this, &Workspace::busyChanged);
     connect(this, &Workspace::jobChanged, this, &Workspace::busyChanged);
+    connect(this, &Workspace::busyChanged, this, &Workspace::nextProcedure, Qt::QueuedConnection);
     connect(&m_compiler, &Compiler::started, this, [this] {
         m_progress = 0;
         m_progressLabel.clear();
@@ -1030,12 +1033,14 @@ void Workspace::discardPlan(const QString &id)
 {
     plans::discard(m_project, id);
     refreshTree();
+    nextProcedure();
 }
 
 void Workspace::archivePlan(const QString &id)
 {
     const QString file = plans::archive(m_project, id);
     refreshTree();
+    nextProcedure();
     if (!file.isEmpty())
         say(QStringLiteral("Archiviato fra gli esiti: %1.").arg(QFileInfo(file).completeBaseName()));
 }
@@ -1102,4 +1107,63 @@ void Workspace::integrateSources(const QString &lesson, const QStringList &paths
     const QStringList sources = addSources(paths);
     if (!sources.isEmpty())
         emit agentAsked(newlesson::integrateMessage(lesson, sources));
+}
+
+void Workspace::sortMaterial(const QStringList &sources) { sortJob(sources, {}, {}); }
+
+void Workspace::reviseSortPlan(const QString &id)
+{
+    const QJsonObject plan = plans::load(m_project, id);
+    QStringList sources;
+    for (const QJsonValue &f : plan.value("file").toArray())
+        sources << f.toString();
+    sortJob(sources, sort::previousPlan(plan), id);
+}
+
+void Workspace::sortJob(const QStringList &sources, const QString &previous, const QString &replaces)
+{
+    if (!hasProject() || sources.isEmpty())
+        return;
+    if (busy())
+        return say(QStringLiteral("C'è già un lavoro in corso."));
+    startJob(QStringLiteral("Smisto il materiale"), [this, sources, previous, replaces, project = m_project, settings = m_settings](JobControl *control) {
+        const sort::Outcome outcome = sort::plan(project, settings, sources, control, previous);
+        return std::function<void()>([this, outcome, replaces, project] {
+            if (outcome.plan.isEmpty())
+                return say(outcome.failure.isEmpty() ? QStringLiteral("Non sono riuscito a fare il piano.") : outcome.failure);
+            plans::discard(project, replaces);         // il piano rifatto prende il posto di quello di prima
+            refreshTree();
+            say(QStringLiteral("Piano del materiale pronto. Costo: %1 $.").arg(QLocale(QLocale::Italian).toString(outcome.cost, 'f', 2)));
+            emit planReady(outcome.plan);
+        });
+    });
+}
+
+void Workspace::startSortPlan(const QString &id)
+{
+    if (busy())
+        return say(QStringLiteral("C'è già un lavoro in corso."));
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    const sort::Prepared prepared = sort::prepare(m_project, plans::load(m_project, id));
+    if (!prepared.failure.isEmpty())
+        return say(prepared.failure);
+    plans::discard(m_project, id);                     // il piano è eseguito da Texfix: l'esito è quello di Converti
+    m_agentQueue += prepared.agent;
+    refreshTree();
+    if (!prepared.sources.isEmpty())
+        convert(prepared.sources, prepared.wanted);    // le lezioni semplici, tutte insieme; poi le procedure dell'agente
+    else
+        nextProcedure();
+    if (prepared.sources.isEmpty() && prepared.agent.isEmpty())
+        say(QStringLiteral("Nel piano non c'è niente da fare."));
+}
+
+void Workspace::nextProcedure()
+{
+    if (m_agentQueue.isEmpty() || busy() || !hasProject())
+        return;
+    for (const plans::Info &info : plans::open(m_project))
+        if (info.state != "esito")
+            return;                                    // una procedura aspetta che il piano aperto sia deciso ed eseguito
+    emit agentAsked(m_agentQueue.takeFirst());
 }

@@ -166,6 +166,11 @@ Item {
                 Workspace.say(Workspace.createLesson(parseInt(a[0]), a[1], a.slice(2)))
             } else if (name === "nuova-lezione") {
                 root.newLessonAsked()
+            } else if (name === "materiale") {
+                Workspace.sortMaterial(Workspace.addSources(argument.split(" ")))
+            } else if (name === "avvia-materiale") {
+                if (Workspace.jobs.length > 0)
+                    Workspace.startSortPlan(Workspace.jobs[0].id)
             } else if (name === "avvisi") {
                 root.bottomOpen = true
             } else if (name === "progetto") {

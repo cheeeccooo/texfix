@@ -121,7 +121,7 @@ Rectangle {
     // i file trascinati sull'albero entrano fra le fonti da convertire
     DropArea {
         anchors.fill: parent
-        onDropped: drop => { if (drop.hasUrls) Workspace.addSources(Workspace.localPaths(drop.urls)) }
+        onDropped: drop => { if (drop.hasUrls) Workspace.sortMaterial(Workspace.addSources(Workspace.localPaths(drop.urls))) }
     }
 
     TxScroll {

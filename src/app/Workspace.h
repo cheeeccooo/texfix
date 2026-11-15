@@ -172,6 +172,13 @@ public:
     Q_INVOKABLE void integrateSources(const QString &lesson, const QStringList &paths);
     Q_INVOKABLE static QStringList localPaths(const QList<QUrl> &urls);
 
+    // Lo smistamento del materiale (Aggiungi materiale): un piano che fa Texfix, tipo «materiale». sortMaterial lo
+    // prepara (un lavoro); startSortPlan divide i pezzi e fa partire le lezioni: quelle semplici si convertono, le altre
+    // passano dall'agente una alla volta; reviseSortPlan lo rifà con le istruzioni dell'utente.
+    Q_INVOKABLE void sortMaterial(const QStringList &sources);
+    Q_INVOKABLE void startSortPlan(const QString &id);
+    Q_INVOKABLE void reviseSortPlan(const QString &id);
+
     // Converti. Le fonti di «Da convertire»: file, name, detail, convertible; la stima del costo in dollari.
     // convert le fa diventare lezioni (un passo solo della cronologia), poi compila il documento; alla fine
     // outcomeReady con title, lines, cost, minutes. resume riprende un lavoro interrotto senza rifare ciò che è fatto.
@@ -248,6 +255,8 @@ private:
     void startJob(const QString &title, std::function<std::function<void()>(tx::JobControl *)> work);
     void convertFinished(const tx::Convert::Result &result);
     void decided(const QString &lesson, const QString &title, const QString &error);
+    void sortJob(const QStringList &sources, const QString &previous, const QString &replaces);
+    void nextProcedure();                              // la prossima procedura dell'agente in coda, se niente lavora
     void loadSettings();                               // impostazioni e stile, dal disco
 
     tx::Project m_project;
@@ -261,6 +270,7 @@ private:
     double m_jobProgress = 0;
     bool m_agentRunning = false;
     QStringList m_jobLog;
+    QStringList m_agentQueue;                          // procedure dell'agente che aspettano il loro turno
     QFileSystemWatcher m_watcher;
     QTimer m_refresh;                                  // più cambiamenti vicini, un aggiornamento solo
     QVariantList m_jobs, m_lessons, m_documentFiles, m_queue, m_documents, m_images, m_issues;

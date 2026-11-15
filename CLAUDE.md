@@ -53,6 +53,7 @@ Due parti, un processo solo.
 | `core/AgentTools` | gli strumenti che l'app dà all'agente (`stato_progetto`, `compila_lezione`, `compila_documento`, `dubbi`, `impagina`), il protocollo a righe (MCP) e il prompt di sistema dell'agente |
 | `core/Plans` | i lavori con un piano: `salvataggi/lavori/<nome>/piano.json` (voci con spunta e istruzioni, domande, commento, esito); l'agente consegna piano ed esito con gli strumenti `consegna_piano` e `consegna_esito`; l'archivio in `salvataggi/esiti/` |
 | `core/NewLesson` | numero e data proposti o letti dai nomi e dal testo delle fonti (senza modello); i file portati in `fonti/coda`; `settle` chiude una lezione scritta dall'agente (documento, marcatori, fonti usate: lo strumento `chiudi_lezione`); i messaggi delle procedure di fusione e integrazione |
+| `core/Sort` | Aggiungi materiale: data e argomento di ogni pagina (una chiamata per file, tenuta in `build/lavori/smistamento/`), poi una chiamata con le lezioni del corso; il piano (tipo «materiale») e `prepare`, che divide i PDF in pezzi e dice che cosa si converte e che cosa passa dall'agente |
 | `app/Chat` | la chat: il CLI `claude` chiuso nel progetto (file sì, shell no, nessuna impostazione dell'utente), messaggi in streaming, strumenti eseguiti dal motore in un thread; `Texfix --strumenti <nome>` è il passacarte fra il CLI e il programma, su un canale locale; storico in `salvataggi/chat/` |
 | `app/Workspace` | il progetto aperto per la finestra (singleton QML): lezioni con lo stato, avvisi, PDF, compilazione |
 | `app/Theme` | l'unico posto con colori e misure (singleton QML); chiaro e scuro col sistema, `TEXFIX_TEMA=chiaro\|scuro` |
@@ -104,7 +105,7 @@ rileggere gli editor senza modifiche in sospeso; una rilettura svuota la pila de
 
 `--gesti`, separati da «;»: `apri FILE [RIGA]`, `compila`, `tutto`, `salta` (⌘J), `sorgente PAGINA X Y`, `divisore 0|1|2`,
 `avvisi`, `progetto chiuso`, `annulla`, `ripeti`, `passo TITOLO`, `scrivi FILE TESTO`, `fatta FILE`, `impostazioni`,
-`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `converti` (tutta la coda), `converti finestra`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `lezione N DATA FILE…` (crea una lezione), `nuova-lezione` (apre la finestra). Ogni gesto parte quando niente lavora; poi la foto.
+`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `converti` (tutta la coda), `converti finestra`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `lezione N DATA FILE…` (crea una lezione), `nuova-lezione` (apre la finestra), `materiale FILE…` (fa il piano dello smistamento), `avvia-materiale`. Ogni gesto parte quando niente lavora; poi la foto.
 
 ## Regole e stile (SPEC §4)
 
@@ -154,10 +155,12 @@ Manca: allegati e screenshot, ⌘L, lo storico con elimina, le procedure dei tas
 Di §3.4 c'è: «＋ Nuova lezione» (`qml/NewLessonSheet.qml`): numero e data proposti, «Prendi dal file», l'avviso se le
 fonti dicono altro (un secondo clic tiene i valori), una fonte → Converti con numero e data scelti (e un dubbio sulla
 riga `\lezione` se la scansione dice altro), più fonti → l'agente le fonde con un piano; «Aggiungi fonti a questa
-lezione…» nel menu della lezione. Di §3.5 c'è solo «＋ Aggiungi materiale» e il trascinamento sull'albero, che portano
-i file fra le fonti da convertire.
+lezione…» nel menu della lezione. Di §3.5 c'è: «＋ Aggiungi materiale» e il trascinamento sull'albero portano i file in coda e fanno il piano dello
+smistamento (`Workspace::sortMaterial`); «Avvia» (`startSortPlan`) converte insieme le lezioni nuove fatte di un file
+solo e senza istruzioni, e mette in coda le procedure dell'agente per il resto (`m_agentQueue`, una alla volta, quando
+niente lavora e nessun piano è aperto); «Rivedi piano» rifà solo l'ultima chiamata.
 Manca: le miniature delle fonti, la chiamata leggera che dice se più fonti si sovrappongono (oggi vanno sempre
-all'agente), le versioni delle fonti, lo smistamento del materiale fra lezioni con il suo piano.
+all'agente), le versioni delle fonti, «Smista in lezioni» sul gruppo Da convertire.
 
-Da fare, nell'ordine previsto: lo smistamento (§3.5); il resto dell'impaginazione; i piani dei lavori (§3.12); agente e chat con
+Da fare, nell'ordine previsto: il resto dell'impaginazione; i piani dei lavori (§3.12); agente e chat con
 strumenti (§3.13); Riorganizza; Version control; menu contestuale dei file.
