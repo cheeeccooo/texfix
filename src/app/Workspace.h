@@ -179,6 +179,18 @@ public:
     Q_INVOKABLE void startSortPlan(const QString &id);
     Q_INVOKABLE void reviseSortPlan(const QString &id);
 
+    // Version control: lo usa solo l'utente. changeCount: quante modifiche non salvate (nel titolo della linguetta).
+    Q_PROPERTY(int changeCount READ changeCount NOTIFY treeChanged)
+    Q_PROPERTY(bool hasRepository READ hasRepository NOTIFY treeChanged)
+public:
+    int changeCount() const { return m_changeCount; }
+    bool hasRepository() const;
+    Q_INVOKABLE QVariantList gitChanges() const;                           // file, state
+    Q_INVOKABLE QVariantList gitLog() const;                               // hash, when, subject
+    Q_INVOKABLE QString gitDiff(const QString &what) const;                // «diff:<file>» o «commit:<hash>»
+    Q_INVOKABLE QString gitCommit(const QString &message);                 // vuoto se è andata
+    Q_INVOKABLE void gitInit();
+
     // Converti. Le fonti di «Da convertire»: file, name, detail, convertible; la stima del costo in dollari.
     // convert le fa diventare lezioni (un passo solo della cronologia), poi compila il documento; alla fine
     // outcomeReady con title, lines, cost, minutes. resume riprende un lavoro interrotto senza rifare ciò che è fatto.
@@ -278,5 +290,5 @@ private:
     QHash<QString, QString> m_details;
     double m_progress = 0;
     QString m_progressLabel, m_pdf;
-    int m_errorCount = 0, m_openDoubts = 0, m_openDeclared = 0, m_openFigures = 0, m_openLayout = 0;
+    int m_errorCount = 0, m_openDoubts = 0, m_openDeclared = 0, m_openFigures = 0, m_openLayout = 0, m_changeCount = 0;
 };

@@ -9,6 +9,7 @@ Item {
     property bool leftOpen: true
     property bool bottomOpen: false
     property bool chatOpen: false
+    property int leftTab: 0
     signal convertAsked()
     signal newLessonAsked()
     signal materialAsked()
@@ -171,6 +172,8 @@ Item {
             } else if (name === "avvia-materiale") {
                 if (Workspace.jobs.length > 0)
                     Workspace.startSortPlan(Workspace.jobs[0].id)
+            } else if (name === "versioni") {
+                root.leftTab = 1
             } else if (name === "avvisi") {
                 root.bottomOpen = true
             } else if (name === "progetto") {
@@ -234,16 +237,49 @@ Item {
             orientation: Qt.Horizontal
             handle: Handle {}
 
-            ProjectPanel {
+            // a sinistra un pannello solo, con due linguette: Progetto e Version control
+            ColumnLayout {
                 visible: root.leftOpen
                 SplitView.preferredWidth: 270
                 SplitView.minimumWidth: 200
                 SplitView.maximumWidth: Math.max(200, root.width / 2)
+                spacing: 0
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: Theme.rowHeight + 4
+                    color: Theme.window
+                    Row {
+                        anchors.fill: parent
+                        Repeater {
+                            model: ["Progetto", "Version control" + (Workspace.changeCount > 0 ? "  " + Workspace.changeCount : "")]
+                            Rectangle {
+                                required property string modelData
+                                required property int index
+                                width: parent.width / 2
+                                height: parent.height
+                                color: root.leftTab === index ? Theme.panel : "transparent"
+                                TxLabel { anchors.fill: parent; anchors.leftMargin: 6; anchors.rightMargin: 6; horizontalAlignment: Text.AlignHCenter; text: modelData; color: root.leftTab === index ? Theme.text : Theme.textMuted; font.pixelSize: Theme.smallSize + 1 }
+                                MouseArea { anchors.fill: parent; onClicked: root.leftTab = index }
+                            }
+                        }
+                    }
+                }
+                GitPanel {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    visible: root.leftTab === 1
+                    onOpened: what => root.openFile(what)
+                }
+            ProjectPanel {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                visible: root.leftTab === 0
                 currentFile: editor.currentFile
                 onFileChosen: file => root.openFile(file)
                 onNewLessonAsked: root.newLessonAsked()
                 onMaterialAsked: root.materialAsked()
                 onSourcesAsked: lesson => root.sourcesAsked(lesson)
+            }
             }
             SplitView {
                 SplitView.fillWidth: true

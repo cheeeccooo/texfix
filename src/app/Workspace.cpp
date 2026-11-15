@@ -3,6 +3,7 @@
 #include "core/Figures.h"
 #include "core/Files.h"
 #include "core/Fix.h"
+#include "core/Git.h"
 #include "core/Layout.h"
 #include "core/NewLesson.h"
 #include "core/Pages.h"
@@ -255,11 +256,14 @@ void Workspace::refreshTree()
         });
         return out;
     };
+    const int changeCount = int(git::changes(m_project).size());
+    const bool gitChanged = changeCount != m_changeCount;
+    m_changeCount = changeCount;
     QVariantList jobs;
     for (const plans::Info &info : plans::open(m_project))
         jobs << QVariantMap{{"id", info.id}, {"title", info.title}, {"state", info.state}};
     const QVariantList queue = listing("fonti/coda"), documents = listing("docs"), images = listing("imgs");
-    if (jobs != m_jobs || lessons != m_lessons || others != m_documentFiles || queue != m_queue || documents != m_documents || images != m_images) {
+    if (gitChanged || jobs != m_jobs || lessons != m_lessons || others != m_documentFiles || queue != m_queue || documents != m_documents || images != m_images) {
         m_jobs = jobs;
         m_lessons = lessons;
         m_documentFiles = others;
@@ -1166,4 +1170,44 @@ void Workspace::nextProcedure()
         if (info.state != "esito")
             return;                                    // una procedura aspetta che il piano aperto sia deciso ed eseguito
     emit agentAsked(m_agentQueue.takeFirst());
+}
+
+bool Workspace::hasRepository() const { return hasProject() && git::hasRepository(m_project); }
+
+QVariantList Workspace::gitChanges() const
+{
+    QVariantList out;
+    for (const git::Change &c : git::changes(m_project))
+        out << QVariantMap{{"file", c.file}, {"state", c.state}};
+    return out;
+}
+
+QVariantList Workspace::gitLog() const
+{
+    QVariantList out;
+    for (const git::Entry &e : git::log(m_project))
+        out << QVariantMap{{"hash", e.hash}, {"when", e.when}, {"subject", e.subject}};
+    return out;
+}
+
+QString Workspace::gitDiff(const QString &what) const
+{
+    return what.startsWith("commit:") ? git::show(m_project, what.mid(7)) : git::diff(m_project, what.mid(5));
+}
+
+QString Workspace::gitCommit(const QString &message)
+{
+    const QString error = git::commit(m_project, message);
+    refreshTree();
+    emit treeChanged();
+    if (error.isEmpty())
+        say(QStringLiteral("Commit fatto."));
+    return error;
+}
+
+void Workspace::gitInit()
+{
+    git::init(m_project);
+    refreshTree();
+    emit treeChanged();
 }

@@ -54,6 +54,7 @@ Due parti, un processo solo.
 | `core/Plans` | i lavori con un piano: `salvataggi/lavori/<nome>/piano.json` (voci con spunta e istruzioni, domande, commento, esito); l'agente consegna piano ed esito con gli strumenti `consegna_piano` e `consegna_esito`; l'archivio in `salvataggi/esiti/` |
 | `core/NewLesson` | numero e data proposti o letti dai nomi e dal testo delle fonti (senza modello); i file portati in `fonti/coda`; `settle` chiude una lezione scritta dall'agente (documento, marcatori, fonti usate: lo strumento `chiudi_lezione`); i messaggi delle procedure di fusione e integrazione |
 | `core/Sort` | Aggiungi materiale: data e argomento di ogni pagina (una chiamata per file, tenuta in `build/lavori/smistamento/`), poi una chiamata con le lezioni del corso; il piano (tipo «materiale») e `prepare`, che divide i PDF in pezzi e dice che cosa si converte e che cosa passa dall'agente |
+| `core/Git` | il version control dell'utente: modifiche, differenze, commit di tutto, cronologia (chiama `git`) |
 | `app/Chat` | la chat: il CLI `claude` chiuso nel progetto (file sì, shell no, nessuna impostazione dell'utente), messaggi in streaming, strumenti eseguiti dal motore in un thread; `Texfix --strumenti <nome>` è il passacarte fra il CLI e il programma, su un canale locale; storico in `salvataggi/chat/` |
 | `app/Workspace` | il progetto aperto per la finestra (singleton QML): lezioni con lo stato, avvisi, PDF, compilazione |
 | `app/Theme` | l'unico posto con colori e misure (singleton QML); chiaro e scuro col sistema, `TEXFIX_TEMA=chiaro\|scuro` |
@@ -105,7 +106,7 @@ rileggere gli editor senza modifiche in sospeso; una rilettura svuota la pila de
 
 `--gesti`, separati da «;»: `apri FILE [RIGA]`, `compila`, `tutto`, `salta` (⌘J), `sorgente PAGINA X Y`, `divisore 0|1|2`,
 `avvisi`, `progetto chiuso`, `annulla`, `ripeti`, `passo TITOLO`, `scrivi FILE TESTO`, `fatta FILE`, `impostazioni`,
-`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `converti` (tutta la coda), `converti finestra`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `lezione N DATA FILE…` (crea una lezione), `nuova-lezione` (apre la finestra), `materiale FILE…` (fa il piano dello smistamento), `avvia-materiale`. Ogni gesto parte quando niente lavora; poi la foto.
+`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `converti` (tutta la coda), `converti finestra`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `lezione N DATA FILE…` (crea una lezione), `nuova-lezione` (apre la finestra), `materiale FILE…` (fa il piano dello smistamento), `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`. Ogni gesto parte quando niente lavora; poi la foto.
 
 ## Regole e stile (SPEC §4)
 
@@ -161,6 +162,10 @@ solo e senza istruzioni, e mette in coda le procedure dell'agente per il resto (
 niente lavora e nessun piano è aperto); «Rivedi piano» rifà solo l'ultima chiamata.
 Manca: le miniature delle fonti, la chiamata leggera che dice se più fonti si sovrappongono (oggi vanno sempre
 all'agente), le versioni delle fonti, «Smista in lezioni» sul gruppo Da convertire.
+
+§3.16: a sinistra due linguette, Progetto e Version control con il numero delle modifiche (`qml/GitPanel.qml`):
+Inizializza, commit di tutto con conferma, cronologia; un clic apre le differenze in una scheda (`qml/DiffView.qml`).
+Manca: le differenze affiancate (oggi righe rosse e verdi in colonna), scegliere quali file mettere nel commit.
 
 Da fare, nell'ordine previsto: il resto dell'impaginazione; i piani dei lavori (§3.12); agente e chat con
 strumenti (§3.13); Riorganizza; Version control; menu contestuale dei file.

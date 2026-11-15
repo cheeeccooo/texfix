@@ -34,6 +34,7 @@ qt_add_library(texfix_core STATIC
     src/core/Plans.cpp
     src/core/NewLesson.cpp
     src/core/Sort.cpp
+    src/core/Git.cpp
 )
 # Le regole editoriali predefinite entrano nel motore come :/regole/…
 file(GLOB_RECURSE RULE_FILES CONFIGURE_DEPENDS RELATIVE ${CMAKE_SOURCE_DIR} regole/*.md)
@@ -78,6 +79,8 @@ qt_add_qml_module(texfix
         qml/ChatPane.qml
         qml/PlanView.qml
         qml/NewLessonSheet.qml
+        qml/GitPanel.qml
+        qml/DiffView.qml
     SOURCES
         src/app/Theme.h src/app/Theme.cpp
         src/app/Workspace.h src/app/Workspace.cpp

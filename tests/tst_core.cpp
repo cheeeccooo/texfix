@@ -10,6 +10,7 @@
 #include "core/Figures.h"
 #include "core/Files.h"
 #include "core/Fix.h"
+#include "core/Git.h"
 #include "core/History.h"
 #include "core/Layout.h"
 #include "core/Project.h"
@@ -723,6 +724,37 @@ private slots:
         o = sort::plan(p, Settings(), {"fonti/coda/A.md", "fonti/coda/B.md"}, &control, sort::previousPlan(plan));
         QVERIFY(files::read(dir.filePath("richiesta")).contains("YOUR PREVIOUS PLAN, WITH THE USER'S INSTRUCTIONS"));
         qunsetenv("TEXFIX_CLAUDE");
+    }
+
+    // Version control: modifiche, differenze, commit, cronologia.
+    void versionControl()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QVERIFY(git::hasRepository(p));
+        tools::run("git", {"config", "user.name", "Prova"}, root);
+        tools::run("git", {"config", "user.email", "prova@example.com"}, root);
+        QVERIFY(!git::changes(p).isEmpty());                                           // un progetto nuovo: tutto da salvare
+        QVERIFY(!git::commit(p, "  ").isEmpty());
+        QCOMPARE(git::commit(p, "Progetto nuovo"), QString());
+        QVERIFY(git::changes(p).isEmpty());
+        files::write(p.path("src/lezione nuova.tex"), "ciao\n");
+        files::write(p.path("main.tex"), files::read(p.path("main.tex")) + "% fine\n");
+        const QList<git::Change> changes = git::changes(p);
+        QCOMPARE(changes.size(), 2);
+        QCOMPARE(changes[0].file, "main.tex");
+        QCOMPARE(changes[0].state, "modificato");
+        QCOMPARE(changes[1].file, "src/lezione nuova.tex");
+        QCOMPARE(changes[1].state, "nuovo");
+        QVERIFY(git::diff(p, "main.tex").contains("+% fine"));
+        QVERIFY(git::diff(p, "src/lezione nuova.tex").contains("+ciao"));
+        QCOMPARE(git::commit(p, "Una lezione"), QString());
+        const QList<git::Entry> log = git::log(p);
+        QCOMPARE(log.size(), 2);
+        QCOMPARE(log[0].subject, "Una lezione");
+        QVERIFY(git::show(p, log[0].hash).contains("+ciao"));
     }
 
     // La cronologia: lavori e modifiche a mano si annullano e si ripetono; un passo nuovo toglie il «ripeti».

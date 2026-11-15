@@ -16,7 +16,7 @@ Rectangle {
 
     // Che cosa si apre in una scheda: text, pdf, image; il resto (vuoto) lo apre un altro programma.
     function kindOf(file) {
-        if (file.startsWith("rivedi:") || file.startsWith("piano:"))
+        if (file.startsWith("rivedi:") || file.startsWith("piano:") || file.startsWith("diff:") || file.startsWith("commit:"))
             return "review"
         const name = file.substring(file.lastIndexOf("/") + 1).toLowerCase()
         const ext = name.includes(".") ? name.substring(name.lastIndexOf(".") + 1) : ""
@@ -120,7 +120,7 @@ Rectangle {
                         anchors.leftMargin: Theme.gap + 2
                         anchors.right: close.left
                         anchors.verticalCenter: parent.verticalCenter
-                        text: tab.file.startsWith("piano:") ? "Piano" : tab.file.startsWith("rivedi:") ? "Rivedi " + tab.file.substring(7) : tab.file.substring(tab.file.lastIndexOf("/") + 1)
+                        text: tab.file.startsWith("diff:") ? "± " + tab.file.substring(tab.file.lastIndexOf("/") + 1).replace("diff:", "") : tab.file.startsWith("commit:") ? "Commit " + tab.file.substring(7) : tab.file.startsWith("piano:") ? "Piano" : tab.file.startsWith("rivedi:") ? "Rivedi " + tab.file.substring(7) : tab.file.substring(tab.file.lastIndexOf("/") + 1)
                         color: tab.active ? Theme.text : Theme.textMuted
                     }
                     MouseArea { id: tabArea; anchors.fill: parent; hoverEnabled: true; onClicked: root.current = tab.index }
@@ -170,7 +170,9 @@ Rectangle {
                     readonly property int currentLine: kind === "text" && item ? item.currentLine : 0
 
                     Component.onCompleted: {
-                        if (file.startsWith("piano:"))
+                        if (file.startsWith("diff:") || file.startsWith("commit:"))
+                            setSource("DiffView.qml", { what: file })
+                        else if (file.startsWith("piano:"))
                             setSource("PlanView.qml", { planId: file.substring(6) })
                         else if (file === "rivedi:impaginazione")
                             setSource("LayoutView.qml", {})
