@@ -114,6 +114,7 @@ endif()
 enable_testing()
 qt_add_executable(texfix_tests tests/tst_core.cpp)
 target_link_libraries(texfix_tests PRIVATE texfix_core Qt6::Test)
+target_compile_definitions(texfix_tests PRIVATE TEXFIX_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME core COMMAND texfix_tests)
 
 # Le misure: i tempi di ciò che l'interfaccia rifà spesso, confrontati con quelli di riferimento (tests/misure.txt).

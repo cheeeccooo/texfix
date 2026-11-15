@@ -687,6 +687,29 @@ private slots:
                       "Un elenco lascia una voce sola"));
     }
 
+    // Le formule in display degli appunti veri (i casi di riferimento della vecchia app): spezzarne una non ne cambia
+    // mai il contenuto, e una buona parte si spezza.
+    void splitDisplayCorpus()
+    {
+        const QJsonArray cases = QJsonDocument::fromJson(files::read(QStringLiteral(TEXFIX_SOURCE_DIR "/tests/dati/display.json")).toUtf8()).array();
+        QVERIFY(cases.size() > 50);
+        static const QRegularExpression wrapper(R"(\\(?:begin|end)\{(?:align|multline)\*\}|\\\\|&|\s)");
+        int split = 0;
+        for (const QJsonValue &v : cases) {
+            const QString display = v.toString().trimmed();
+            if (!display.startsWith("\\[") || !display.endsWith("\\]"))
+                continue;
+            const QString content = display.mid(2, display.size() - 4);
+            const QString out = fix::splitDisplay(content);
+            if (out.isEmpty())
+                continue;
+            ++split;
+            QVERIFY2(QString(out).remove(wrapper) == QString(content).remove(wrapper), qPrintable(content + "\n→\n" + out));
+            QVERIFY(out.startsWith("\\begin{align*}") || out.startsWith("\\begin{multline*}"));
+        }
+        QVERIFY2(split > cases.size() / 4, qPrintable(QString::number(split)));
+    }
+
     // L'impaginazione oltre i riquadri spezzati: una figura che non ci stava ed è passata oltre lascia un grande vuoto.
     // Non c'è una mossa sicura: si segnala, e si decide a mano o con l'agente.
     void layoutHole()
