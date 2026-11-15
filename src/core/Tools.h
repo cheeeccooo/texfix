@@ -1,0 +1,32 @@
+#pragma once
+#include <QProcessEnvironment>
+#include <QString>
+
+class QProcess;
+
+// I programmi esterni (latexmk, git, claude) e i loro processi.
+namespace tx::tools {
+
+// Un programma lanciato dal Finder non ha TeX, Homebrew e claude nel PATH: questo ambiente sì.
+QProcessEnvironment environment();
+// Lo stesso PATH per il processo stesso: Qt cerca il programma da lanciare nel PATH di chi lancia.
+void adoptPath();
+
+// Il processo parte a capo di un gruppo suo, così `stopGroup` ferma lui e tutti i suoi figli
+// (pdflatex è figlio di latexmk).
+void ownGroup(QProcess &process);
+void stopGroup(qint64 pid);
+// Il processo non c'è più, o è finito e nessuno l'ha ancora raccolto.
+bool gone(qint64 pid);
+void reap(qint64 pid);
+
+}
+
+namespace tx::tools {
+// Un programma breve, aspettando che finisca: ciò che ha scritto, o niente se non è partito o non ha finito in tempo.
+struct Output {
+    bool ok = false;                       // partito, finito in tempo, uscita 0
+    QString text;
+};
+Output run(const QString &program, const QStringList &arguments, const QString &directory, int timeoutMs = 20000);
+}

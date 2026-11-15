@@ -1,0 +1,920 @@
+// Le prove del motore: senza finestre e senza modello. Ogni prova lavora in una cartella temporanea sua.
+#include "core/AgentTools.h"
+#include "core/Blocks.h"
+#include "core/Compiler.h"
+#include "core/Convert.h"
+#include "core/NewLesson.h"
+#include "core/Plans.h"
+#include "core/Prompts.h"
+#include "core/Review.h"
+#include "core/Figures.h"
+#include "core/Files.h"
+#include "core/Fix.h"
+#include "core/History.h"
+#include "core/Layout.h"
+#include "core/Project.h"
+#include "core/Rules.h"
+#include "core/Settings.h"
+#include "core/Style.h"
+#include "core/StyleSwitch.h"
+#include "core/SyncTex.h"
+#include "core/TexLog.h"
+#include "core/Tools.h"
+
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QSignalSpy>
+
+#include <future>
+#include <QStandardPaths>
+#include <QTemporaryDir>
+#include <QTest>
+
+using namespace tx;
+
+class CoreTests : public QObject {
+    Q_OBJECT
+
+    static bool hasLatexmk() { return !QStandardPaths::findExecutable("latexmk").isEmpty(); }
+
+    // compila e aspetta la fine
+    static BuildResult build(Compiler &compiler, const QString &lesson)
+    {
+        QSignalSpy done(&compiler, &Compiler::finished);
+        if (lesson.isEmpty())
+            compiler.compileDocument();
+        else
+            compiler.compileLesson(lesson);
+        if (done.isEmpty() && !done.wait(120000))
+            return {.failure = "non finisce"};
+        return done.first().first().value<BuildResult>();
+    }
+
+private slots:
+    void initTestCase() { tools::adoptPath(); }
+
+    void freeName()
+    {
+        QTemporaryDir dir;
+        const QString a = dir.filePath("appunti.pdf");
+        QCOMPARE(files::freeName(a), a);
+        QVERIFY(files::write(a, "x"));
+        QCOMPARE(files::freeName(a), dir.filePath("appunti (2).pdf"));
+        QVERIFY(files::write(dir.filePath("appunti (2).pdf"), "x"));
+        QCOMPARE(files::freeName(a), dir.filePath("appunti (3).pdf"));
+        QDir().mkpath(dir.filePath("v1.0"));
+        QCOMPARE(files::freeName(dir.filePath("v1.0")), dir.filePath("v1.0 (2)"));   // una cartella non ha estensione
+    }
+
+    void uncommentedLine()
+    {
+        QCOMPARE(uncommented(u"a % b").toString(), "a ");
+        QCOMPARE(uncommented(u"50\\% di a % b").toString(), "50\\% di a ");
+        QCOMPARE(uncommented(u"\\\\% b").toString(), "\\\\");
+        QCOMPARE(uncommented(u"niente").toString(), "niente");
+    }
+
+    void settings()
+    {
+        QTemporaryDir dir;
+        const Project p(dir.path());
+        p.complete();
+        Settings s = Settings::load(p);
+        QCOMPARE(s.quality, "bilanciata");                                             // i predefiniti
+        QCOMPARE(s.layout, "da_sola");
+        QVERIFY(s.setValue("qualita", "massima"));
+        QVERIFY(!s.setValue("qualita", "infinita"));
+        QVERIFY(!s.setValue("non_esiste", "x"));
+        s.rules = {"I vettori si scrivono con la freccia."};
+        s.setDone("src/src1.tex", true);
+        QVERIFY(s.save(p));
+        const Settings back = Settings::load(p);
+        QCOMPARE(back.quality, "massima");
+        QCOMPARE(back.rules, s.rules);
+        QVERIFY(back.isDone("src/src1.tex"));
+        QVERIFY(!back.isDone("src/src2.tex"));
+        QVERIFY(Project::isProject(dir.path()));
+        QCOMPARE(Settings::choices("scrittura").size(), 2);
+    }
+
+    // Le regole editoriali: predefinite, cambiate nelle Preferenze, riportate al predefinito; il progetto in fondo.
+    void editorialRules()
+    {
+        QTemporaryDir dir;
+        rules::setHome(dir.path());
+        QCOMPARE(rules::sections().size(), 8);
+        for (const rules::Section &s : rules::sections()) {
+            QVERIFY2(!s.text.isEmpty(), qPrintable(s.id));
+            QVERIFY(!s.custom);
+        }
+        QVERIFY(rules::setText("sorgente", "Indentazione: 2 spazi."));
+        QVERIFY(rules::section("sorgente").custom);
+        QCOMPARE(rules::section("sorgente").text, "Indentazione: 2 spazi.");
+        QVERIFY(!rules::setText("non_esiste", "x"));
+        const QString prompt = rules::forPrompt({"sorgente", "scrittura"}, {"Mai il passivo."});
+        QVERIFY(prompt.startsWith("## Stile del sorgente\n\nIndentazione: 2 spazi.\n\n## Come si scrive\n\n"));
+        QVERIFY(prompt.endsWith("## Regole di questo progetto\n\nValgono più di tutte le altre.\n\n- Mai il passivo."));
+        QVERIFY(rules::setText("sorgente", rules::defaultText("sorgente") + "\n"));   // uguale alla predefinita: non è più cambiata
+        QVERIFY(!rules::section("sorgente").custom);
+        rules::setText("sorgente", "x");
+        rules::reset("sorgente");
+        QCOMPARE(rules::section("sorgente").text, rules::defaultText("sorgente"));
+        rules::setHome({});
+    }
+
+    void style()
+    {
+        const Style classic = Style::classic();
+        QCOMPARE(classic.environmentFor("teorema"), "theorem");
+        QCOMPARE(classic.environmentFor("attenzione"), QString());
+        QVERIFY(classic.undecided().isEmpty());
+        QVERIFY(classic.forPrompt().contains("- Definizione: `definition`, titolo opzionale"));
+        QVERIFY(classic.forPrompt().contains("\\cref{etichetta}"));
+
+        const QString sty = "\\definecolor{defgreen}{RGB}{164,225,174} % \\newtcolorbox{finto}\n"
+                            "\\definecolor{warn}{HTML}{FF8800}\n"
+                            "\\newtcolorbox{definitionbox}[1][]{colframe=defgreen, breakable}\n"
+                            "\\newtcolorbox{achtungbox}{colframe=warn, unbreakable}\n"
+                            "\\newenvironment{sidenote}{\\par}{\\par}\n"
+                            "\\NewNoteBox{theorembox}{thm}{theorem}{Teorema}{x}\n"
+                            "\\newcommand\\R{\\mathbb{R}} \\newcommand{\\norm}[1]{\\lVert #1\\rVert}\n"
+                            "\\newcommand\\my@internal{x}\n\\NewDocumentCommand\\tagref{m}{#1}\n";
+        Style s = Style::scan("mio", sty);
+        QStringList names;
+        for (const Style::Environment &e : s.environments)
+            names << e.name + "=" + e.role;
+        QCOMPARE(names, (QStringList{"definitionbox=definizione", "achtungbox=attenzione", "sidenote=", "theorembox=teorema"}));
+        QCOMPARE(s.environment("definitionbox")->color, "#a4e1ae");
+        QCOMPARE(s.environment("achtungbox")->color, "#ff8800");
+        QVERIFY(!s.environment("achtungbox")->breaks);
+        QCOMPARE(s.undecided(), QStringList{"sidenote"});
+        QCOMPARE(s.macros.size(), 3);
+        QCOMPARE(s.macros[1].name, "\\norm");
+        QCOMPARE(s.references, "tag");
+
+        QTemporaryDir dir;
+        s.conventions = "Il fulcro va in evidenza.";
+        s.macros[0].meaning = "i reali";
+        QVERIFY(s.save(dir.filePath(Style::descriptionFile("mio"))));
+        bool ok = false;
+        QCOMPARE(Style::load(dir.filePath("mio.stile.json"), &ok), s);
+        QVERIFY(ok);
+        QVERIFY(s.forPrompt().contains("- `\\R`: i reali"));
+        QVERIFY(s.forPrompt().endsWith("Il fulcro va in evidenza."));
+        Style::load(dir.filePath("manca.json"), &ok);
+        QVERIFY(!ok);
+    }
+
+    // Importare uno stile e cambiare stile: le lezioni si riscrivono secondo i ruoli, e si torna indietro.
+    void switchStyle()
+    {
+        QTemporaryDir dir, outside;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/a.tex}\n\\end{document}"));
+        files::write(p.path("src/a.tex"), "\\begin{definition}[Norma]\nx, vedi \\cref{thm:a}\n\\end{definition}\n\\begin{remark}r\\end{remark}\n\\begin{align*}a\\end{align*}\n");
+        files::write(outside.filePath("mio.sty"),
+                     "\\ProvidesPackage{mio}\n\\RequirePackage{amsmath,amsthm,hyperref,cleveref}\n"
+                     "\\newtheorem{definitionbox}{Definizione}\n\\newtheorem{theorembox}{Teorema}\n\\newcommand\\tagref[1]{\\cref{#1}}\n");
+
+        QVERIFY(!styleswitch::import(p, outside.filePath("manca.sty")).error.isEmpty());
+        const styleswitch::Imported in = styleswitch::import(p, outside.filePath("mio.sty"));
+        QCOMPARE(in.error, QString());
+        QVERIFY(!in.described);
+        QVERIFY(QFileInfo::exists(p.path("mio.sty")));
+        QVERIFY(QFileInfo::exists(p.path("mio.stile.json")));
+        QCOMPARE(styleswitch::current(p).name, QString());                              // importare non cambia ancora lo stile
+
+        styleswitch::Outcome o = styleswitch::apply(p, "mio");
+        QCOMPARE(o.error, QString());
+        QCOMPARE(o.lessons, 1);
+        QCOMPARE(o.unmatched, QStringList{"remark"});                                  // «mio» non ha osservazioni
+        QCOMPARE(files::read(p.path("src/a.tex")),
+                 "\\begin{definitionbox}[Norma]\nx, vedi \\tagref{thm:a}\n\\end{definitionbox}\n\\begin{remark}r\\end{remark}\n\\begin{align*}a\\end{align*}\n");
+        QCOMPARE(styleswitch::current(p).name, "mio");
+        QVERIFY(files::read(p.path("texfix.sty")).contains("\\RequirePackage{mio}"));
+        QVERIFY(!files::read(p.path("texfix.sty")).contains("newtheorem"));
+
+        // la scelta dell'utente per ciò che non ha corrispondente; poi il ritorno a nessuno stile
+        files::write(p.path("src/a.tex"), "\\begin{definitionbox}d\\end{definitionbox}\n\\begin{theorembox}t\\end{theorembox}\n");
+        o = styleswitch::apply(p, {});
+        QCOMPARE(o.unmatched, QStringList());
+        QCOMPARE(files::read(p.path("src/a.tex")), "\\begin{definition}d\\end{definition}\n\\begin{theorem}t\\end{theorem}\n");
+        QVERIFY(files::read(p.path("texfix.sty")).contains("\\newtheorem{theorem}"));
+        files::write(p.path("src/a.tex"), "\\begin{remark}r\\end{remark}\n");
+        o = styleswitch::apply(p, "mio", {{"remark", "theorembox"}});
+        QCOMPARE(o.unmatched, QStringList());
+        QCOMPARE(files::read(p.path("src/a.tex")), "\\begin{theorembox}r\\end{theorembox}\n");
+        QVERIFY(!styleswitch::apply(p, "non_importato").error.isEmpty());
+
+        if (hasLatexmk()) {                                                            // con lo stile importato il documento compila
+            Compiler compiler;
+            compiler.setProject(p);
+            const BuildResult r = build(compiler, {});
+            QVERIFY2(!r.hasErrors(), qPrintable(r.issues.isEmpty() ? r.failure : r.issues.first().text));
+        }
+    }
+
+    // I marcatori dei blocchi: un riquadro, un tratto di testo, una figura con la didascalia; quelli che ci sono restano.
+    void blockMarkers()
+    {
+        const blocks::Units units{{"theorem", "definition"}, {"center"}};
+        const QString tex = "\\subsection{Uno}\nTesto prima,\nsu due righe.\n\n\\begin{definition}[Norma]\n    x\n    \\begin{itemize}\\item a\\end{itemize}\n\\end{definition}\n"
+                            "% @L3.7 · vecchio.pdf p.9\nAncora testo.\n\\begin{center}\n    \\imgslot{f01}{0.6}{d}\n\\end{center}\n\\caption{c}\n\\begin{align*}\na\n\\end{align*}\n";
+        const QList<blocks::Block> found = blocks::parse(tex, units);
+        QStringList kinds;
+        for (const blocks::Block &b : found)
+            kinds << QStringLiteral("%1:%2-%3").arg(b.kind).arg(b.line).arg(b.endLine);
+        QCOMPARE(kinds, (QStringList{"testo:2-3", "definition:5-8", "testo:10-10", "figura:11-14", "testo:15-17"}));
+        QCOMPARE(found[1].title, "Norma");
+        QCOMPARE(found[2].id, "L3.7");
+        QCOMPARE(found[2].pages(), QList<int>{9});
+        const QString marked = blocks::mark(tex, 3, units, [](const blocks::Block &b) { return b.kind == "figura" ? QString("a.pdf p.2") : QString(); });
+        QVERIFY(marked.contains("% @L3.8\nTesto prima,"));
+        QVERIFY(marked.contains("% @L3.9\n\\begin{definition}[Norma]"));
+        QVERIFY(marked.contains("% @L3.7 · vecchio.pdf p.9\nAncora testo."));
+        QVERIFY(marked.contains("% @L3.10 · a.pdf p.2\n\\begin{center}"));
+        QCOMPARE(blocks::mark(marked, 3, units), marked);                              // già tutti marcati: non cambia
+    }
+
+    // Converti con un finto modello: la lezione scritta, il documento, la fonte fra quelle usate, i dubbi, il costo;
+    // un lavoro rifatto riusa ciò che è già fatto e pagato; «Ferma» interrompe subito.
+    void convert()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        files::write(p.path("fonti/coda/Numeri_complessi.md"), "Def. modulo |z|. Oss. vedi disegno.\n");
+        files::write(p.path("fonti/coda/tabella.xlsx"), "x");
+
+        // il finto modello: risponde secondo il prompt di sistema che riceve
+        const QString answer = "```json\n{\"units\": [{\"env\": \"definition\", \"page\": 1}, {\"env\": \"text\", \"page\": 1}],"
+                               " \"figures\": [{\"id\": \"F1\", \"page\": 1}],"
+                               " \"doubts\": [{\"page\": 1, \"what\": \"È z o 2?\", \"latex\": \"|z|\", \"readings\": [{\"text\": \"z\", \"latex\": \"|z|\"}, {\"text\": \"2\", \"latex\": \"|2|\"}]}]}\n```\n"
+                               "```latex\n\\subsection{Modulo}\n\\begin{definition}[Modulo]\n    Il modulo è $|z|$, con \\underline{z} complesso e $\\underline{w}$ no.\n\\end{definition}\n"
+                               "\\begin{correction}\n    Negli appunti manca la radice.\n\\end{correction}\n"
+                               "\\begin{center} % img F1\n    \\imgslot[0.6\\linewidth]{F1}{0.6}{il piano complesso}\n\\end{center}\n```\n";
+        auto reply = [&](const char *name, const QString &text) {
+            const QJsonObject line{{"type", "result"}, {"result", text}, {"total_cost_usd", 0.25}, {"usage", QJsonObject{{"input_tokens", 10}, {"output_tokens", 5}}}};
+            files::writeBytes(dir.filePath(name), QJsonDocument(line).toJson(QJsonDocument::Compact) + '\n');
+        };
+        reply("trascrizione.json", answer);
+        reply("verifica.json", "{\"missing\": [], \"wrong\": []}");
+        reply("figura.json", "```latex\n\\begin{tikzpicture}\n    \\draw[->] (0,0) -- (30,0);\n\\end{tikzpicture}\n```");
+        reply("bene.json", "OK");
+        files::write(dir.filePath("claude"), QString("#!/bin/sh\nin=$(cat)\necho x >> '%1/chiamate'\n"
+                                                     "case \"$in\" in *'how your code renders'*) cat '%1/bene.json'; exit 0;; esac\n"
+                                                     "for a; do case \"$a\" in *'You check LaTeX'*) cat '%1/verifica.json'; exit 0;;\n"
+                                                     "  *'You redraw one'*) cat '%1/figura.json'; exit 0;; esac; done\n"
+                                                     "cat '%1/trascrizione.json'\n").arg(dir.path()));
+        QFile(dir.filePath("claude")).setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
+
+        QCOMPARE(Convert::queue(p).size(), 2);
+        QCOMPARE(Convert::queue(p).first().kind, "testo");
+        QVERIFY(Convert::estimate("massima", Convert::queue(p)) > Convert::estimate("veloce", Convert::queue(p)));
+        QStringList sources;
+        for (const Convert::Source &s : Convert::queue(p))
+            sources << s.file;
+
+        JobControl control;
+        Convert::Result r = Convert(p, Settings::load(p), Style::classic(), &control).run(sources);
+        QCOMPARE(r.failure, QString());
+        QCOMPARE(r.written(), 1);
+        QCOMPARE(r.cost, 1.0);                                                         // trascrizione, verifica, disegno, revisione
+        QCOMPARE(r.lessons[0].file, "src/src1.tex");
+        QCOMPARE(r.lessons[0].doubts, 1);
+        QCOMPARE(r.lessons[0].figures, 0);                                             // la figura è stata disegnata e inserita
+        QCOMPARE(figures::all(p).size(), 1);
+        QCOMPARE(figures::find(p, "src1-01").state, "disegnata");
+        QCOMPARE(figures::find(p, "src1-01").description, "il piano complesso");
+        QCOMPARE(figures::lessonOf(p, "src1-01"), "src/src1.tex");
+        QCOMPARE(r.lessons[0].corrections, 1);
+        QVERIFY(!r.lessons[1].failure.isEmpty());                                      // il foglio di calcolo non si converte
+        QCOMPARE(files::read(p.path("src/src1.tex")),
+                 "% File: src/src1.tex\n\\section{Numeri complessi}\n\\lezione{1}{}\n\n\\subsection{Modulo}\n"
+                 "% @L1.1 · Numeri_complessi.md\n\\begin{definition}[Modulo]\n    Il modulo è $|z|$, con \\textbf{z} complesso e $\\underline{w}$ no.\n\\end{definition}\n"
+                 "% @L1.2 · Numeri_complessi.md\n\\begin{correction}\n    Negli appunti manca la radice.\n\\end{correction}\n"
+                 "% @L1.3 · Numeri_complessi.md\n\\begin{center} % img src1-01\n    \\resizebox{\\linewidth}{!}{%\n    \\begin{tikzpicture}\n        \\draw[->] (0,0) -- (30,0);\n    \\end{tikzpicture}%\n    }\n\\end{center}\n");   // più larga della colonna: ristretta
+        QCOMPARE(p.inputs(), QStringList{"src/src1.tex"});
+        QVERIFY(QFileInfo::exists(p.path("fonti/usate/lezione 1/Numeri_complessi.md")));
+        QVERIFY(!QFileInfo::exists(p.path("fonti/coda/Numeri_complessi.md")));
+        QVERIFY(QFileInfo::exists(p.path("fonti/coda/tabella.xlsx")));
+        const QJsonObject doubts = QJsonDocument::fromJson(files::read(p.path(Convert::doubtsFile("src/src1.tex"))).toUtf8()).object();
+        QCOMPARE(doubts.value("dubbi").toArray().first().toObject().value("id").toString(), "src1-d1");
+        QVERIFY(Convert::interrupted(p).isEmpty());
+
+        if (hasLatexmk()) {                                                            // la lezione scritta compila
+            Compiler compiler;
+            compiler.setProject(p);
+            const BuildResult b = build(compiler, {});
+            QVERIFY2(!b.hasErrors(), qPrintable(b.issues.isEmpty() ? b.failure : b.issues.first().text));
+        }
+
+        // la stessa fonte di nuovo: il blocco è già fatto e pagato, il modello non si chiama
+        const qsizetype callsBefore = files::read(dir.filePath("chiamate")).count('x');
+        QCOMPARE(callsBefore, 4);
+        files::write(p.path("fonti/coda/Numeri_complessi.md"), "Def. modulo |z|. Oss. vedi disegno.\n");
+        QFile::remove(p.path("src/src1.tex"));
+        r = Convert(p, Settings::load(p), Style::classic(), &control).run({"fonti/coda/Numeri_complessi.md"});
+        QCOMPARE(r.written(), 1);
+        QCOMPARE(r.cost, 0.0);
+        QCOMPARE(files::read(dir.filePath("chiamate")).count('x'), callsBefore);
+
+        // «Ferma» a metà di una chiamata: subito, e resta da riprendere
+        files::write(dir.filePath("claude"), "#!/bin/sh\nsleep 30\n");
+        files::write(p.path("fonti/coda/Altra.md"), "altro\n");
+        JobControl stopping;
+        QElapsedTimer timer;
+        timer.start();
+        auto future = std::async(std::launch::async, [&] { return Convert(p, Settings::load(p), Style::classic(), &stopping).run({"fonti/coda/Altra.md"}); });
+        QTest::qWait(600);
+        stopping.stop();
+        r = future.get();
+        QVERIFY(r.stopped);
+        QVERIFY(timer.elapsed() < 4000);
+        QCOMPARE(Convert::interrupted(p), QStringList{"fonti/coda/Altra.md"});
+        QVERIFY(QFileInfo::exists(p.path("fonti/coda/Altra.md")));
+        qunsetenv("TEXFIX_CLAUDE");
+    }
+
+    // I prompt hanno le tre parti, una volta sola ciascuna.
+    void promptParts()
+    {
+        QTemporaryDir dir;
+        rules::setHome(dir.path());
+        Settings s;
+        s.rules = {"Mai il passivo."};
+        const QString studio = prompts::transcribe("src/src4.tex", s, Style::classic());
+        QVERIFY(studio.contains("one fragment of `src/src4.tex`"));
+        QVERIFY(studio.contains("\\label{<prefix>:src4-c<chunk>-<word>}"));
+        QVERIFY(studio.contains("\\begin{center} % img F<k>"));
+        QVERIFY(studio.contains("one of definition, theorem, proposition, lemma, corollary, proof, remark, example, exercise, or text"));
+        QCOMPARE(studio.count("## Come si scrive"), 1);
+        QCOMPARE(studio.count("- Mai il passivo."), 1);
+        QCOMPARE(studio.count("## Lo stile del documento"), 1);
+        QVERIFY(studio.contains("addedtext"));
+        s.writing = "fedele";
+        const QString faithful = prompts::transcribe("src/src4.tex", s, Style::classic());
+        QVERIFY(faithful.contains("one-to-one transcription"));
+        QVERIFY(!faithful.contains("## Come si scrive"));
+        QVERIFY(!faithful.contains("\\begin{addedtext}"));
+        QVERIFY(prompts::verify(s).contains("strict one-to-one"));
+        rules::setHome({});
+    }
+
+    // Rivedi: una lettura scelta riscrive il passo, riaprire lo rimette; un'aggiunta si tiene, si toglie, si rimette.
+    void reviewDecisions()
+    {
+        QTemporaryDir dir;
+        const Project p(dir.path());
+        const QString lesson = "src/src1.tex";
+        const QString tex = "\\section{S}\nIl modulo è $|z|$.\n% @L1.2\n\\begin{addedtext}\n    Perché sì.\n\\end{addedtext}\nFine.\n\\begin{correction}\n    Era sbagliato.\n\\end{correction}\n";
+        files::write(p.path(lesson), tex);
+        files::write(p.path(Convert::doubtsFile(lesson)),
+                     R"({"dubbi": [{"id": "src1-d1", "page": 2, "source": "a.pdf", "what": "z o 2?", "latex": "$|z|$",
+                         "readings": [{"text": "z", "latex": "$|z|$"}, {"text": "2", "latex": "$|2|$"}]}]})");
+        QCOMPARE(review::counts(p, lesson).doubts, 1);
+        QCOMPARE(review::counts(p, lesson).declared, 2);
+        QCOMPARE(review::doubts(p, lesson).first().line, 2);
+
+        QCOMPARE(review::choose(p, lesson, "src1-d1", 1), QString());                   // un'altra lettura: il passo cambia
+        QVERIFY(files::read(p.path(lesson)).contains("Il modulo è $|2|$."));
+        review::Doubt d = review::doubts(p, lesson).first();
+        QVERIFY(!d.open);
+        QCOMPARE(d.chosen, 1);
+        QCOMPARE(d.how, "scelta");
+        QCOMPARE(review::choose(p, lesson, "src1-d1", 0), QString());                   // si cambia idea: torna la prima
+        QVERIFY(files::read(p.path(lesson)).contains("$|z|$"));
+        QCOMPARE(review::doubts(p, lesson).first().how, "confermata");
+        review::choose(p, lesson, "src1-d1", 1);
+        QCOMPARE(review::reopen(p, lesson, "src1-d1", true), QString());                // riapri e annulla la modifica
+        QCOMPARE(files::read(p.path(lesson)), tex);
+        QVERIFY(review::doubts(p, lesson).first().open);
+        QVERIFY(!review::choose(p, lesson, "non-esiste", 0).isEmpty());
+
+        const QList<review::Declared> all = review::declared(p, lesson);
+        QCOMPARE(all.size(), 2);
+        QCOMPARE(all[0].kind, "addedtext");
+        QCOMPARE(all[0].text, "Perché sì.");
+        QCOMPARE(all[0].line, 4);
+        review::keep(p, lesson, all[1].hash);
+        QCOMPARE(review::declared(p, lesson)[1].state, "tenuta");
+        QCOMPARE(review::drop(p, lesson, all[0].hash), QString());                      // via l'ambiente con il suo marcatore
+        QCOMPARE(files::read(p.path(lesson)), "\\section{S}\nIl modulo è $|z|$.\nFine.\n\\begin{correction}\n    Era sbagliato.\n\\end{correction}\n");
+        QCOMPARE(review::declared(p, lesson).last().state, "tolta");
+        QCOMPARE(review::counts(p, lesson).declared, 0);
+        QCOMPARE(review::restore(p, lesson, all[0].hash), QString());
+        QCOMPARE(files::read(p.path(lesson)), tex);
+        review::keepAll(p, lesson);
+        QCOMPARE(review::counts(p, lesson).declared, 0);
+    }
+
+    // Errori e righe fuori misura: il modello corregge l'errore e riscrive il paragrafo; resta solo ciò che, compilato, migliora.
+    void fixLesson()
+    {
+        const QStringList lines{"\\begin{theorem}", "Uno.", "Due,", "tre.", "", "% @L1.2", "Quattro.", "\\[", "x", "\\]"};
+        QCOMPARE(fix::paragraph(lines, 3, 3), (std::pair<int, int>{2, 4}));
+        QCOMPARE(fix::paragraph(lines, 1, 2), (std::pair<int, int>{2, 4}));            // l'avviso parte da una riga di struttura
+        QCOMPARE(fix::paragraph(lines, 7, 7), (std::pair<int, int>{7, 7}));
+        QCOMPARE(fix::paragraph(lines, 8, 10), (std::pair<int, int>{0, 0}));           // una formula non è un paragrafo di testo
+        if (!hasLatexmk())
+            QSKIP("latexmk non c'è");
+
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        const QString wide = "Unarigachenonsipuospezzareinnessunmodoperchenonhaspazienemmenounoequindiescedalmargine\\_destro\\_della\\_pagina\\_di\\_sicuro.";
+        files::write(p.path("src/src1.tex"), "\\section{S}\n% @L1.1\nTesto \\nonesiste qui.\n\n% @L1.2\n" + wide + "\n");
+        auto reply = [&](const char *name, const QJsonArray &answer) {
+            const QJsonObject line{{"type", "result"}, {"result", QString::fromUtf8(QJsonDocument(answer).toJson())}, {"total_cost_usd", 0.1}};
+            files::writeBytes(dir.filePath(name), QJsonDocument(line).toJson(QJsonDocument::Compact) + '\n');
+        };
+        reply("errori.json", {QJsonObject{{"old", "\\nonesiste "}, {"new", ""}}, QJsonObject{{"old", "% @L1.1"}, {"new", ""}}});
+        reply("righe.json", {QJsonObject{{"card", 1}, {"old", wide}, {"new", QJsonArray{wide + " " + wide, "Una riga che ci sta."}}}});
+        files::write(dir.filePath("claude"), QString("#!/bin/sh\ncat >/dev/null\nfor a; do case \"$a\" in *'You fix LaTeX compilation errors'*) cat '%1/errori.json'; exit 0;;\n"
+                                                     "  *'You remove Overfull'*) cat '%1/righe.json'; exit 0;; esac; done\n").arg(dir.path()));
+        QFile(dir.filePath("claude")).setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
+
+        JobControl control;
+        Model model("veloce", root, &control);
+        const fix::Result r = fix::lesson(p, Settings(), Style::classic(), model, "src/src1.tex", &control);
+        qunsetenv("TEXFIX_CLAUDE");
+        QCOMPARE(r.failure, QString());
+        QCOMPARE(r.errorsBefore, 1);
+        QCOMPARE(r.errorsAfter, 0);
+        QVERIFY(r.rowsBefore >= 1);
+        QCOMPARE(r.rowsAfter, 0);
+        QCOMPARE(r.byModel, r.rowsBefore);
+        // i marcatori restano, la variante che peggiorava non è rimasta
+        QCOMPARE(files::read(p.path("src/src1.tex")), "\\section{S}\n% @L1.1\nTesto qui.\n\n% @L1.2\nUna riga che ci sta.\n");
+        QCOMPARE(model.calls().size(), 2);
+    }
+
+    // L'impaginazione: un teorema a cavallo di due pagine va a pagina nuova se il vuoto è piccolo, altrimenti la mossa
+    // resta proposta; le decisioni si cambiano e restano; ciò che non è cambiato non si rifà.
+    void layoutLesson()
+    {
+        if (!hasLatexmk())
+            QSKIP("latexmk non c'è");
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        const Style style = Style::classic();
+        const blocks::Units units{style.boxes(), {"center", "figure"}};
+        // righe di testo fino quasi in fondo alla pagina, poi un teorema di otto righe: `filler` decide dove cade
+        auto write = [&](int filler) {
+            QString tex = "\\section{S}\n";
+            for (int i = 0; i < filler; ++i)
+                tex += QStringLiteral("Riga %1 di testo.\n\n").arg(i + 1);
+            tex += "\\begin{theorem}[Lungo]\n";
+            for (int i = 0; i < 8; ++i)
+                tex += QStringLiteral("    Riga %1 del teorema.\n\n").arg(i + 1);
+            tex += "\\end{theorem}\nFine.\n";
+            files::write(p.path("src/src1.tex"), blocks::mark(tex, 1, units));
+        };
+        auto theorem = [&] {
+            for (const layout::Placed &placed : layout::measure(p, style, "src/src1.tex"))
+                if (placed.kind == "theorem")
+                    return placed;
+            return layout::Placed();
+        };
+        // si cerca dove il teorema cade a cavallo con poco vuoto sopra, e dove con molto
+        int near = 0, far = 0;
+        for (int filler = 20; filler <= 46 && !(near && far); filler += 2) {
+            write(filler);
+            const layout::Placed t = theorem();
+            if (t.split() && 1 - t.top <= layout::HOLE_OK && !near)
+                near = filler;
+        }
+        QVERIFY2(near, "nessun caso a cavallo trovato");
+
+        write(near);
+        QVERIFY(layout::needed(p, "src/src1.tex"));
+        layout::Result r = layout::lesson(p, style, "src/src1.tex");
+        QCOMPARE(r.failure, QString());
+        QCOMPARE(r.found, 1);
+        QCOMPARE(r.done, 1);
+        QVERIFY(!theorem().split());
+        const QString text = files::read(p.path("src/src1.tex"));
+        QVERIFY(text.contains("\\newpage % impaginazione\n% @L1.2\n\\begin{theorem}[Lungo]"));   // prima del marcatore
+        QVERIFY(!layout::needed(p, "src/src1.tex"));
+        QList<layout::Move> moves = layout::moves(p, "src/src1.tex");
+        QCOMPARE(moves.size(), 1);
+        QCOMPARE(moves[0].state, "fatta");
+        QVERIFY(moves[0].what.startsWith("Teorema «Lungo» cadeva a cavallo"));
+        QCOMPARE(layout::toReview(p, "src/src1.tex"), 1);
+
+        r = layout::lesson(p, style, "src/src1.tex");                                  // di nuovo: niente da fare
+        QCOMPARE(r.found, 0);
+        QCOMPARE(files::read(p.path("src/src1.tex")), text);
+
+        QCOMPARE(layout::decide(p, "src/src1.tex", "L1.2", "lasciata"), QString());     // lascia com'era: l'a capo se ne va
+        QVERIFY(!files::read(p.path("src/src1.tex")).contains("impaginazione"));
+        QVERIFY(theorem().split());
+        QCOMPARE(layout::toReview(p, "src/src1.tex"), 0);
+        r = layout::lesson(p, style, "src/src1.tex");                                  // la decisione resta: non ci riprova
+        QCOMPARE(r.found, 0);
+        QCOMPARE(layout::decide(p, "src/src1.tex", "L1.2", "accettata"), QString());    // si cambia idea
+        QCOMPARE(files::read(p.path("src/src1.tex")), text);
+        QVERIFY(!layout::needed(p, "src/src1.tex"));
+        files::write(p.path("src/src1.tex"), text + "Altro.\n");                        // una modifica a mano: è da rifare
+        QVERIFY(layout::needed(p, "src/src1.tex"));
+
+        // molto vuoto: la mossa non si applica da sola, resta proposta
+        write(near - 12);
+        if (theorem().split()) {
+            QSKIP("il caso con molto vuoto non è a cavallo con queste misure");
+        }
+        Q_UNUSED(far)
+    }
+
+    // Gli strumenti dell'agente: il protocollo a righe e le chiamate, eseguite dal programma sul progetto.
+    void agentTools()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        files::write(p.path("src/src1.tex"), "\\lezione{1}{01/10/2026}\n\\section{Limiti}\nTesto \\nonesiste.\n");
+        Settings s = Settings::load(p);
+        s.setDone("src/src1.tex", true);
+        s.save(p);
+        const Style style = Style::classic();
+        auto ask = [&](const QJsonObject &request) { return QJsonDocument::fromJson(agent::handle(p, style, QJsonDocument(request).toJson(QJsonDocument::Compact))).object(); };
+
+        QVERIFY(agent::handle(p, style, R"({"jsonrpc":"2.0","method":"notifications/initialized"})").isEmpty());
+        QCOMPARE(ask({{"id", 1}, {"method", "initialize"}, {"params", QJsonObject{{"protocolVersion", "2025-06-18"}}}})
+                     .value("result").toObject().value("protocolVersion").toString(), "2025-06-18");
+        const QJsonArray list = ask({{"id", 2}, {"method", "tools/list"}}).value("result").toObject().value("tools").toArray();
+        QCOMPARE(list.size(), 9);
+        QCOMPARE(list[0].toObject().value("name").toString(), "stato_progetto");
+        QVERIFY(ask({{"id", 3}, {"method", "boh"}}).contains("error"));
+
+        auto callTool = [&](const QString &name, const QJsonObject &arguments) {
+            return ask({{"id", "x"}, {"method", "tools/call"}, {"params", QJsonObject{{"name", name}, {"arguments", arguments}}}}).value("result").toObject();
+        };
+        const QString state = callTool("stato_progetto", {}).value("content").toArray().first().toObject().value("text").toString();
+        QVERIFY2(state.contains("- src/src1.tex: lezione 1 del 01/10/2026, «Limiti» (FATTA"), qPrintable(state));
+        QVERIFY(callTool("compila_lezione", {{"lezione", "src/altro.tex"}}).value("isError").toBool());
+        QVERIFY(callTool("non_esiste", {}).value("isError").toBool());
+        if (hasLatexmk()) {
+            const QJsonObject built = callTool("compila_lezione", {{"lezione", "src/src1.tex"}});
+            QVERIFY(!built.value("isError").toBool());
+            QVERIFY(built.value("content").toArray().first().toObject().value("text").toString().startsWith("- errore, src/src1.tex riga 3: Undefined control sequence"));
+        }
+        QVERIFY(agent::systemPrompt(s, style).contains("## Come si scrive"));
+    }
+
+    // I piani: consegnato dall'agente, sistemato dall'utente, eseguito, archiviato con l'esito.
+    void plansFlow()
+    {
+        QTemporaryDir dir;
+        const Project p(dir.path());
+        bool error = false;
+        const QJsonObject delivered{{"titolo", "Fusione: lezione 3"}, {"riepilogo", "Unisco due fonti."},
+                                    {"sezioni", QJsonArray{QJsonObject{{"titolo", "Lezione 3"}, {"voci", QJsonArray{"Tengo la struttura di A", "Aggiungo l'esempio di B"}}}}},
+                                    {"domande", QJsonArray{QJsonObject{{"testo", "Quale notazione?"}, {"opzioni", QJsonArray{"di A", "di B"}}}}}};
+        QVERIFY(agent::call(p, Style::classic(), "consegna_piano", {{"titolo", "Vuoto"}}, nullptr, &error).contains("almeno una sezione"));
+        QVERIFY(error);
+        const QString answer = agent::call(p, Style::classic(), "consegna_piano", delivered, nullptr, &error);
+        QVERIFY(!error);
+        QCOMPARE(plans::open(p).size(), 1);
+        const QString id = plans::open(p).first().id;
+        QVERIFY(answer.contains(id));
+        QCOMPARE(plans::open(p).first().state, "piano");
+
+        QJsonObject plan = plans::load(p, id);
+        QVERIFY(!plans::hasInstructions(plan));
+        QJsonArray sections = plan.value("sezioni").toArray();
+        QJsonObject section = sections[0].toObject();
+        QJsonArray entries = section.value("voci").toArray();
+        QJsonObject second = entries[1].toObject();
+        second["fare"] = false;
+        second["nota"] = "mettilo dopo il teorema";
+        entries[1] = second;
+        section["voci"] = entries;
+        sections[0] = section;
+        plan["sezioni"] = sections;
+        QVERIFY(plans::save(p, id, plan));
+        QVERIFY(plans::hasInstructions(plans::load(p, id)));
+        QVERIFY(plans::markdown(plan).contains("- [x] Tengo la struttura di A\n- [ ] Aggiungo l'esempio di B\n  ↳ mettilo dopo il teorema"));
+        QVERIFY(plans::reviseMessage(id, plan).contains("lavoro: " + id));
+        QVERIFY(plans::startMessage(id, plan).contains("consegna_esito"));
+
+        agent::call(p, Style::classic(), "consegna_esito", {{"lavoro", id}, {"testo", "Fatto: src/src3.tex."}}, nullptr, &error);
+        QVERIFY(!error);
+        QCOMPARE(plans::open(p).first().state, "esito");
+        const QString archived = plans::archive(p, id);
+        QVERIFY(QFileInfo(archived).fileName().endsWith(" — Fusione lezione 3.md"));
+        QVERIFY(files::read(archived).contains("Fatto: src/src3.tex.\n\n---\n\nIl piano seguito:"));
+        QVERIFY(plans::open(p).isEmpty());
+    }
+
+    // Nuova lezione: numero e data dai nomi e dal testo delle fonti, la coda, la chiusura di una lezione dell'agente.
+    void newLesson()
+    {
+        QCOMPARE(newlesson::readOne("Lezione_4 del 29-09-2026.pdf", {}).number, 4);
+        QCOMPARE(newlesson::readOne("Lezione_4 del 29-09-2026.pdf", {}).date, "29/09/2026");
+        QCOMPARE(newlesson::readOne("appunti 2026-10-01.pdf", {}).date, "01/10/2026");
+        QCOMPARE(newlesson::readOne("lez12.pdf", {}).number, 12);
+        QCOMPARE(newlesson::readOne("note.md", "# Lezione n. 7\ndel 3/10/26").number, 7);
+        QCOMPARE(newlesson::readOne("note.md", "# Lezione n. 7\ndel 3/10/26").date, "03/10/2026");
+        QCOMPARE(newlesson::readOne("capitolo 2024.pdf", {}).number, 0);
+        QCOMPARE(newlesson::readOne("capitolo 2024.pdf", {}).date, QString());
+
+        QTemporaryDir dir, outside;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QCOMPARE(newlesson::nextNumber(p), 1);
+        files::write(outside.filePath("Lezione_3.md"), "a");
+        files::write(outside.filePath("lez_5.md"), "b");
+        QCOMPARE(newlesson::read({outside.filePath("Lezione_3.md"), outside.filePath("lez_5.md")}).conflict, "Le fonti dicono numeri diversi: 3, 5.");
+        files::write(p.path("fonti/coda/Lezione_3.md"), "già in coda");
+        QCOMPARE(newlesson::toQueue(p, {outside.filePath("Lezione_3.md"), p.path("fonti/coda/Lezione_3.md")}),
+                 (QStringList{"fonti/coda/Lezione_3 (2).md", "fonti/coda/Lezione_3.md"}));
+
+        // l'agente ha scritto una lezione: chiuderla la mette nel documento, marca i blocchi, archivia le fonti
+        files::write(p.path("src/src1.tex"), "\\section{S}\n\\lezione{3}{}\n\nTesto.\n\\begin{theorem}\nx\n\\end{theorem}\n");
+        bool error = false;
+        const QString did = agent::call(p, Style::classic(), "chiudi_lezione", {{"lezione", "src/src1.tex"}, {"fonti", QJsonArray{"fonti/coda/Lezione_3.md"}}}, nullptr, &error);
+        QVERIFY2(did.contains("marcatori") && did.contains("aggiunta al documento") && did.contains("Lezione_3.md portata"), qPrintable(did));
+        QCOMPARE(p.inputs(), QStringList{"src/src1.tex"});
+        QVERIFY(files::read(p.path("src/src1.tex")).contains("% @L3.1\nTesto.\n% @L3.2\n\\begin{theorem}"));
+        QVERIFY(QFileInfo::exists(p.path("fonti/usate/lezione 3/Lezione_3.md")));
+        QCOMPARE(newlesson::nextNumber(p), 4);
+        QVERIFY(agent::call(p, Style::classic(), "chiudi_lezione", {{"lezione", "src/src1.tex"}}, nullptr, &error).contains("già tutto a posto"));
+        QVERIFY(newlesson::fuseMessage("src/src2.tex", 4, "02/10/2026", {"fonti/coda/a.pdf", "fonti/coda/b.md"}).contains("\\lezione{4}{02/10/2026}"));
+    }
+
+    // La cronologia: lavori e modifiche a mano si annullano e si ripetono; un passo nuovo toglie il «ripeti».
+    void history()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.path();
+        auto file = [&](const char *name) { return root + '/' + name; };
+        files::write(file("main.tex"), "main");
+        files::write(file("src/a.tex"), "a1");
+        files::write(file("docs/nota.txt"), "non seguito");
+        files::write(file("build/cronologia/vecchia"), "rimasta da una chiusura sbagliata");
+        {
+            History history(root);
+            QVERIFY(!QFileInfo::exists(file("build/cronologia/vecchia")));
+            QCOMPARE(history.steps().size(), 1);
+            QCOMPARE(history.undoTitle(), QString());
+            QVERIFY(!history.undo().ok);
+            QVERIFY(!history.record("Niente"));                                        // niente è cambiato: nessun passo
+
+            // un lavoro: scrive a, crea b, toglie main
+            files::write(file("src/a.tex"), "a2");
+            files::write(file("src/b.tex"), "b");
+            QFile::remove(file("main.tex"));
+            files::write(file("docs/nota.txt"), "cambiato");
+            QVERIFY(history.record("Converti"));
+            QCOMPARE(history.undoTitle(), "Converti");
+
+            History::Outcome o = history.undo();
+            QVERIFY(o.ok);
+            QCOMPARE(o.changed, (QStringList{"main.tex", "src/a.tex", "src/b.tex"}));
+            QCOMPARE(files::read(file("src/a.tex")), "a1");
+            QCOMPARE(files::read(file("main.tex")), "main");
+            QVERIFY(!QFileInfo::exists(file("src/b.tex")));
+            QCOMPARE(files::read(file("docs/nota.txt")), "cambiato");                 // docs/ non si segue
+            QCOMPARE(history.redoTitle(), "Converti");
+
+            QVERIFY(history.redo().ok);
+            QCOMPARE(files::read(file("src/a.tex")), "a2");
+            QVERIFY(QFileInfo::exists(file("src/b.tex")));
+            QVERIFY(!QFileInfo::exists(file("main.tex")));
+
+            // modifiche a mano non ancora in un passo: ⌘Z annulla quelle
+            files::write(file("src/a.tex"), "a3 a mano");
+            QCOMPARE(history.undoTitle(), "Modifiche a mano");
+            QVERIFY(history.undo().ok);
+            QCOMPARE(files::read(file("src/a.tex")), "a2");
+            QVERIFY(history.undo().ok);
+            QCOMPARE(files::read(file("src/a.tex")), "a1");
+
+            // una modifica dopo un annullamento toglie il «ripeti»
+            files::write(file("src/a.tex"), "altra strada");
+            QCOMPARE(history.redoTitle(), QString());
+            QVERIFY(!history.redo().ok);
+            QCOMPARE(history.steps().size(), 2);
+            QCOMPARE(history.steps().last().title, "Modifiche a mano");
+
+            QVERIFY(history.goTo(0).ok);                                               // vai a un passo
+            QCOMPARE(files::read(file("src/a.tex")), "a1");
+            QVERIFY(!history.goTo(0).ok);
+            QVERIFY(history.goTo(1).ok);
+            QCOMPARE(files::read(file("src/a.tex")), "altra strada");
+        }
+        QVERIFY(!QFileInfo::exists(file("build/cronologia")));                        // alla chiusura si butta
+    }
+
+    // La regola delle lezioni: un \input nel preambolo, uno commentato, uno che manca, senza .tex, l'ultima riga senza a capo.
+    void inputs()
+    {
+        const QString main = "\\documentclass{article}\n"
+                             "\\input{src/preambolo}\n"
+                             "% \\begin{document}\n"
+                             "\\begin{document}\n"
+                             "\\input{src/src1.tex}\n"
+                             "  \\input{src/src2}  % la seconda\n"
+                             "% \\input{src/src3.tex}\n"
+                             "\\input{altro/x.tex}\n"
+                             "\\input{src/manca.tex}\\clearpage\n"
+                             "\\input{src/ultima.tex}";
+        QCOMPARE(Project::inputsOf(main), (QStringList{"src/src1.tex", "src/src2.tex", "src/manca.tex", "src/ultima.tex"}));
+        QCOMPARE(Project::inputsOf("\\input{src/a.tex}"), QStringList());            // senza \begin{document} niente lezioni
+        QCOMPARE(Project::inputsOf("\\begin{document}\\input{src/a.tex}"), QStringList{"src/a.tex"});
+    }
+
+    void lessonOf()
+    {
+        const Lesson l = Project::lessonOf("src/src3.tex", "% \\lezione{9}{no}\n\\lezione{3}{29/09/2026}\n"
+                                                           "\\section[breve]{Serie di \\textbf{potenze} {e} raggio}\ntesto\n\\section{Altro}\n");
+        QCOMPARE(l.number, 3);
+        QCOMPARE(l.date, "29/09/2026");
+        QCOMPARE(l.title, "Serie di \\textbf{potenze} {e} raggio");
+        const Lesson none = Project::lessonOf("src/x.tex", "solo testo");
+        QCOMPARE(none.number, 0);
+        QVERIFY(none.title.isEmpty());
+    }
+
+    void createProject()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("Analisi 2");
+        QCOMPARE(Project::create(root), QString());
+        QVERIFY(Project::isProject(root));
+        for (const char *f : {"main.tex", "texfix.sty", ".latexmkrc", ".gitignore", ".git", "src", "imgs", "fonti/coda",
+                              "fonti/usate", "docs", "salvataggi/progetto.json"})
+            QVERIFY2(QFileInfo::exists(root + '/' + f), f);
+        QVERIFY(files::read(root + "/main.tex").contains("\\title{Analisi 2}"));
+        QCOMPARE(Project(root).complete(), QStringList());                             // già intero: niente da aggiungere
+        QVERIFY(!Project::create(root).isEmpty());                                     // non è più vuota
+
+        // un main.tex dell'utente non si tocca; texfix.sty torna quello del programma
+        files::write(root + "/main.tex", "mio");
+        files::write(root + "/texfix.sty", "vecchio");
+        QCOMPARE(Project(root).complete(), QStringList{"texfix.sty"});
+        QCOMPARE(files::read(root + "/main.tex"), "mio");
+    }
+
+    void adoptFolder()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.path();
+        files::write(root + "/appunti.pdf", "a");
+        files::write(root + "/docs/appunti.pdf", "già qui");
+        files::write(root + "/vecchi/uno.txt", "1");
+        files::write(root + "/.nascosto", "n");
+        const QStringList moved = Project::adopt(root);
+        QCOMPARE(moved, (QStringList{"appunti.pdf → docs/appunti (2).pdf", "vecchi → docs/vecchi"}));
+        QCOMPARE(files::read(root + "/docs/appunti.pdf"), "già qui");
+        QCOMPARE(files::read(root + "/docs/appunti (2).pdf"), "a");
+        QCOMPARE(files::read(root + "/docs/vecchi/uno.txt"), "1");
+        QVERIFY(QFileInfo::exists(root + "/.nascosto"));
+        QVERIFY(Project::isProject(root));
+        QVERIFY(QFileInfo::exists(root + "/main.tex"));
+    }
+
+    void reducedMain()
+    {
+        QTemporaryDir dir;
+        const Project p(dir.path());
+        files::write(p.path("main.tex"), "\\documentclass{article}\n\\begin{document}\n\\tableofcontents\n"
+                                         "\\input{src/a.tex}\n\\clearpage\n\n\\input{src/b}\n\\clearpage\n"
+                                         "\\input{src/c.tex}\n\\end{document}");
+        files::write(p.path("src/a.tex"), "\\section{Uno}\n% \\section{no}\n\\section[x]{Due}\n");
+        files::write(p.path("src/b.tex"), "\\section{Tre}\n");
+        QCOMPARE(Compiler::reducedMain(p, "src/b.tex"),
+                 "\\documentclass{article}\n\\begin{document}\n\\tableofcontents\n\n"
+                 "\\setcounter{section}{2}\n\\input{src/b}\n\\clearpage\n\\end{document}");
+        QString error;
+        QVERIFY(Compiler::reducedMain(p, "src/z.tex", &error).isEmpty());
+        QVERIFY(!error.isEmpty());
+    }
+
+    void parseLog()
+    {
+        const QString log = "(./main.tex (./src/src1.tex\n"
+                            "Overfull \\hbox (12.3pt too wide) in paragraph at lines 10--12\n"
+                            "\\OT1/cmr/m/n/10.95 una ri-ga trop-po lar-ga $[]$ con (+20) te-sto\n"
+                            "./src/src1.tex:40: Undefined control sequence.\n"
+                            ") (./src/src2.tex\n"
+                            "Underfull \\hbox (badness 10000) detected at line 7\n"
+                            "[]\\OT1/cmr/m/n/10.95 vuota\n"
+                            "! Emergency stop.\n"
+                            ") )\nOutput written on build/main.pdf (12 pages, 3456 bytes).\n";
+        const QList<Issue> issues = texlog::parse(log);
+        QCOMPARE(issues.size(), 4);
+        QCOMPARE(issues[0], (Issue{Issue::WideLine, "src/src1.tex", 10, 12, "una riga troppo larga con testo", "12.3pt too wide"}));
+        QCOMPARE(issues[1], (Issue{Issue::Error, "src/src1.tex", 40, 40, "Undefined control sequence.", {}}));
+        QCOMPARE(issues[2], (Issue{Issue::LooseLine, "src/src2.tex", 7, 7, "vuota", "badness 10000"}));
+        QCOMPARE(issues[3], (Issue{Issue::Error, "src/src2.tex", 0, 0, "Emergency stop.", {}}));
+        QCOMPARE(texlog::pages(log), 12);
+        QVERIFY(!texlog::brokenAux(log));
+        QVERIFY(texlog::brokenAux("(./build/main.aux)\nRunaway argument?\n{x\n! File ended.\nl.24 \\begin{document}\n"));
+    }
+
+    // Un progetto nuovo compila così com'è, e con una lezione; un errore porta alla sua riga.
+    void compile()
+    {
+        if (!hasLatexmk())
+            QSKIP("latexmk non c'è");
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        Compiler compiler;
+        compiler.setProject(p);
+
+        BuildResult r = build(compiler, {});
+        QVERIFY2(r.failure.isEmpty(), qPrintable(r.failure));
+        QVERIFY(!r.hasErrors());
+        QCOMPARE(r.pdf, p.path("build/main.pdf"));
+        QVERIFY(QFileInfo::exists(r.pdf));
+
+        QString main = files::read(p.path("main.tex"));
+        main.replace("\\end{document}", "\\input{src/src1.tex}\n\\clearpage\n\\input{src/src2.tex}\n\\end{document}");
+        files::write(p.path("main.tex"), main);
+        files::write(p.path("src/src1.tex"), "\\lezione{1}{01/10/2026}\n\\section{Prima}\n\\begin{theorem}Vale $a=b$.\\end{theorem}\n");
+        files::write(p.path("src/src2.tex"), "\\lezione{2}{02/10/2026}\n\\section{Seconda}\nTesto \\nonesiste.\n");
+
+        r = build(compiler, "src/src1.tex");
+        QVERIFY2(r.failure.isEmpty(), qPrintable(r.failure));
+        QVERIFY(!r.hasErrors());
+        QCOMPARE(r.pdf, p.path("build/lezioni/src1.pdf"));
+        QVERIFY(QFileInfo::exists(r.pdf));
+
+        // il salto: dalla riga del teorema alla pagina della lezione, e da quel punto di nuovo alla lezione
+        const synctex::Spot there = synctex::toPdf(root, r.pdf, "src/src1.tex", 3);
+        QVERIFY(there.ok);
+        QCOMPARE(there.page, 2);
+        const synctex::Spot back = synctex::toSource(root, r.pdf, there.page, there.x + 5, there.y + there.height / 2);
+        QVERIFY(back.ok);
+        QCOMPARE(back.file, "src/src1.tex");
+        QCOMPARE(back.line, 3);
+        QVERIFY(!synctex::toPdf(root, r.pdf, "src/src2.tex", 1).ok);                  // quella lezione non è in questo PDF
+
+        r = build(compiler, "src/src2.tex");
+        QVERIFY(r.hasErrors());
+        QCOMPARE(r.issues.first().file, "src/src2.tex");
+        QCOMPARE(r.issues.first().line, 3);
+
+        r = build(compiler, "src/manca.tex");
+        QVERIFY(!r.failure.isEmpty());
+        QCOMPARE(files::read(p.path("main.tex")), main);                               // il main non si tocca mai
+    }
+
+    // «Ferma» chiude subito latexmk e i suoi figli, e la compilazione dopo riparte pulita.
+    void stopCompile()
+    {
+        if (!hasLatexmk())
+            QSKIP("latexmk non c'è");
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        main.replace("\\end{document}", "\\newcount\\n \\loop\\ifnum\\n<200000 \\advance\\n1 x\\par\\repeat\n\\end{document}");
+        files::write(p.path("main.tex"), main);
+        Compiler compiler;
+        compiler.setProject(p);
+        QSignalSpy done(&compiler, &Compiler::finished);
+        compiler.compileDocument();
+        QTest::qWait(1500);
+        QVERIFY(compiler.isRunning());
+        QElapsedTimer timer;
+        timer.start();
+        compiler.stop();
+        QVERIFY(timer.elapsed() < 3500);
+        QVERIFY(!compiler.isRunning());
+        QCOMPARE(done.size(), 1);
+        QVERIFY(done.first().first().value<BuildResult>().stopped);
+        QVERIFY(!QFileInfo::exists(p.path("build/main.aux")));
+
+        files::write(p.path("main.tex"), main.replace("200000", "20"));
+        const BuildResult r = build(compiler, {});
+        QVERIFY(!r.hasErrors());
+        QVERIFY(QFileInfo::exists(r.pdf));
+    }
+};
+
+QTEST_GUILESS_MAIN(CoreTests)
+#include "tst_core.moc"

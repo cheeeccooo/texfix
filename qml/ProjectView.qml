@@ -1,0 +1,325 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import Texfix
+
+// Il progetto aperto: la barra in alto, il pannello Progetto, l'editor con il PDF accanto, gli avvisi, la barra di stato.
+Item {
+    id: root
+    property bool leftOpen: true
+    property bool bottomOpen: false
+    property bool chatOpen: false
+    signal convertAsked()
+    signal newLessonAsked()
+    signal materialAsked()
+    signal sourcesAsked(string lesson)
+    // Rivedi impaginazione: apre il riepilogo; le lezioni nuove si impaginano dal suo tasto, non aprendolo.
+    function reviewLayout() { root.openFile("rivedi:impaginazione") }
+    function saveAll() { editor.saveAll() }
+
+    function openFile(file, line) { editor.openFile(file, line || 0) }
+    function save() { editor.saveAll() }
+    // ▶ File: la lezione aperta da sola; un altro file, o nessuno, il documento.
+    function compileFile() {
+        if (Workspace.compiling)
+            return Workspace.say("Sta già compilando.")
+        editor.saveAll()
+        if (editor.currentFile === "" || editor.kindOf(editor.currentFile) !== "text")
+            return Workspace.say("Apri prima una lezione.")
+        pendingJump = { file: editor.currentFile, line: editor.currentLine }   // il PDF si apre dove si stava scrivendo
+        Workspace.compileFile(editor.currentFile)
+    }
+    function compileDocument() {
+        if (Workspace.compiling)
+            return Workspace.say("Sta già compilando.")
+        editor.saveAll()
+        Workspace.compileDocument()
+    }
+    function toggleWrap() { editor.toggleWrap() }
+
+    // ⌘Z: prima il testo dell'editor, finché la sua pila ne ha; poi la cronologia del progetto.
+    function undo() {
+        if (editor.textUndo())
+            return
+        if (Workspace.compiling)
+            return Workspace.say("Aspetta la fine della compilazione.")
+        editor.saveAll()
+        Workspace.undo()
+    }
+    function redo() {
+        if (editor.textRedo())
+            return
+        if (Workspace.compiling)
+            return Workspace.say("Aspetta la fine della compilazione.")
+        editor.saveAll()
+        Workspace.redo()
+    }
+    function goToStep(index) {
+        editor.saveAll()
+        Workspace.goToStep(index)
+    }
+
+    // Il salto dal sorgente al PDF (⌘J, ⌘-clic su una riga): se il PDF mostrato non ha quella riga o è più vecchio
+    // del file, prima si compila.
+    property var pendingJump: null
+    function jumpToCursor() { jumpToPdf(editor.currentFile, editor.currentLine) }
+    function jumpToPdf(file, line) {
+        if (file === "" || editor.kindOf(file) !== "text")
+            return Workspace.say("Apri prima una lezione.")
+        if (Workspace.compiling)
+            return Workspace.say("Sta già compilando.")
+        editor.saveAll()
+        const spot = Workspace.toPdf(file, line)
+        if (spot.ok)
+            return showSpot(spot)
+        pendingJump = { file: file, line: line }
+        Workspace.compileFile(file)
+    }
+    function showSpot(spot) {
+        if (split === 2)
+            split = 1                                  // il PDF era chiuso: torna accanto
+        pdf.show(spot.page, spot.y, spot.height)
+    }
+    // Il salto dal PDF al sorgente (⌘-clic o doppio clic su un punto).
+    function jumpToSource(page, x, y) {
+        const spot = Workspace.toSource(page, x, y)
+        if (!spot.ok)
+            return Workspace.say("Non trovo la riga di questo punto.")
+        if (split === 0)
+            split = 1
+        root.openFile(spot.file, spot.line)
+    }
+
+    // Il divisore fra editor e PDF ha tre posizioni: 0 PDF pieno, 1 alla pari, 2 editor pieno; -1 dove l'ha lasciato l'utente.
+    property int split: 1
+    onSplitChanged: applySplit()
+    function applySplit() {
+        if (split === 0)
+            editor.SplitView.preferredWidth = 0
+        else if (split === 1)
+            editor.SplitView.preferredWidth = sideBySide.width / 2
+        else if (split === 2)
+            editor.SplitView.preferredWidth = sideBySide.width
+    }
+
+    Connections {
+        target: Workspace
+        function onProjectChanged() { editor.closeAll() }
+        function onPdfRebuilt() { pdf.reload() }
+        function onPlanReady(id) { root.openFile("piano:" + id) }
+        function onAgentAsked(message) { root.chatOpen = true; Chat.send(message) }
+        function onBuildFinished() {
+            if (Workspace.errorCount > 0)
+                root.bottomOpen = true
+            const jump = root.pendingJump
+            root.pendingJump = null
+            if (jump)
+                Qt.callLater(() => {               // dopo che il PDF nuovo è stato letto
+                    const spot = Workspace.toPdf(jump.file, jump.line)
+                    if (spot.ok)
+                        root.showSpot(spot)
+                })
+        }
+        function onGesture(name, argument) {
+            if (name === "apri") {
+                const parts = argument.split(" ")
+                root.openFile(parts[0], parts.length > 1 ? parseInt(parts[1]) : 0)
+            } else if (name === "compila") {
+                root.compileFile()
+            } else if (name === "tutto") {
+                root.compileDocument()
+            } else if (name === "salta") {
+                root.jumpToPdf(editor.currentFile, editor.currentLine)
+            } else if (name === "sorgente") {
+                const p = argument.split(" ")
+                root.jumpToSource(parseInt(p[0]), parseFloat(p[1]), parseFloat(p[2]))
+            } else if (name === "divisore") {
+                root.split = parseInt(argument)
+            } else if (name === "annulla") {
+                root.undo()
+            } else if (name === "ripeti") {
+                root.redo()
+            } else if (name === "passo") {
+                Workspace.checkpoint(argument)
+            } else if (name === "scrivi") {
+                Workspace.save(argument.split(" ")[0], argument.substring(argument.indexOf(" ") + 1))
+            } else if (name === "fatta") {
+                Workspace.setDone(argument, true)
+            } else if (name === "scegli") {
+                const a = argument.split(" ")
+                Workspace.chooseReading(a[0], a[1], parseInt(a[2]))
+            } else if (name === "figura") {
+                Workspace.redoFigure(argument.split(" ")[0], argument.split(" ")[1])
+            } else if (name === "risolvi") {
+                Workspace.fixAll()
+            } else if (name === "impagina") {
+                Workspace.paginate()
+            } else if (name === "chiedi") {
+                root.chatOpen = true
+                Chat.send(argument)
+            } else if (name === "modo") {
+                Chat.mode = argument
+            } else if (name === "rispondi") {
+                Chat.answer(argument === "si")
+            } else if (name === "lezione") {
+                const a = argument.split(" ")
+                Workspace.say(Workspace.createLesson(parseInt(a[0]), a[1], a.slice(2)))
+            } else if (name === "nuova-lezione") {
+                root.newLessonAsked()
+            } else if (name === "avvisi") {
+                root.bottomOpen = true
+            } else if (name === "progetto") {
+                root.leftOpen = argument !== "chiuso"
+            }
+        }
+    }
+
+    component Handle: Rectangle {
+        id: grip
+        implicitWidth: 1
+        implicitHeight: 1
+        color: Theme.border
+        // la presa è più larga della riga che si vede
+        containmentMask: Item { x: -3; y: -3; width: grip.width + 6; height: grip.height + 6 }
+    }
+
+    ColumnLayout {
+        anchors.fill: parent
+        spacing: 0
+
+        // la barra in alto: fissi solo i tasti di ciò che c'è sempre da fare
+        Rectangle {
+            Layout.fillWidth: true
+            implicitHeight: Theme.rowHeight + 12
+            color: Theme.window
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: Theme.gap
+                anchors.rightMargin: Theme.gap
+                spacing: Theme.gap
+                TxButton {
+                    text: "☰"
+                    flat: true
+                    implicitWidth: 30
+                    hint: root.leftOpen ? "Chiudi il pannello Progetto" : "Apri il pannello Progetto"
+                    onClicked: root.leftOpen = !root.leftOpen
+                }
+                TxButton { text: "▶  File"; hint: "Compila il file aperto (⌘B)"; enabled: !Workspace.compiling; onClicked: root.compileFile() }
+                TxButton { text: "▶▶  Tutto"; hint: "Compila tutto il documento (⇧⌘B)"; enabled: !Workspace.compiling; onClicked: root.compileDocument() }
+                TxButton { text: "Converti"; hint: "Le fonti da convertire diventano lezioni (⇧⌘K)"; enabled: !Workspace.jobRunning; onClicked: root.convertAsked() }
+                // i «Rivedi» ci sono solo quando c'è qualcosa da decidere
+                TxButton { visible: Workspace.openDoubts > 0; text: "Rivedi dubbi  " + Workspace.openDoubts; hint: "⇧⌘D"; onClicked: root.openFile("rivedi:dubbi") }
+                TxButton { visible: Workspace.openDeclared > 0; text: "Rivedi correzioni  " + Workspace.openDeclared; hint: "⇧⌘E"; onClicked: root.openFile("rivedi:correzioni") }
+                TxButton { visible: Workspace.openFigures > 0; text: "Rivedi figure  " + Workspace.openFigures; hint: "⇧⌘F"; onClicked: root.openFile("rivedi:figure") }
+                TxButton { visible: Workspace.openLayout > 0; text: "Rivedi impaginazione  " + Workspace.openLayout; hint: "⇧⌘R"; onClicked: root.reviewLayout() }
+                Item { Layout.fillWidth: true }
+                TxLabel {
+                    Layout.maximumWidth: Math.max(60, root.width / 3)
+                    text: Workspace.name
+                    color: Theme.textMuted
+                }
+                TxButton { visible: !root.chatOpen; text: "Agente"; hint: "Apri la chat con l'agente"; onClicked: root.chatOpen = true }
+            }
+            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.border }
+        }
+
+        SplitView {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            orientation: Qt.Horizontal
+            handle: Handle {}
+
+            ProjectPanel {
+                visible: root.leftOpen
+                SplitView.preferredWidth: 270
+                SplitView.minimumWidth: 200
+                SplitView.maximumWidth: Math.max(200, root.width / 2)
+                currentFile: editor.currentFile
+                onFileChosen: file => root.openFile(file)
+                onNewLessonAsked: root.newLessonAsked()
+                onMaterialAsked: root.materialAsked()
+                onSourcesAsked: lesson => root.sourcesAsked(lesson)
+            }
+            SplitView {
+                SplitView.fillWidth: true
+                orientation: Qt.Vertical
+                handle: Handle {}
+
+                Item {
+                    SplitView.fillHeight: true
+                    SplitView.minimumHeight: 120
+                    SplitView {
+                    id: sideBySide
+                    anchors.fill: parent
+                    orientation: Qt.Horizontal
+                    handle: Handle {}
+                    onWidthChanged: root.applySplit()
+                    onResizingChanged: if (resizing) root.split = -1
+                    EditorPane {
+                        id: editor
+                        SplitView.minimumWidth: 0
+                        onJumpAsked: (file, line) => root.jumpToPdf(file, line)
+                        onChatAsked: root.chatOpen = true
+                    }
+                    PdfPane {
+                        id: pdf
+                        SplitView.fillWidth: true
+                        SplitView.minimumWidth: 0
+                        source: Workspace.pdf
+                        onSourceAsked: (page, x, y) => root.jumpToSource(page, x, y)
+                    }
+                    }
+                    // la capsula sul divisore: PDF pieno, alla pari, editor pieno
+                    Rectangle {
+                        z: 10
+                        x: Math.max(4, Math.min(editor.width - width / 2, sideBySide.width - width - 4))
+                        y: sideBySide.height - height - Theme.gap
+                        width: capsule.implicitWidth + 4
+                        height: Theme.rowHeight - 4
+                        radius: height / 2
+                        color: Theme.surface
+                        border.width: 1
+                        border.color: Theme.border
+                        Row {
+                            id: capsule
+                            anchors.centerIn: parent
+                            Repeater {
+                                model: [{ glyph: "←", hint: "PDF a tutta larghezza" }, { glyph: "≡", hint: "Editor e PDF alla pari" }, { glyph: "→", hint: "Editor a tutta larghezza" }]
+                                TxButton {
+                                    required property var modelData
+                                    required property int index
+                                    text: modelData.glyph
+                                    hint: modelData.hint
+                                    flat: true
+                                    implicitWidth: 24
+                                    implicitHeight: Theme.rowHeight - 8
+                                    radius: height / 2
+                                    onClicked: { root.split = -1; root.split = index }
+                                }
+                            }
+                        }
+                    }
+                }
+                BottomPanel {
+                    visible: root.bottomOpen
+                    SplitView.preferredHeight: 170
+                    SplitView.minimumHeight: 80
+                    onIssueChosen: (file, line) => root.openFile(file, line)
+                    onCloseAsked: root.bottomOpen = false
+                    onFixAsked: { editor.saveAll(); Workspace.fixAll() }
+                }
+            }
+            ChatPane {
+                visible: root.chatOpen
+                SplitView.preferredWidth: 360
+                SplitView.minimumWidth: 280
+                SplitView.maximumWidth: Math.max(280, root.width / 2)
+                onCloseAsked: root.chatOpen = false
+            }
+        }
+        StatusBar {
+            Layout.fillWidth: true
+            onClicked: root.bottomOpen = !root.bottomOpen
+        }
+    }
+}
