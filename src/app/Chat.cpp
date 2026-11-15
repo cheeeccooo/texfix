@@ -76,6 +76,32 @@ Chat::Chat()
                     const QJsonObject asked = params.value("arguments").toObject();
                     const QJsonObject input = asked.value("input").toObject();
                     const QString target = input.value("file_path").toString(input.value("command").toString(input.value("pattern").toString()));
+                    // l'agente è chiuso nel progetto: ciò che sta fuori si nega senza chiedere, in ogni modo
+                    auto reply = [socket, id = message.value("id")](const QJsonObject &decision) {
+                        const QJsonObject result{{"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", QString::fromUtf8(QJsonDocument(decision).toJson(QJsonDocument::Compact))}}}}};
+                        socket->write(QJsonDocument(QJsonObject{{"jsonrpc", "2.0"}, {"id", id}, {"result", result}}).toJson(QJsonDocument::Compact) + '\n');
+                    };
+                    const QString root = QFileInfo(workspace->root()).canonicalFilePath();
+                    bool outside = false;
+                    for (const char *key : {"file_path", "path", "notebook_path"}) {
+                        const QString given = input.value(QLatin1String(key)).toString();
+                        if (given.isEmpty())
+                            continue;
+                        QFileInfo info(QDir(root).absoluteFilePath(given));
+                        while (!info.exists() && info.absolutePath() != info.absoluteFilePath())    // un file nuovo: conta la cartella che c'è
+                            info = QFileInfo(info.absolutePath());
+                        const QString real = info.canonicalFilePath();
+                        outside = outside || !(real == root || real.startsWith(root + '/'));
+                    }
+                    if (outside) {
+                        add("note", QStringLiteral("L'agente ha provato a uscire dal progetto (%1): negato.").arg(target));
+                        reply(QJsonObject{{"behavior", "deny"}, {"message", "Fuori dal progetto: non è permesso. Lavora solo sui file del progetto."}});
+                        continue;
+                    }
+                    if (m_mode == "autonomo") {        // dentro il progetto non chiede mai
+                        reply(QJsonObject{{"behavior", "allow"}, {"updatedInput", input}});
+                        continue;
+                    }
                     m_asking = socket;
                     m_askingId = message.value("id");
                     m_askingInput = input;
@@ -188,10 +214,9 @@ void Chat::launch(const QString &text)
                           "--strict-mcp-config", "--allowedTools",
                           "mcp__texfix__stato_progetto,mcp__texfix__compila_lezione,mcp__texfix__compila_documento,mcp__texfix__dubbi,mcp__texfix__impagina,mcp__texfix__chiudi_lezione,mcp__texfix__consegna_piano,mcp__texfix__consegna_esito",
                           "--setting-sources", "", "--disable-slash-commands"};
-    if (m_mode == "autonomo")
-        arguments << "--permission-mode" << "bypassPermissions";
-    else                                               // ciò che vuole una conferma arriva alla finestra, non viene negato in silenzio
-        arguments << "--permission-mode" << (m_mode == "chiedi" ? "manual" : "auto") << "--permission-prompt-tool" << "mcp__texfix__conferma";
+    // ciò che vuole una conferma arriva al programma: fuori dal progetto si nega sempre; dentro, «Autonomo» consente da sé
+    // e gli altri due modi chiedono all'utente
+    arguments << "--permission-mode" << (m_mode == "auto" ? "auto" : "manual") << "--permission-prompt-tool" << "mcp__texfix__conferma";
     if (!m_session.isEmpty())
         arguments << "--resume" << m_session;
     const QString custom = qEnvironmentVariable("TEXFIX_CLAUDE");     // per le prove: un finto agente
