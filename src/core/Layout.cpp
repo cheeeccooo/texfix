@@ -64,7 +64,7 @@ QString nameOf(const Placed &p, const Style &style)
 
 QJsonObject toJson(const Move &m)
 {
-    return {{"blocco", m.block}, {"che_cosa", m.what}, {"vuoto", m.hole}, {"stato", m.state}, {"segno", m.sign}, {"dopo", m.after}};
+    return {{"blocco", m.block}, {"che_cosa", m.what}, {"vuoto", m.hole}, {"stato", m.state}, {"segno", m.sign}, {"dopo", m.after}, {"fino", m.until}};
 }
 
 // Dove sta il testo nelle pagine di una lezione compilata, e dove cade una sua riga.
@@ -175,7 +175,7 @@ QList<Move> moves(const Project &project, const QString &file)
     for (const QJsonValue &v : registry(project).value(file).toObject().value("mosse").toArray()) {
         const QJsonObject o = v.toObject();
         out << Move{file, o.value("blocco").toString(), o.value("che_cosa").toString(), o.value("vuoto").toDouble(), o.value("stato").toString(),
-                    where.value(o.value("blocco").toString()), o.value("segno").toString(QString::fromUtf8(SIGN)), o.value("dopo").toString()};
+                    where.value(o.value("blocco").toString()), o.value("segno").toString(QString::fromUtf8(SIGN)), o.value("dopo").toString(), o.value("fino").toString()};
     }
     return out;
 }
@@ -263,6 +263,71 @@ bool breakInside(const Project &project, const Style &style, const QString &file
     move->sign = sign;
     move->after = lines[last - 1];
     return true;
+}
+}
+
+namespace {
+const char *const CLOSE_SIGN = "}% impaginazione";
+
+// La misura di una figura: il disegno rimpicciolito quanto basta perché la figura stia con ciò che la precede invece di
+// passare oltre lasciando un grande vuoto. Resta se, ricompilata, la figura comincia dove finisce il blocco di prima.
+bool shrink(const Project &project, const Style &style, const QString &file, const blocks::Block &block, const blocks::Block &previous,
+            JobControl *control, Move *move)
+{
+    const QString path = project.path(file), before = files::read(path);
+    const QStringList original = before.split('\n');
+    // il disegno dentro la figura: da dove comincia a dove finisce (indici da 0)
+    static const QRegularExpression drawing(R"(\\begin\{(tikzpicture|circuitikz)\}|\\includegraphics|\\resizebox\{)");
+    int first = -1, last = -1;
+    for (int i = block.line; i < block.endLine - 1 && i < original.size() && first < 0; ++i)
+        if (drawing.match(original[i]).hasMatch())
+            first = i;
+    if (first < 0 || original[first].contains("scalebox"))
+        return false;
+    for (int i = block.endLine - 2; i >= first && last < 0; --i) {
+        const QString t = original[i].trimmed();
+        if (t.contains("\\end{tikzpicture}") || t.contains("\\end{circuitikz}") || t.contains("\\includegraphics") || t == "}" || t == "%\n}")
+            last = i;
+    }
+    if (last < 0)
+        return false;
+    static const QRegularExpression lead(R"(^\s*)");
+    const QString indent = lead.match(original[first]).captured(0);
+    for (const double scale : {0.85, 0.7, 0.55}) {
+        QStringList lines = original;
+        const QString open = indent + QStringLiteral("\\scalebox{%1}{% impaginazione").arg(scale);
+        lines.insert(last + 1, indent + QString::fromUtf8(CLOSE_SIGN));
+        lines.insert(first, open);
+        files::write(path, lines.join('\n'));
+        bool good = false;
+        try {
+            if (!Compiler::compileSync(project, file, control).hasErrors()) {
+                const Geometry g = geometryOf(project, style, file);
+                const Where start = whereIs(project, g, file, block.line);
+                Where end;
+                for (int line = previous.endLine; line >= previous.line && !end.ok; --line)
+                    end = whereIs(project, g, file, line);
+                good = start.ok && end.ok && start.slot == end.slot;
+            }
+        } catch (...) {
+            files::write(path, before);
+            throw;
+        }
+        if (good) {
+            Placed p;
+            p.kind = block.kind;
+            p.title = block.title;
+            move->what = QStringLiteral("%1 non ci stava e lasciava vuoto il %2% %3: rimpicciolita al %4%, ora sta con ciò che la precede.")
+                             .arg(nameOf(p, style)).arg(qRound(move->hole * 100))
+                             .arg(style.twoColumns() ? QStringLiteral("della colonna") : QStringLiteral("della pagina")).arg(qRound(scale * 100));
+            move->sign = open;
+            move->after = original[first - 1];
+            move->until = original[last];
+            return true;
+        }
+    }
+    files::write(path, before);
+    return false;
 }
 }
 
@@ -427,8 +492,10 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
             result.proposed += 1;
         }
     }
-    {
-        // un grande vuoto: un'unità che non ci stava è passata oltre da sola. Non c'è una mossa sicura: si segnala.
+    for (int round = 0; round < 6; ++round) {
+        bool shrunk = false;
+        // un grande vuoto: un'unità che non ci stava è passata oltre da sola. Una figura si prova a rimpicciolirla; per il
+        // resto non c'è una mossa sicura: si segnala.
         Compiler::compileSync(project, file, control);
         const QString text = files::read(path);
         const QList<blocks::Block> parsed = blocks::parse(text, unitsOf(style));
@@ -496,6 +563,17 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
                 end = whereIs(project, g, file, line);
             if (!start.ok || !end.ok || start.slot <= end.slot || 1.0 - end.bottom <= HOLE_OK)
                 continue;
+            settled << b.id;
+            if (b.kind == "figura") {
+                Move move{file, b.id, {}, 1.0 - end.bottom, "fatta", 0};
+                if (shrink(project, style, file, b, parsed[i - 1], control, &move)) {
+                    ++result.found;
+                    ++result.done;
+                    fresh << move;
+                    shrunk = true;                     // le righe sono cambiate: si rimisura da capo
+                    break;
+                }
+            }
             Placed p;
             p.kind = b.kind;
             p.title = b.title;
@@ -505,6 +583,8 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
                                           .arg(nameOf(p, style)).arg(qRound((1.0 - end.bottom) * 100)).arg(style.twoColumns() ? QStringLiteral("della colonna") : QStringLiteral("della pagina")),
                           1.0 - end.bottom, "segnalata", 0};
         }
+        if (!shrunk)
+            break;
     }
     QJsonArray list;
     for (const Move &m : kept + fresh)
@@ -545,6 +625,7 @@ QString decide(const Project &project, const QString &file, const QString &block
         // la riga di questa mossa, se c'è: un a capo sopra il blocco (prima dei titoli che lo aprono), o uno spezzamento dentro
         const QString written = move.value("segno").toString(QString::fromUtf8(SIGN));
         const bool above = written.trimmed().startsWith("\\newpage");
+        const bool wraps = written.contains("\\scalebox");          // la misura di una figura: una riga apre, una chiude
         int end = at + 1;                              // dove finisce il blocco: al marcatore dopo
         while (end < lines.size() && !marker.match(lines[end]).hasMatch())
             ++end;
@@ -558,6 +639,18 @@ QString decide(const Project &project, const QString &file, const QString &block
                 b.marker = at + 1;
                 b.line = at + 2;
                 lines.insert(groupStart(lines, b), QString::fromUtf8(SIGN));
+            } else if (wraps) {
+                int after = -1, until = -1;            // dalla riga dopo cui apriva a quella dopo cui chiudeva
+                for (int k = at; k < end && after < 0; ++k)
+                    if (lines[k] == move.value("dopo").toString())
+                        after = k;
+                for (int k = after + 1; after >= 0 && k < end && until < 0; ++k)
+                    if (lines[k] == move.value("fino").toString())
+                        until = k;
+                if (until < 0)
+                    return QStringLiteral("Non trovo più il disegno da rimpicciolire: la figura è cambiata.");
+                lines.insert(until + 1, QString(CLOSE_SIGN));
+                lines.insert(after + 1, written);
             } else {
                 int after = -1;                        // la riga dopo cui stava
                 for (int k = at; k < end && after < 0; ++k)
@@ -570,6 +663,11 @@ QString decide(const Project &project, const QString &file, const QString &block
             }
         } else if (state == "lasciata" && sign >= 0) {
             lines.removeAt(sign);
+            for (int k = sign; wraps && k < end - 1 && k < lines.size(); ++k)
+                if (lines[k].trimmed() == QLatin1String(CLOSE_SIGN)) {       // anche la riga che chiudeva
+                    lines.removeAt(k);
+                    break;
+                }
             if (!above && sign < lines.size() && sign > 0 && lines[sign].trimmed().isEmpty() && lines[sign - 1].trimmed().isEmpty())
                 lines.removeAt(sign);                  // delle due righe vuote attorno ne resta una
         }

@@ -710,6 +710,42 @@ private slots:
         QVERIFY2(split > cases.size() / 4, qPrintable(QString::number(split)));
     }
 
+    // La misura di una figura: un disegno che non ci stava e lasciava un grande vuoto si rimpicciolisce quanto basta per
+    // stare con ciò che lo precede; «lascia com'era» toglie la mossa, «accetta» la rimette.
+    void layoutShrinkFigure()
+    {
+        if (!hasLatexmk())
+            QSKIP("latexmk non c'è");
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        const Style style = Style::classic();
+        QString tex = "\\section{S}\n";
+        for (int i = 0; i < 22; ++i)
+            tex += QStringLiteral("Riga %1 di testo.\n\n").arg(i + 1);
+        tex += "\\begin{center}\n\\begin{tikzpicture}\n\\draw (0,0) rectangle (4,13);\n\\end{tikzpicture}\n\\end{center}\nFine.\n";
+        files::write(p.path("src/src1.tex"), blocks::mark(tex, 1, {style.boxes(), {"center", "figure"}}));
+        const QString before = files::read(p.path("src/src1.tex"));
+        const layout::Result r = layout::lesson(p, style, "src/src1.tex");
+        QCOMPARE(r.failure, QString());
+        QCOMPARE(r.done, 1);
+        QList<layout::Move> moves = layout::moves(p, "src/src1.tex");
+        QCOMPARE(moves.size(), 1);
+        QCOMPARE(moves[0].state, "fatta");
+        QVERIFY2(moves[0].what.contains("rimpicciolita al"), qPrintable(moves[0].what));
+        const QString after = files::read(p.path("src/src1.tex"));
+        QVERIFY(after.contains("{% impaginazione\n\\begin{tikzpicture}") && after.contains("\\end{tikzpicture}\n}% impaginazione\n\\end{center}"));
+        QVERIFY(!Compiler::compileSync(p, "src/src1.tex").hasErrors());
+        QCOMPARE(layout::lesson(p, style, "src/src1.tex").found, 0);                   // di nuovo: niente da fare
+        QCOMPARE(layout::decide(p, "src/src1.tex", moves[0].block, "lasciata"), QString());
+        QCOMPARE(files::read(p.path("src/src1.tex")), before);
+        QCOMPARE(layout::decide(p, "src/src1.tex", moves[0].block, "accettata"), QString());
+        QCOMPARE(files::read(p.path("src/src1.tex")), after);
+    }
+
     // L'impaginazione oltre i riquadri spezzati: una figura che non ci stava ed è passata oltre lascia un grande vuoto.
     // Non c'è una mossa sicura: si segnala, e si decide a mano o con l'agente.
     void layoutHole()

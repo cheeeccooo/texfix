@@ -25,6 +25,7 @@ struct Move {
     int line = 0;                          // la riga del blocco nella lezione; 0 se non c'è più
     QString sign = SIGN;                   // la riga scritta nella lezione: un a capo prima del blocco, o uno spezzamento dentro
     QString after;                         // per uno spezzamento dentro: la riga dopo cui sta
+    QString until;                         // per una mossa che avvolge (la misura di una figura): la riga dopo cui chiude
 };
 struct Result {
     int found = 0, done = 0, proposed = 0;
