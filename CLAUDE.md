@@ -166,8 +166,8 @@ dal menu della lezione), «Ricorda come regola del progetto», riepilogo, «Riap
 tutta». Domande, letture, aggiunte e il prima e dopo si vedono come nel PDF (`core/Snippets`, `Workspace::snippet`):
 intanto il testo; ciò che non compila resta testo. In Rivedi correzioni ci sono anche errori e righe fuori misura
 dell'ultima compilazione, con «Sistema» (`fixAll(lezione)`). Dopo «Riorganizza per argomenti» i dubbi seguono il loro
-passo nel file che lo contiene. Manca: la lista che si aggiorna riga per riga (oggi si rilegge tutta: una decisione
-costa circa 2 ms nel motore).
+passo nel file che lo contiene. La lista si rilegge ma cambia solo ciò che è cambiato (`ReviewView.reload`: una riga
+uguale a prima resta la stessa, e le schede restano finché il numero delle righe non cambia).
 
 **§3.8 Figure.** Registro unico, «Ridisegna», «Ritaglia dalla fonte», Rivedi figure, «Ricontrolla con le fonti»
 (l'agente rilegge le fonti e propone un piano).
@@ -179,7 +179,7 @@ una voce sola dall'altra parte (si segnalano). Un'unità che finisce con poche r
 (`\enlargethispage`, su una colonna sola). Ogni mossa si accetta, si lascia com'era, si sistema a mano o si manda
 all'agente. A mano (`ProjectView.startManual`): Progetto e chat si chiudono, la lezione si apre al blocco accanto alla
 prova (la prima si compila da sola, poi «Prova» o ⌘B), una striscia in alto dice che cosa c'è da sistemare; «Risolta»
-o «Torna alla revisione» rimettono i pannelli com'erano. Righe sole in cima o in fondo le evita `texfix.sty`. Manca: con poco spazio le prove non vanno sotto l'editor.
+o «Torna alla revisione» rimettono i pannelli com'erano. Righe sole in cima o in fondo le evita `texfix.sty`. Con poco spazio (finestra sotto i 900 px) la prova va sotto l'editor (`ProjectView.stacked`).
 
 **§3.10 Errori e righe.** Gli errori al modello. Le righe: prima una formula in display troppo larga spezzata a ogni
 segno di relazione o a un + (`fix::splitDisplay`), poi il paragrafo spezzato a una fine di frase, poi il modello.

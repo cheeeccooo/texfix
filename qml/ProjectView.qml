@@ -138,7 +138,14 @@ Item {
     // Il divisore fra editor e PDF ha tre posizioni: 0 PDF pieno, 1 alla pari, 2 editor pieno; -1 dove l'ha lasciato l'utente.
     property int split: 1
     onSplitChanged: applySplit()
+    // Nella modifica a mano, con poco spazio, la prova va sotto l'editor.
+    readonly property bool stacked: manual !== null && width < 900
+    onStackedChanged: Qt.callLater(applySplit)
     function applySplit() {
+        if (stacked) {
+            editor.SplitView.preferredHeight = sideBySide.height / 2
+            return
+        }
         if (split === 0)
             editor.SplitView.preferredWidth = 0
         else if (split === 1)
@@ -418,9 +425,10 @@ Item {
                     SplitView {
                     id: sideBySide
                     anchors.fill: parent
-                    orientation: Qt.Horizontal
+                    orientation: root.stacked ? Qt.Vertical : Qt.Horizontal
                     handle: Handle {}
                     onWidthChanged: root.applySplit()
+                    onHeightChanged: if (root.stacked) root.applySplit()
                     onResizingChanged: if (resizing) root.split = -1
                     EditorPane {
                         id: editor
@@ -433,6 +441,7 @@ Item {
                         id: pdf
                         SplitView.fillWidth: true
                         SplitView.minimumWidth: 0
+                        SplitView.fillHeight: true
                         source: Workspace.pdf
                         onSourceAsked: (page, x, y) => root.jumpToSource(page, x, y)
                         tags: Workspace.showTags ? Workspace.tags : []

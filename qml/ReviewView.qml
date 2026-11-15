@@ -13,7 +13,15 @@ Rectangle {
     signal lineAsked(string file, int line)
     color: Theme.window
 
-    function reload() { items = Workspace.reviewItems(section, summary) }
+    // Si rilegge tutto, ma cambia solo ciò che è cambiato: una riga uguale a prima resta la stessa, così la sua scheda non
+    // si rifà e la lista resta dov'è.
+    function reload() {
+        const fresh = Workspace.reviewItems(section, summary), old = items
+        for (let i = 0; i < fresh.length && i < old.length; ++i)
+            if (JSON.stringify(fresh[i]) === JSON.stringify(old[i]))
+                fresh[i] = old[i]
+        items = fresh
+    }
     Component.onCompleted: reload()
     onSummaryChanged: reload()
     onVisibleChanged: if (visible) reload()            // si rilegge quando torna in vista
@@ -96,15 +104,18 @@ Rectangle {
             boundsBehavior: Flickable.StopAtBounds
             spacing: Theme.gap
             bottomMargin: 2 * Theme.gap
-            model: root.items
+            model: root.items.length                   // le schede restano finché il numero delle righe non cambia
             ScrollBar.vertical: ScrollBar {}
             delegate: Loader {
                 id: slot
-                required property var modelData
+                required property int index
+                readonly property var modelData: root.items[index] || ({ type: "lesson" })
+                readonly property string kind: modelData.type
                 x: Theme.gap + 4
                 width: Math.min(list.width - 2 * Theme.gap - 8, 860)
-                sourceComponent: modelData.type === "lesson" ? lessonHead : modelData.type === "doubt" ? doubtCard : modelData.type === "issue" ? issueCard : declaredCard
+                sourceComponent: kind === "lesson" ? lessonHead : kind === "doubt" ? doubtCard : kind === "issue" ? issueCard : declaredCard
                 onLoaded: item.row = modelData
+                onModelDataChanged: if (item) item.row = modelData
             }
         }
     }
