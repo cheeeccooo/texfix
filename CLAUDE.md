@@ -110,7 +110,7 @@ rileggere gli editor senza modifiche in sospeso; una rilettura svuota la pila de
 
 `--gesti`, separati da «;»: `apri FILE [RIGA]`, `compila`, `tutto`, `salta` (⌘J), `sorgente PAGINA X Y`, `divisore 0|1|2`,
 `avvisi`, `progetto chiuso`, `annulla`, `ripeti`, `passo TITOLO`, `scrivi FILE TESTO`, `fatta FILE`, `impostazioni`,
-`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `converti` (tutta la coda), `converti finestra`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `lezione N DATA FILE…` (crea una lezione), `nuova-lezione` (apre la finestra), `materiale FILE…` (fa il piano dello smistamento), `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`, `rinomina FILE NOME`, `console`, `argomenti` (propone la scaletta), `applica-argomenti`, `per-data`, `salva-profilo NOME`, `nuovo CARTELLA [PROFILO]`. Ogni gesto parte quando niente lavora; poi la foto.
+`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `converti` (tutta la coda), `converti finestra`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `lezione N DATA FILE…` (crea una lezione), `nuova-lezione` (apre la finestra), `materiale FILE…` (fa il piano dello smistamento), `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`, `rinomina FILE NOME`, `console`, `argomenti` (propone la scaletta), `applica-argomenti`, `per-data`, `salva-profilo NOME`, `nuovo CARTELLA [PROFILO]`, `correggo LEZIONE DUBBIO`, `decidi LEZIONE [DUBBIO…]` (costa). Ogni gesto parte quando niente lavora; poi la foto.
 
 ## Regole e stile (SPEC §4)
 
@@ -148,8 +148,11 @@ già, «Ricontrolla con le fonti», le mosse sui display troppo larghi, l'impagi
 la Console con il registro.
 
 Di §3.7 c'è: Rivedi dubbi e Rivedi correzioni come schede (`qml/ReviewView.qml`, `Workspace::reviewItems`), con la
-pagina della fonte, il riepilogo, riapri e annulla la modifica, i tasti nella barra solo se serve. Manca: «Correggo
-io», «Decidi tu», «Ricorda come regola», la resa compilata dei pezzi, la lista che si aggiorna riga per riga.
+pagina della fonte, il riepilogo, riapri e annulla la modifica, i tasti nella barra solo se serve. «Correggo io» (`review::startCorrection`: ricorda la lezione in `salvataggi/dubbi/prima/`, poi la scheda mostra le
+righe tolte e aggiunte, «Modifica» e «Conferma»), «Decidi tu» e «Fai decidere al modello tutti i dubbi»
+(`review::decide`, una chiamata per dubbio con la pagina o il testo della fonte: la lettura è scritta ma aspetta la
+conferma, con il perché), «Ricorda come regola del progetto» dopo una decisione diversa da ciò che era scritto.
+Manca: la resa compilata dei pezzi e del prima e dopo, la lista che si aggiorna riga per riga.
 
 Di §3.9 c'è: l'unità spezzata fra due pagine, «Rivedi impaginazione» (`qml/LayoutView.qml`), l'impaginazione da sola
 dopo Converti, righe sole in cima o in fondo evitate da `texfix.sty`. Manca tutto il resto del §3.9: titoli in fondo

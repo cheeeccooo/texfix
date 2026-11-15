@@ -134,6 +134,13 @@ public:
     Q_INVOKABLE QVariantList reviewItems(const QString &section, bool summary) const;
     Q_INVOKABLE void chooseReading(const QString &lesson, const QString &id, int reading);
     Q_INVOKABLE void reopenDoubt(const QString &lesson, const QString &id, bool revert);
+    // «Correggo io»: ricorda com'è la lezione; dopo la modifica a mano la scheda mostra il prima e il dopo, e
+    // confirmDoubt chiude. «Decidi tu»: decideDoubts fa decidere al modello i dubbi dati (vuoto: tutti quelli aperti
+    // della lezione), un lavoro; le sue letture aspettano la conferma. addProjectRule: «Ricorda come regola del progetto».
+    Q_INVOKABLE void correctDoubt(const QString &lesson, const QString &id);
+    Q_INVOKABLE void confirmDoubt(const QString &lesson, const QString &id);
+    Q_INVOKABLE void decideDoubts(const QString &lesson, const QStringList &ids);
+    Q_INVOKABLE void addProjectRule(const QString &rule);
     Q_INVOKABLE void keepDeclared(const QString &lesson, const QString &hash, bool keep);
     Q_INVOKABLE void keepAllDeclared(const QString &lesson);
     Q_INVOKABLE void dropDeclared(const QString &lesson, const QString &hash);

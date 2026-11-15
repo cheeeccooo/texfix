@@ -942,6 +942,56 @@ private slots:
         profiles::setHome({});
     }
 
+    // «Correggo io» e «Decidi tu»: la modifica resta da confermare, con il prima e il dopo o con il perché.
+    void correctAndDecide()
+    {
+        QTemporaryDir dir;
+        const Project p(dir.path());
+        const QString lesson = "src/src1.tex";
+        const QString tex = "\\section{S}\nIl modulo è $|z|$.\nAltra riga.\n";
+        files::write(p.path(lesson), tex);
+        files::write(p.path("fonti/usate/lezione 1/a.md"), "modulo |2|\n");
+        files::write(p.path(Convert::doubtsFile(lesson)),
+                     R"({"dubbi": [{"id": "src1-d1", "page": 1, "source": "a.md", "what": "z o 2?", "latex": "$|z|$",
+                         "readings": [{"text": "z", "latex": "$|z|$"}, {"text": "2", "latex": "$|2|$"}]}]})");
+
+        QCOMPARE(review::startCorrection(p, lesson, "src1-d1"), QString());
+        QVERIFY(review::change(p, lesson, "src1-d1").none());                          // ancora niente è cambiato
+        files::write(p.path(lesson), "\\section{S}\nIl modulo vale $|w|$.\nAltra riga.\n");
+        const review::Change c = review::change(p, lesson, "src1-d1");
+        QCOMPARE(c.before, QStringList{"Il modulo è $|z|$."});
+        QCOMPARE(c.after, QStringList{"Il modulo vale $|w|$."});
+        review::Doubt d = review::doubts(p, lesson).first();
+        QVERIFY(d.open && d.pending);
+        QCOMPARE(review::counts(p, lesson).doubts, 1);                                 // da confermare: resta da decidere
+        QCOMPARE(review::confirm(p, lesson, "src1-d1"), QString());
+        d = review::doubts(p, lesson).first();
+        QVERIFY(!d.open);
+        QCOMPARE(d.how, "corretta");
+        QVERIFY(!review::confirm(p, lesson, "src1-d1").isEmpty());
+
+        // il modello: scrive la sua lettura, ma aspetta la conferma
+        files::write(p.path(lesson), tex);
+        review::reopen(p, lesson, "src1-d1", false);
+        const QJsonObject line{{"type", "result"}, {"result", R"({"latex": "$|2|$", "why": "Nel testo è scritto 2."})"}, {"total_cost_usd", 0.01}};
+        files::writeBytes(dir.filePath("r.json"), QJsonDocument(line).toJson(QJsonDocument::Compact) + '\n');
+        files::write(dir.filePath("claude"), QString("#!/bin/sh\ncat > '%1/richiesta'\ncat '%1/r.json'\n").arg(dir.path()));
+        QFile(dir.filePath("claude")).setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
+        JobControl control;
+        Model model("veloce", dir.path(), &control);
+        QCOMPARE(review::decide(p, Settings(), model, lesson, "src1-d1"), QString());
+        qunsetenv("TEXFIX_CLAUDE");
+        QVERIFY(files::read(dir.filePath("richiesta")).contains("SOURCE TEXT:\\nmodulo |2|"));
+        QVERIFY(files::read(p.path(lesson)).contains("Il modulo è $|2|$."));
+        d = review::doubts(p, lesson).first();
+        QVERIFY(d.open && d.pending);
+        QCOMPARE(d.how, "modello");
+        QCOMPARE(d.why, "Nel testo è scritto 2.");
+        QCOMPARE(review::reopen(p, lesson, "src1-d1", true), QString());                // annulla la modifica del modello
+        QCOMPARE(files::read(p.path(lesson)), tex);
+    }
+
     // La cronologia: lavori e modifiche a mano si annullano e si ripetono; un passo nuovo toglie il «ripeti».
     void history()
     {

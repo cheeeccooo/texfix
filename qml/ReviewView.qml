@@ -86,6 +86,12 @@ Rectangle {
             TxLabel { Layout.fillWidth: true; Layout.topMargin: Theme.gap; text: row.title || ""; font.weight: Font.DemiBold }
             TxLabel { visible: row.done === true; text: "fatta"; color: Theme.good; font.pixelSize: Theme.smallSize }
             TxButton {
+                visible: root.section === "dubbi" && row.open > 0
+                text: "Fai decidere al modello tutti i dubbi"
+                enabled: !Workspace.busy
+                onClicked: Workspace.decideDoubts(row.lesson, [])
+            }
+            TxButton {
                 visible: root.section === "correzioni" && row.open > 1
                 text: "Tieni tutto"
                 onClicked: Workspace.keepAllDeclared(row.lesson)
@@ -110,9 +116,39 @@ Rectangle {
                 asynchronous: true
                 source: card.row.sourcePath ? "image://pdf/0/" + (Math.max(1, card.row.page) - 1) + "/1400/" + encodeURIComponent(card.row.sourcePath) : ""
             }
+            // da confermare: il prima e il dopo di una correzione a mano, o il perché del modello
+            ColumnLayout {
+                Layout.fillWidth: true
+                visible: card.row.pending === true
+                spacing: 2
+                TxLabel {
+                    Layout.fillWidth: true
+                    text: card.row.how === "modello" ? "Il modello: " + (card.row.why || "") + " Scritto ora: " + (card.row.latex || "")
+                          : (card.row.before || []).length + (card.row.after || []).length === 0 ? "Correggi il passo nella lezione e salva: qui compare il prima e il dopo." : "Corretto da te:"
+                    color: Theme.textMuted
+                    wrapMode: Text.WordWrap
+                    elide: Text.ElideNone
+                }
+                Repeater {
+                    model: card.row.before || []
+                    TxLabel { required property string modelData; Layout.fillWidth: true; text: "− " + modelData; color: Theme.bad; font.family: Theme.monoFamily; wrapMode: Text.WrapAnywhere; elide: Text.ElideNone }
+                }
+                Repeater {
+                    model: card.row.after || []
+                    TxLabel { required property string modelData; Layout.fillWidth: true; text: "+ " + modelData; color: Theme.good; font.family: Theme.monoFamily; wrapMode: Text.WrapAnywhere; elide: Text.ElideNone }
+                }
+                RowLayout {
+                    Layout.alignment: Qt.AlignRight
+                    spacing: Theme.gap
+                    TxButton { visible: card.row.how === "corretta"; text: "Modifica"; onClicked: root.lineAsked(card.row.lesson, Math.max(1, card.row.line)) }
+                    TxButton { text: "Riapri"; flat: true; onClicked: Workspace.reopenDoubt(card.row.lesson, card.row.id, card.row.how === "modello") }
+                    TxButton { text: "Conferma"; primary: true; onClicked: Workspace.confirmDoubt(card.row.lesson, card.row.id) }
+                }
+            }
             Flow {
                 Layout.fillWidth: true
                 spacing: Theme.gap
+                visible: card.row.pending !== true
                 Repeater {
                     model: card.row.readings
                     TxButton {
@@ -132,10 +168,12 @@ Rectangle {
                 TxLabel {
                     Layout.fillWidth: true
                     text: (card.row.source || "") + (card.row.page > 0 ? ", pagina " + card.row.page : "")
-                          + (card.row.open ? "" : card.row.how === "confermata" ? " · ✓ Confermata" : " · ✓ Scelta")
+                          + (card.row.open ? "" : card.row.how === "confermata" ? " · ✓ Confermata" : card.row.how === "corretta" ? " · ✓ Corretto da te" : card.row.how === "modello" ? " · ✓ Deciso dal modello" : " · ✓ Scelta")
                     color: Theme.textFaint
                     font.pixelSize: Theme.smallSize
                 }
+                TxButton { visible: card.row.open === true && card.row.pending !== true; text: "Correggo io"; flat: true; onClicked: { Workspace.correctDoubt(card.row.lesson, card.row.id); root.lineAsked(card.row.lesson, Math.max(1, card.row.line)) } }
+                TxButton { visible: card.row.open === true && card.row.pending !== true; text: "Decidi tu"; flat: true; enabled: !Workspace.busy; onClicked: Workspace.decideDoubts(card.row.lesson, [card.row.id]) }
                 TxButton { text: "Sorgente"; flat: true; onClicked: card.showSource = !card.showSource }
                 TxButton { visible: card.row.line > 0; text: "Apri alla riga"; flat: true; onClicked: root.lineAsked(card.row.lesson, card.row.line) }
                 TxButton { visible: card.row.open === false; text: "Riapri"; flat: true; onClicked: Workspace.reopenDoubt(card.row.lesson, card.row.id, false) }
@@ -145,6 +183,33 @@ Rectangle {
                     flat: true
                     onClicked: Workspace.reopenDoubt(card.row.lesson, card.row.id, true)
                 }
+            }
+            // dopo una decisione diversa da ciò che era scritto: ricordarla come regola del progetto
+            RowLayout {
+                Layout.fillWidth: true
+                visible: card.row.open === false && card.row.how !== "confermata"
+                spacing: Theme.gap
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: Theme.rowHeight
+                    radius: Theme.radius
+                    color: Theme.window
+                    border.width: 1
+                    border.color: rule.activeFocus ? Theme.accent : Theme.border
+                    TextInput {
+                        id: rule
+                        anchors.fill: parent
+                        anchors.leftMargin: Theme.gap
+                        anchors.rightMargin: Theme.gap
+                        verticalAlignment: TextInput.AlignVCenter
+                        color: Theme.text
+                        font.pixelSize: Theme.smallSize + 1
+                        selectByMouse: true
+                        clip: true
+                        TxLabel { anchors.fill: parent; visible: parent.text === ""; text: "Ricorda come regola del progetto…"; color: Theme.textFaint; font.pixelSize: Theme.smallSize + 1 }
+                    }
+                }
+                TxButton { text: "Ricorda"; enabled: rule.text.trim() !== ""; onClicked: { Workspace.addProjectRule(rule.text); rule.text = "" } }
             }
             TxLabel {
                 Layout.fillWidth: true

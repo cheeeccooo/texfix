@@ -181,6 +181,10 @@ Item {
             } else if (name === "console") {
                 root.bottomOpen = true
                 bottom.tab = 1
+            } else if (name === "correggo") {
+                Workspace.correctDoubt(argument.split(" ")[0], argument.split(" ")[1])
+            } else if (name === "decidi") {
+                Workspace.decideDoubts(argument.split(" ")[0], argument.split(" ").slice(1))
             } else if (name === "avvisi") {
                 root.bottomOpen = true
             } else if (name === "progetto") {

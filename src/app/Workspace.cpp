@@ -759,6 +759,9 @@ QVariantList Workspace::reviewItems(const QString &section, bool summary) const
                     readings << QVariantMap{{"text", r.text}, {"latex", r.latex}};
                 rows << QVariantMap{{"type", "doubt"}, {"lesson", d.lesson}, {"id", d.id}, {"what", d.what}, {"latex", d.latex},
                                     {"readings", readings}, {"open", d.open}, {"chosen", d.chosen}, {"how", d.how}, {"line", d.line},
+                                    {"pending", d.pending}, {"why", d.why},
+                                    {"before", d.pending && d.how == "corretta" ? review::change(m_project, d.lesson, d.id).before : QStringList()},
+                                    {"after", d.pending && d.how == "corretta" ? review::change(m_project, d.lesson, d.id).after : QStringList()},
                                     {"page", d.page}, {"source", d.source},
                                     {"sourcePath", d.source.endsWith(".pdf", Qt::CaseInsensitive) ? sourcePath(d.source) : QString()}};
             }
@@ -1365,4 +1368,72 @@ void Workspace::backToLessons()
     refreshTree();
     emit filesChanged();
     m_compiler.compileDocument();
+}
+
+void Workspace::correctDoubt(const QString &lesson, const QString &id)
+{
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    decided(lesson, QStringLiteral("Dubbio da correggere a mano"), review::startCorrection(m_project, lesson, id));
+}
+
+void Workspace::confirmDoubt(const QString &lesson, const QString &id)
+{
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    decided(lesson, QStringLiteral("Dubbio confermato"), review::confirm(m_project, lesson, id));
+}
+
+void Workspace::addProjectRule(const QString &rule)
+{
+    if (rule.trimmed().isEmpty())
+        return;
+    setProjectRules(m_settings.rules + QStringList{rule.trimmed()});
+    say(QStringLiteral("Regola del progetto aggiunta."));
+}
+
+void Workspace::decideDoubts(const QString &lesson, const QStringList &ids)
+{
+    if (busy())
+        return say(QStringLiteral("C'è già un lavoro in corso."));
+    QStringList todo = ids;
+    if (todo.isEmpty())
+        for (const review::Doubt &d : review::doubts(m_project, lesson))
+            if (d.open && !d.pending)
+                todo << d.id;
+    if (todo.isEmpty())
+        return say(QStringLiteral("Non ci sono dubbi da far decidere."));
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    startJob(QStringLiteral("Il modello decide i dubbi"), [this, lesson, todo, project = m_project, settings = m_settings](JobControl *control) {
+        Model model(settings.quality, project.root(), control);
+        int done = 0;
+        QStringList failed;
+        QString stopped;
+        try {
+            for (int i = 0; i < todo.size(); ++i) {
+                control->progress(double(i) / todo.size(), QStringLiteral("dubbio %1 di %2").arg(i + 1).arg(todo.size()));
+                try {
+                    const QString error = review::decide(project, settings, model, lesson, todo[i]);   // una chiamata per dubbio
+                    error.isEmpty() ? void(++done) : void(failed << error);
+                } catch (const Stopped &) {
+                    throw;
+                } catch (const LimitReached &) {
+                    throw;
+                } catch (const std::exception &e) {
+                    failed << QString::fromUtf8(e.what());
+                }
+            }
+        } catch (const Stopped &) {
+            stopped = QStringLiteral("Lavoro fermato. ");
+        } catch (const std::exception &e) {
+            stopped = QString::fromUtf8(e.what()) + ' ';
+        }
+        const double cost = model.cost();
+        return std::function<void()>([=, this] {
+            checkpoint(QStringLiteral("Dubbi decisi dal modello"));
+            refreshTree();
+            emit filesChanged();
+            say(stopped + QStringLiteral("Il modello ha deciso %1: aspettano la tua conferma. Costo: %2 $.%3")
+                              .arg(plural(done, "dubbio", "dubbi"), QLocale(QLocale::Italian).toString(cost, 'f', 2),
+                                   failed.isEmpty() ? QString() : QStringLiteral(" Non decisi: %1.").arg(failed.size())));
+        });
+    });
 }

@@ -2,8 +2,13 @@
 
 #include "core/Convert.h"
 #include "core/Files.h"
+#include "core/Model.h"
+#include "core/Pages.h"
 
 #include <QCryptographicHash>
+#include <QDirIterator>
+#include <QFile>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -72,7 +77,9 @@ QList<Doubt> doubts(const Project &project, const QString &lesson)
         d.page = o.value("page").toInt();
         for (const QJsonValue &r : o.value("readings").toArray())
             d.readings << Reading{r.toObject().value("text").toString(), r.toObject().value("latex").toString()};
-        d.open = o.value("stato").toString("aperto") == "aperto";
+        d.open = o.value("stato").toString("aperto") != "deciso";
+        d.pending = o.value("stato").toString() == "da_confermare";
+        d.why = o.value("perche").toString();
         d.chosen = o.value("scelta").toInt(-1);
         d.how = o.value("come").toString();
         d.line = lineOnce(text, d.latex);
@@ -115,6 +122,7 @@ QString reopen(const Project &project, const QString &lesson, const QString &id,
         doubt["stato"] = "aperto";
         doubt.remove("scelta");
         doubt.remove("come");
+        doubt.remove("perche");
         return {};
     });
 }
@@ -230,6 +238,119 @@ Counts counts(const Project &project, const QString &lesson)
     for (const Declared &d : declared(project, lesson))
         c.declared += d.state == "aperta";
     return c;
+}
+
+}
+
+namespace tx::review {
+
+namespace {
+QString snapshotPath(const Project &project, const QString &id) { return project.path("salvataggi/dubbi/prima/" + id + ".tex"); }
+}
+
+QString startCorrection(const Project &project, const QString &lesson, const QString &id)
+{
+    return edit(project, lesson, id, [&](QJsonObject &doubt, QString &text) -> QString {
+        if (!files::write(snapshotPath(project, id), text))
+            return QStringLiteral("Non riesco a ricordare com'era la lezione.");
+        doubt["stato"] = "da_confermare";
+        doubt["come"] = "corretta";
+        doubt.remove("scelta");
+        return {};
+    });
+}
+
+Change change(const Project &project, const QString &lesson, const QString &id)
+{
+    Change out;
+    bool ok = false;
+    const QStringList before = files::read(snapshotPath(project, id), &ok).split('\n');
+    if (!ok)
+        return out;
+    const QStringList after = files::read(project.path(lesson)).split('\n');
+    // le righe che c'erano e non ci sono più, e quelle nuove, nell'ordine in cui stanno
+    QHash<QString, int> balance;
+    for (const QString &line : after)
+        ++balance[line];
+    for (const QString &line : before)
+        if (--balance[line] < 0 && !line.trimmed().isEmpty())
+            out.before << line.trimmed();
+    balance.clear();
+    for (const QString &line : before)
+        ++balance[line];
+    for (const QString &line : after)
+        if (--balance[line] < 0 && !line.trimmed().isEmpty())
+            out.after << line.trimmed();
+    return out;
+}
+
+QString confirm(const Project &project, const QString &lesson, const QString &id)
+{
+    const QString error = edit(project, lesson, id, [&](QJsonObject &doubt, QString &) -> QString {
+        if (doubt.value("stato").toString() != "da_confermare")
+            return QStringLiteral("Questo dubbio non aspetta una conferma.");
+        doubt["stato"] = "deciso";
+        return {};
+    });
+    if (error.isEmpty())
+        QFile::remove(snapshotPath(project, id));
+    return error;
+}
+
+QString decide(const Project &project, const Settings &settings, Model &model, const QString &lesson, const QString &id)
+{
+    Doubt doubt;
+    for (const Doubt &d : doubts(project, lesson))
+        if (d.id == id)
+            doubt = d;
+    if (doubt.id.isEmpty())
+        return QStringLiteral("Questo dubbio non c'è più.");
+    // la fonte: la pagina in immagine, o il testo
+    QStringList parts;
+    QString source;
+    for (QDirIterator it(project.path("fonti"), {doubt.source}, QDir::Files, QDirIterator::Subdirectories); it.hasNext();)
+        source = it.next();
+    if (!source.isEmpty()) {
+        try {
+            const Pages pages = Pages::read(source, project.path("build/lavori/dubbi/" + doubt.source));
+            if (pages.isText)
+                parts << "SOURCE TEXT:\n" + pages.text.left(20000);
+            else if (!pages.full.value(doubt.page - 1).isEmpty())
+                parts << QStringLiteral("The page of the source:") << pages.full.value(doubt.page - 1);
+        } catch (const std::exception &) {
+        }
+    }
+    const QStringList lines = files::read(project.path(lesson)).split('\n');
+    QStringList readings;
+    for (int i = 0; i < doubt.readings.size(); ++i)
+        readings << QStringLiteral("%1. %2 → `%3`").arg(i).arg(doubt.readings[i].text, doubt.readings[i].latex);
+    parts << QStringLiteral("The doubt: %1\nAs written now: `%2`\nCandidate readings:\n%3\n\nThe LaTeX around it:\n```latex\n%4\n```")
+                 .arg(doubt.what, doubt.latex, readings.join('\n'), lines.mid(qMax(0, doubt.line - 8), 16).join('\n'));
+    QString system = QStringLiteral(
+        "You settle one doubt left while turning lecture notes (Italian) into LaTeX: an uncertain reading. Look at the source and at the "
+        "mathematics around the passage, and decide what is written. Return only a JSON object: {\"latex\": \"<the excerpt as it should be "
+        "written: one of the candidate readings, another one if none fits, or exactly the current one if it is already right>\", "
+        "\"why\": \"<Italian, one short sentence: what you saw that decides it>\"}. Change nothing but the uncertain symbols.");
+    if (!settings.rules.isEmpty())
+        system += "\nRules of this project, which win over everything else:\n- " + settings.rules.join("\n- ");
+    const QJsonObject answer = Model::json(model.ask("decide", system, parts, id)).toObject();
+    const QString wanted = answer.value("latex").toString(), why = answer.value("why").toString().trimmed();
+    if (wanted.isEmpty())
+        return QStringLiteral("Il modello non ha saputo decidere.");
+    return edit(project, lesson, id, [&](QJsonObject &o, QString &text) -> QString {
+        const QString now = o.value("ora").toString(o.value("latex").toString());
+        if (wanted != now) {
+            if (!lineOnce(text, now))
+                return QStringLiteral("Non trovo il passo nel testo una volta sola: va corretto a mano.");
+            text.replace(now, wanted);
+            o["ora"] = wanted;
+        }
+        o["stato"] = "da_confermare";              // la lettura è scritta, ma il dubbio aspetta la conferma
+        o["come"] = "modello";
+        o["perche"] = wanted == now ? QStringLiteral("Nessuna modifica. %1").arg(why) : why;
+        o.remove("scelta");
+        return {};
+    });
 }
 
 }

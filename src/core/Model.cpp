@@ -76,7 +76,7 @@ QString Model::effortFor(const QString &quality, const QString &stage)
         return stage == "fix2" || stage == "fix3" ? "high" : "medium";
     if (stage == "transcribe" || stage == "figure" || stage == "fix3")
         return "high";
-    return stage == "fix" ? "low" : "medium";
+    return stage == "fix" ? "low" : "medium";            // anche «decide»: un dubbio alla volta, con la pagina
 }
 
 QString Model::block(const QString &text, const QString &lang)
