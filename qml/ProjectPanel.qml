@@ -31,14 +31,19 @@ Rectangle {
         property string number
         property bool done: false
         property bool lesson: false
+        property int indent: 0                         // le righe dentro una lezione stanno più a destra
+        property string arrow                          // «▸» o «▾» se la riga ha qualcosa dentro; un clic lì apre solo il ramo
+        property string panel                          // la riga apre un pannello Rivedi su questa lezione
+        signal arrowClicked()
         width: parent ? parent.width : 0
         height: Theme.rowHeight
         color: root.currentFile === file ? Theme.selected : area.containsMouse ? Theme.hover : "transparent"
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: Theme.gap + 4
+            anchors.leftMargin: Theme.gap + 4 + row.indent
             anchors.rightMargin: Theme.gap + 4
             spacing: 6
+            Text { visible: row.arrow !== ""; text: row.arrow; color: Theme.textFaint; font.pixelSize: 9; Layout.preferredWidth: 8 }
             Rectangle {
                 visible: row.dot.a > 0
                 implicitWidth: row.done ? 12 : 8
@@ -57,15 +62,19 @@ Rectangle {
             hoverEnabled: true
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             onClicked: mouse => {
+                if (mouse.button === Qt.LeftButton && row.arrow !== "" && mouse.x < Theme.gap + 20 + row.indent)
+                    return row.arrowClicked()
                 if (mouse.button === Qt.LeftButton)
-                    return root.fileChosen(row.file)
-                if (row.file.includes(":"))
+                    return row.panel !== "" ? root.panelAsked(row.panel, row.file) : root.fileChosen(row.file)
+                if (row.file.includes(":") || row.panel !== "")
                     return                             // un lavoro, non un file
                 fileMenu.file = row.file
                 fileMenu.lesson = row.lesson
                 fileMenu.done = row.done
                 fileMenu.popup()
             }
+            // il doppio clic apre anche ciò che prende un'altra app
+            onDoubleClicked: mouse => { if (mouse.button === Qt.LeftButton && row.panel === "" && !row.file.includes(":") && !/\.(tex|sty|md|txt|json)$/i.test(row.file)) Workspace.openExternally(row.file) }
         }
         ToolTip.visible: area.containsMouse
         ToolTip.delay: 800
@@ -89,9 +98,14 @@ Rectangle {
                 required property var modelData
                 file: modelData.file
                 name: modelData.name
+                detail: modelData.detail || ""
             }
         }
     }
+
+    // le lezioni che l'utente ha aperto: restano così fra un aggiornamento e l'altro
+    property var openLessons: ({})
+    signal panelAsked(string panel, string lesson)
 
     // il menu di una lezione
     signal compileAsked(string file)
@@ -174,20 +188,71 @@ Rectangle {
             }
             Repeater {
                 model: Workspace.lessons
-                TreeRow {
+                Column {
+                    id: lessonBlock
                     required property var modelData
+                    readonly property bool hasInside: modelData.rows.length + modelData.sources.length > 0
+                    readonly property bool open: root.openLessons[modelData.file] === true
+                    width: column.width
+                    TreeRow {
+                        readonly property var modelData: lessonBlock.modelData
                     file: modelData.file
                     name: modelData.title
                     number: modelData.number > 0 && !Workspace.byTopic ? modelData.number : ""
                     detail: modelData.detail !== "" ? modelData.detail : Workspace.byTopic ? "" : modelData.date
                     dot: modelData.done ? Theme.good : root.dotColor(modelData.state)
                     done: modelData.done
-                    lesson: true
+                        lesson: true
+                        arrow: !lessonBlock.hasInside ? " " : lessonBlock.open ? "▾" : "▸"
+                        onArrowClicked: {
+                            const all = Object.assign({}, root.openLessons)
+                            all[modelData.file] = !lessonBlock.open
+                            root.openLessons = all
+                        }
+                    }
+                    // dentro: ciò che c'è da rivedere, con il conto, e le fonti
+                    Repeater {
+                        model: lessonBlock.open ? lessonBlock.modelData.rows : []
+                        TreeRow {
+                            required property var modelData
+                            indent: 22
+                            file: lessonBlock.modelData.file
+                            panel: modelData.panel
+                            name: modelData.name
+                            detail: modelData.detail
+                            color: "transparent"
+                        }
+                    }
+                    Repeater {
+                        model: lessonBlock.open ? lessonBlock.modelData.sources : []
+                        TreeRow {
+                            required property var modelData
+                            indent: 22
+                            file: modelData.file
+                            name: modelData.name
+                            detail: "fonte"
+                        }
+                    }
                 }
             }
             FileGroup { title: "Da convertire"; files: Workspace.queue; visible: files.length > 0 }
             FileGroup { title: "Documento"; files: Workspace.documentFiles }
-            FileGroup { title: "Da consultare"; files: Workspace.documents; visible: files.length > 0 }
+            FileGroup { title: "Fonti senza lezione"; files: Workspace.strays; visible: files.length > 0 }
+            // ci si trascinano file: restano del progetto, e nessuno li cambia
+            Item {
+                width: column.width
+                height: docs.height
+                FileGroup {
+                    id: docs
+                    title: docsDrop.containsDrag ? "Da consultare: lascia qui" : "Da consultare"
+                    files: Workspace.documents
+                }
+                DropArea {
+                    id: docsDrop
+                    anchors.fill: parent
+                    onDropped: drop => { if (drop.hasUrls) Workspace.addDocuments(Workspace.localPaths(drop.urls)) }
+                }
+            }
             // gli esiti dei piani eseguiti: il titolo a sinistra, quando a destra; si aprono impaginati
             GroupTitle { text: "Esiti"; visible: Workspace.outcomes.length > 0 }
             Repeater {

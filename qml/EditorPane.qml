@@ -62,6 +62,12 @@ Rectangle {
         if (current < 0 && tabs.count > 0)
             current = 0
     }
+    // Porta il pannello aperto su una lezione.
+    function showLesson(lesson) {
+        const page = current >= 0 ? editors.itemAt(current) : null
+        if (page && page.item && page.item.showLesson)
+            Qt.callLater(() => page.item.showLesson(lesson))
+    }
     function closeAll() { tabs.clear(); current = -1 }
     // Un file rinominato o buttato: la sua scheda lo segue o si chiude (prima si salva ciò che c'era).
     function fileRenamed(from, to) {

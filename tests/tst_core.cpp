@@ -793,6 +793,7 @@ private slots:
         const QString two = "\\section{Serie}\n\\lezione{2}{03/10/2026}\n\n\\subsection{Criteri}\n% @L2.1 · b.pdf p.1\nTesto tre.\n\n\\subsection{Limiti notevoli}\n% @L2.2 · b.pdf p.3\nTesto quattro.\n";
         files::write(p.path("src/src1.tex"), one);
         files::write(p.path("src/src2.tex"), two);
+        files::write(p.path("salvataggi/dubbi/src2.json"), R"({"dubbi":[{"id":"src2-d1","what":"quattro o quarto?","latex":"Testo quattro.","readings":[{"text":"quattro","latex":"Testo quattro."},{"text":"quarto","latex":"Testo quarto."}]}]})");
 
         const QList<reorganize::Section> all = reorganize::sections(p);
         QCOMPARE(all.size(), 4);
@@ -810,6 +811,13 @@ private slots:
                  "\\section{Limiti}\n\\lezione{1}{01/10/2026}\n\n\\subsection{Definizione}\n% @L1.1 · a.pdf p.1\nTesto uno.\n\\paragraph{Nota.}\nResta dentro.\n"
                  "\\lezione{2}{03/10/2026}\n\n\\subsection{Limiti notevoli}\n% @L2.2 · b.pdf p.3\nTesto quattro.\n");
         QVERIFY(Settings::load(p).byTopic());
+        // i dubbi seguono il loro passo nel file per argomento, e lì si decidono
+        QCOMPARE(review::doubts(p, "src/arg1.tex").size(), 1);
+        QCOMPARE(review::doubts(p, "src/arg2.tex").size(), 0);
+        QCOMPARE(review::choose(p, "src/arg1.tex", "src2-d1", 1), QString());
+        QVERIFY(files::read(p.path("src/arg1.tex")).contains("Testo quarto."));
+        QCOMPARE(review::reopen(p, "src/arg1.tex", "src2-d1", true), QString());
+        QCOMPARE(review::counts(p, "src/arg1.tex").doubts, 1);
         QVERIFY(!reorganize::toTopics(p, {}).isEmpty());                                // è già per argomenti
 
         QCOMPARE(reorganize::toLessons(p), QString());

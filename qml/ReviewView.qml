@@ -19,6 +19,15 @@ Rectangle {
     onVisibleChanged: if (visible) reload()            // si rilegge quando torna in vista
     Connections { target: Workspace; function onFilesChanged() { if (root.visible) root.reload() } }
 
+    // Porta la vista su una lezione (dall'albero): una lezione fatta, o già tutta decisa, sta nel riepilogo.
+    function showLesson(lesson) {
+        if (!items.some(i => i.type === "lesson" && i.lesson === lesson))
+            summary = true
+        for (let i = 0; i < items.length; ++i)
+            if (items[i].type === "lesson" && items[i].lesson === lesson)
+                return list.positionViewAtIndex(i, ListView.Beginning)
+    }
+
     PdfBackend { id: pdf }                             // per l'indirizzo delle pagine delle fonti
 
     ColumnLayout {

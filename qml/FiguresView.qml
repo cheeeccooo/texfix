@@ -17,6 +17,13 @@ Rectangle {
     onVisibleChanged: if (visible) reload()
     Connections { target: Workspace; function onFilesChanged() { if (root.visible) root.reload() } }
 
+    // Porta la vista su una lezione (dall'albero).
+    function showLesson(lesson) {
+        for (let i = 0; i < items.length; ++i)
+            if (items[i].type === "lesson" && items[i].lesson === lesson)
+                return list.positionViewAtIndex(i, ListView.Beginning)
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 0

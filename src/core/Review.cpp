@@ -6,7 +6,9 @@
 #include "core/Pages.h"
 
 #include <QCryptographicHash>
+#include <QDir>
 #include <QDirIterator>
+#include <QFileInfo>
 #include <QFile>
 #include <QHash>
 #include <QJsonArray>
@@ -38,10 +40,21 @@ int lineOnce(const QString &text, const QString &excerpt)
     return int(text.left(at).count('\n')) + 1;
 }
 
+// I file dei dubbi che possono parlare di una lezione: il suo, e quelli rimasti senza la loro lezione (dopo «Riorganizza
+// per argomenti» i dubbi seguono il passo: valgono per il file che lo contiene).
+QStringList doubtFiles(const Project &project, const QString &lesson)
+{
+    QStringList out{project.path(Convert::doubtsFile(lesson))};
+    for (const QFileInfo &f : QDir(project.path("salvataggi/dubbi")).entryInfoList({"*.json"}, QDir::Files, QDir::Name))
+        if (!QFile::exists(project.path("src/" + f.completeBaseName() + ".tex")) && !out.contains(f.absoluteFilePath()))
+            out << f.absoluteFilePath();
+    return out;
+}
+
 // Cambia un dubbio nel suo file. `change` restituisce il perché se non si può.
 QString edit(const Project &project, const QString &lesson, const QString &id, const std::function<QString(QJsonObject &, QString &)> &change)
 {
-    const QString path = project.path(Convert::doubtsFile(lesson));
+  for (const QString &path : doubtFiles(project, lesson)) {
     QJsonObject root = readJson(path);
     QJsonArray all = root.value("dubbi").toArray();
     for (qsizetype i = 0; i < all.size(); ++i) {
@@ -58,6 +71,7 @@ QString edit(const Project &project, const QString &lesson, const QString &id, c
         root["dubbi"] = all;
         return writeJson(path, root) ? QString() : QStringLiteral("Non riesco a salvare la decisione.");
     }
+  }
     return QStringLiteral("Questo dubbio non c'è più.");
 }
 }
@@ -66,8 +80,12 @@ QList<Doubt> doubts(const Project &project, const QString &lesson)
 {
     QList<Doubt> out;
     const QString text = files::read(project.path(lesson));
-    for (const QJsonValue &v : readJson(project.path(Convert::doubtsFile(lesson))).value("dubbi").toArray()) {
+    const QString own = project.path(Convert::doubtsFile(lesson));
+    for (const QString &path : doubtFiles(project, lesson))
+      for (const QJsonValue &v : readJson(path).value("dubbi").toArray()) {
         const QJsonObject o = v.toObject();
+        if (path != own && !text.contains(o.value("ora").toString(o.value("latex").toString())))
+            continue;                              // un dubbio rimasto senza lezione: è di chi ha il suo passo
         Doubt d;
         d.id = o.value("id").toString();
         d.lesson = lesson;
@@ -132,7 +150,10 @@ QList<Declared> declared(const Project &project, const QString &lesson)
     static const QRegularExpression env(R"(\\begin\{(addedtext|correction)\}(.*?)\\end\{\1\})", QRegularExpression::DotMatchesEverythingOption);
     QList<Declared> out;
     const QJsonObject saved = readJson(project.path(DECLARED));
-    const QJsonArray kept = saved.value("tenute").toObject().value(lesson).toArray();
+    QJsonArray kept;                               // l'impronta è del contenuto: vale anche se il pezzo ha cambiato file
+    for (const QJsonValue &list : saved.value("tenute").toObject())
+        for (const QJsonValue &h : list.toArray())
+            kept.append(h);
     const QString text = files::read(project.path(lesson));
     for (auto it = env.globalMatch(text); it.hasNext();) {
         const auto m = it.next();
@@ -153,6 +174,13 @@ void keep(const Project &project, const QString &lesson, const QString &hash, bo
 {
     QJsonObject saved = readJson(project.path(DECLARED));
     QJsonObject kept = saved.value("tenute").toObject();
+    for (const QString &other : kept.keys()) {     // tolta ovunque fosse segnata
+        QJsonArray l = kept.value(other).toArray();
+        for (qsizetype i = l.size() - 1; i >= 0; --i)
+            if (l[i].toString() == hash)
+                l.removeAt(i);
+        kept[other] = l;
+    }
     QJsonArray list = kept.value(lesson).toArray();
     for (qsizetype i = list.size() - 1; i >= 0; --i)
         if (list[i].toString() == hash)

@@ -27,7 +27,8 @@ class Workspace : public QObject {
     Q_PROPERTY(QString root READ root NOTIFY projectChanged)
     Q_PROPERTY(QString name READ name NOTIFY projectChanged)
     Q_PROPERTY(QVariantList recents READ recents NOTIFY recentsChanged)
-    // Le lezioni del documento: file, number, date, title, state (idle | good | warn | bad), detail.
+    // Le lezioni del documento: file, number, date, title, state (idle | good | warn | bad), detail; rows (name, panel,
+    // detail: ciò che c'è da rivedere) e sources (file, name: le sue fonti).| good | warn | bad), detail.
     Q_PROPERTY(QVariantList lessons READ lessons NOTIFY treeChanged)
     // Gli altri file del documento: main.tex, texfix.sty e i .tex di src/ che il main non richiama.
     Q_PROPERTY(QVariantList documentFiles READ documentFiles NOTIFY treeChanged)
@@ -35,6 +36,7 @@ class Workspace : public QObject {
     Q_PROPERTY(QVariantList queue READ queue NOTIFY treeChanged)
     Q_PROPERTY(QVariantList documents READ documents NOTIFY treeChanged)
     Q_PROPERTY(QVariantList images READ images NOTIFY treeChanged)
+    Q_PROPERTY(QVariantList strays READ strays NOTIFY treeChanged)        // le fonti usate che nessuna lezione nomina
     Q_PROPERTY(QVariantList outcomes READ outcomes NOTIFY treeChanged)    // gli esiti archiviati: file, name (il titolo), detail (quando)
     Q_PROPERTY(bool compiling READ compiling NOTIFY compilingChanged)
     Q_PROPERTY(double progress READ progress NOTIFY progressChanged)
@@ -75,6 +77,7 @@ public:
     QVariantList documents() const { return m_documents; }
     QVariantList images() const { return m_images; }
     QVariantList outcomes() const { return m_outcomes; }
+    QVariantList strays() const { return m_strays; }
     bool compiling() const { return m_compiler.isRunning(); }
     double progress() const { return m_progress; }
     QString progressLabel() const { return m_progressLabel; }
@@ -181,6 +184,7 @@ public:
     // con il numero e la data scelti; più fonti le fonde l'agente, con un piano (agentAsked). integrateSources: l'agente
     // porta in una lezione ciò che manca, con un piano.
     Q_INVOKABLE QStringList addSources(const QStringList &paths);
+    Q_INVOKABLE void addDocuments(const QStringList &paths);               // copia dei file fra quelli da consultare (docs/)
     Q_INVOKABLE QVariantMap lessonMarks(const QStringList &paths) const;
     Q_INVOKABLE QString createLesson(int number, const QString &date, const QStringList &paths);
     Q_INVOKABLE void integrateSources(const QString &lesson, const QStringList &paths);
@@ -343,7 +347,7 @@ private:
     void computeTags();                          // procedure dell'agente che aspettano il loro turno
     QFileSystemWatcher m_watcher;
     QTimer m_refresh;                                  // più cambiamenti vicini, un aggiornamento solo
-    QVariantList m_outcomes, m_jobs, m_lessons, m_documentFiles, m_queue, m_documents, m_images, m_issues;
+    QVariantList m_outcomes, m_strays, m_jobs, m_lessons, m_documentFiles, m_queue, m_documents, m_images, m_issues;
     QHash<QString, QString> m_states;                  // lezione → stato dell'ultima compilazione
     QHash<QString, QString> m_details;
     double m_progress = 0;

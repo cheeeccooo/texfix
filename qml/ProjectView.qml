@@ -187,6 +187,13 @@ Item {
                 Workspace.decideDoubts(argument.split(" ")[0], argument.split(" ").slice(1))
             } else if (name === "tag") {
                 Workspace.showTags = argument !== "no"
+            } else if (name === "ramo") {
+                const all = Object.assign({}, tree.openLessons)
+                all[argument] = true
+                tree.openLessons = all
+            } else if (name === "pannello") {
+                root.openFile(argument.split(" ")[0])
+                editor.showLesson(argument.split(" ")[1])
             } else if (name === "avvia-piano") {
                 if (Workspace.jobs.length > 0) {
                     root.chatOpen = true
@@ -292,11 +299,13 @@ Item {
                     onOpened: what => root.openFile(what)
                 }
             ProjectPanel {
+                id: tree
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 visible: root.leftTab === 0
                 currentFile: editor.currentFile
                 onFileChosen: file => root.openFile(file)
+                onPanelAsked: (panel, lesson) => { root.openFile(panel); editor.showLesson(lesson) }
                 onNewLessonAsked: root.newLessonAsked()
                 onMaterialAsked: root.materialAsked()
                 onSourcesAsked: lesson => root.sourcesAsked(lesson)

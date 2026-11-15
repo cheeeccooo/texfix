@@ -11,5 +11,8 @@ bool writeBytes(const QString &path, const QByteArray &data);
 
 // Un nome libero accanto a `path`: «nome.pdf», poi «nome (2).pdf», «nome (3).pdf»…
 QString freeName(const QString &path);
+// Il nome di una fonte per ritrovarla: senza maiuscole, punteggiatura, estensione e « (2)». «notes_LabSS (1).pdf» e
+// «notes_LabSS_1.pdf» sono la stessa. La regola sta solo qui.
+QString bare(const QString &name);
 
 }

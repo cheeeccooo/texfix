@@ -241,9 +241,51 @@ void Workspace::refreshTree()
     QVariantList lessons, others;
     QStringList inMain;
     m_openDoubts = m_openDeclared = m_openFigures = m_openLayout = 0;
+    // le fonti usate, e di chi sono: della lezione che le nomina nei suoi marcatori, o della cartella «lezione N»
+    struct Used { QString file, name, bare, folder; bool taken = false; };
+    QList<Used> used;
+    for (QDirIterator it(m_project.path("fonti/usate"), QDir::Files, QDirIterator::Subdirectories); it.hasNext();) {
+        const QString path = it.next();
+        if (it.fileName().startsWith('.') || path.contains("/precedenti/"))
+            continue;
+        used << Used{m_project.relative(path), it.fileName(), files::bare(it.fileName()), QFileInfo(path).dir().dirName()};
+    }
+    std::sort(used.begin(), used.end(), [](const Used &a, const Used &b) { return a.name.localeAwareCompare(b.name) < 0; });
+    QStringList texts;
+    static const QRegularExpression marker(R"(^% @L\d+\.\d+ · (.+?) (?:pp?\.|r\.)\s*[\d-]+\s*$)", QRegularExpression::MultilineOption);
+    const bool byTopic = m_settings.byTopic();
     for (const Lesson &lesson : m_project.lessons()) {
         inMain << lesson.file;
-        const review::Counts open = review::counts(m_project, lesson.file);
+        const QString text = files::read(m_project.path(lesson.file));
+        texts << text;
+        QSet<QString> named;
+        for (auto it = marker.globalMatch(text); it.hasNext();)
+            named << files::bare(it.next().captured(1));
+        QVariantList sources;
+        for (Used &u : used) {
+            if (named.contains(u.bare) || (!byTopic && lesson.number > 0 && u.folder == QStringLiteral("lezione %1").arg(lesson.number))) {
+                u.taken = true;
+                sources << QVariantMap{{"file", u.file}, {"name", u.name}};
+            }
+        }
+        // ciò che c'è da rivedere nella lezione: quanto resta, e se c'è qualcosa da mostrare
+        int allDoubts = 0, allDeclared = 0, allFigures = 0;
+        review::Counts open;
+        for (const review::Doubt &d : review::doubts(m_project, lesson.file)) {
+            ++allDoubts;
+            open.doubts += d.open;
+        }
+        for (const review::Declared &d : review::declared(m_project, lesson.file)) {
+            ++allDeclared;
+            open.declared += d.state == "aperta";
+        }
+        allFigures = int(text.count("% img "));
+        const int allMoves = int(layout::moves(m_project, lesson.file).size()), movesLeft = layout::toReview(m_project, lesson.file);
+        QVariantList rows;
+        auto row = [&rows](const QString &name, const QString &panel, int all, int left) {
+            if (all > 0)
+                rows << QVariantMap{{"name", name}, {"panel", panel}, {"detail", left > 0 ? QString::number(left) : QStringLiteral("✓")}};
+        };
         const bool done = m_settings.isDone(lesson.file);
         if (!done) {
             m_openDoubts += open.doubts;
@@ -262,7 +304,12 @@ void Workspace::refreshTree()
             state = "warn";
             detail = QStringLiteral("%1 da rivedere").arg(toReview);
         }
+        row(QStringLiteral("Dubbi"), "rivedi:dubbi", allDoubts, done ? 0 : open.doubts);
+        row(QStringLiteral("Correzioni"), "rivedi:correzioni", allDeclared, done ? 0 : open.declared);
+        row(QStringLiteral("Impaginazione"), "rivedi:impaginazione", allMoves, done ? 0 : movesLeft);
+        row(QStringLiteral("Figure"), "rivedi:figure", allFigures, done ? 0 : figuresLeft);
         lessons << QVariantMap{{"file", lesson.file},
+                               {"rows", rows}, {"sources", sources},
                                {"number", lesson.number},
                                {"date", lesson.date},
                                {"title", lesson.title.isEmpty() ? QFileInfo(lesson.file).completeBaseName() : lesson.title},
@@ -301,10 +348,27 @@ void Workspace::refreshTree()
         const QString stem = QFileInfo(name).completeBaseName();
         outcomes << QVariantMap{{"file", "salvataggi/esiti/" + name}, {"name", stem.section(" — ", 1)}, {"detail", stem.section(" — ", 0, 0)}};
     }
-    const QVariantList queue = listing("fonti/coda"), documents = listing("docs"), images = listing("imgs");
-    if (gitChanged || outcomes != m_outcomes || jobs != m_jobs || lessons != m_lessons || others != m_documentFiles || queue != m_queue || documents != m_documents || images != m_images) {
+    QVariantList strays;                               // le fonti usate che nessuna lezione nomina
+    for (const Used &u : used)
+        if (!u.taken)
+            strays << QVariantMap{{"file", u.file}, {"name", u.name}};
+    const QVariantList queue = listing("fonti/coda"), documents = listing("docs");
+    QVariantList images = listing("imgs");             // di ogni immagine, la lezione che la usa
+    const QList<Lesson> known = m_project.lessons();
+    for (QVariant &v : images) {
+        QVariantMap image = v.toMap();
+        const QString stem = QFileInfo(image.value("file").toString()).completeBaseName();
+        for (qsizetype i = 0; i < texts.size() && i < known.size(); ++i)
+            if (texts[i].contains(stem)) {
+                image["detail"] = QFileInfo(known[i].file).completeBaseName();
+                break;
+            }
+        v = image;
+    }
+    if (gitChanged || strays != m_strays || outcomes != m_outcomes || jobs != m_jobs || lessons != m_lessons || others != m_documentFiles || queue != m_queue || documents != m_documents || images != m_images) {
         m_jobs = jobs;
         m_outcomes = outcomes;
+        m_strays = strays;
         m_lessons = lessons;
         m_documentFiles = others;
         m_queue = queue;
@@ -1119,6 +1183,17 @@ QStringList Workspace::addSources(const QStringList &paths)
     checkpoint(QStringLiteral("Fonti aggiunte"));
     refreshTree();
     return added;
+}
+
+void Workspace::addDocuments(const QStringList &paths)
+{
+    if (!hasProject() || paths.isEmpty())
+        return;
+    int n = 0;
+    for (const QString &path : paths)
+        n += QFileInfo(path).isFile() && QFile::copy(path, files::freeName(m_project.path("docs/" + QFileInfo(path).fileName())));
+    refreshTree();
+    say(n == 1 ? QStringLiteral("Un file aggiunto fra quelli da consultare.") : QStringLiteral("%1 file aggiunti fra quelli da consultare.").arg(n));
 }
 
 QVariantMap Workspace::lessonMarks(const QStringList &paths) const

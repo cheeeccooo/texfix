@@ -44,3 +44,17 @@ QString freeName(const QString &path)
 }
 
 }
+
+namespace tx::files {
+QString bare(const QString &name)
+{
+    QString stem = name.section('/', -1);
+    if (const qsizetype dot = stem.lastIndexOf('.'); dot > 0)
+        stem.truncate(dot);
+    QString out;
+    for (const QChar c : stem.toLower())
+        if (c.isLetterOrNumber())
+            out += c;
+    return out;
+}
+}
