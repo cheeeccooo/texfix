@@ -1108,7 +1108,7 @@ void Workspace::decideMove(const QString &lesson, const QString &block, const QS
     if (state == "agente")                             // se ne occupa l'agente, nella chat
         emit agentAsked(QStringLiteral("Nella lezione %1, al blocco %2, c'è un problema di impaginazione: %3\nSistemalo toccando il meno possibile "
                                        "(accorciare, spostare, cambiare la misura di una figura, spezzare in un punto migliore), poi compila la lezione "
-                                       "e controlla com'è venuta. Non cambiare il contenuto.").arg(lesson, block, what));
+                                       "e controlla com'è venuta. Non cambiare il contenuto.").arg(lesson, block, what), QStringLiteral("Impaginazione di %1").arg(QFileInfo(lesson).completeBaseName()));
 }
 
 void Workspace::setAgentRunning(bool running)
@@ -1237,7 +1237,7 @@ QString Workspace::createLesson(int number, const QString &date, const QStringLi
     int last = 0;
     for (const QString &name : QDir(m_project.path("src")).entryList({"*.tex"}, QDir::Files))
         last = qMax(last, numbered.match(QFileInfo(name).completeBaseName()).captured(1).toInt());
-    emit agentAsked(newlesson::fuseMessage(QStringLiteral("src/src%1.tex").arg(last + 1), number, date, sources));
+    emit agentAsked(newlesson::fuseMessage(QStringLiteral("src/src%1.tex").arg(last + 1), number, date, sources), QStringLiteral("Lezione %1: fusione delle fonti").arg(number));
     return {};
 }
 
@@ -1247,7 +1247,7 @@ void Workspace::integrateSources(const QString &lesson, const QStringList &paths
         return say(QStringLiteral("C'è già un lavoro in corso."));
     const QStringList sources = addSources(paths);
     if (!sources.isEmpty())
-        emit agentAsked(newlesson::integrateMessage(lesson, sources));
+        emit agentAsked(newlesson::integrateMessage(lesson, sources), QStringLiteral("Fonti aggiunte a %1").arg(QFileInfo(lesson).completeBaseName()));
 }
 
 void Workspace::sortMaterial(const QStringList &sources) { sortJob(sources, {}, {}); }
@@ -1306,7 +1306,7 @@ void Workspace::nextProcedure()
     for (const plans::Info &info : plans::open(m_project))
         if (info.state != "esito")
             return;                                    // una procedura aspetta che il piano aperto sia deciso ed eseguito
-    emit agentAsked(m_agentQueue.takeFirst());
+    emit agentAsked(m_agentQueue.takeFirst(), QStringLiteral("Materiale da sistemare"));
 }
 
 bool Workspace::hasRepository() const { return hasProject() && git::hasRepository(m_project); }

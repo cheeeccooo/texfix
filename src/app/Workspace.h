@@ -304,7 +304,7 @@ signals:
     void tagsChanged();
     void outlineReady(const QVariantList &topics);
     void fileRenamed(const QString &from, const QString &to);
-    void agentAsked(const QString &message);          // una procedura da affidare all'agente, nella chat
+    void agentAsked(const QString &message, const QString &title);   // una procedura da affidare all'agente, in una chat sua con il suo nome
     void settingsChanged();
     void styleChanged();
     void filesChanged();                               // qualcosa nel progetto è cambiato su disco

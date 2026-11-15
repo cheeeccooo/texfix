@@ -62,6 +62,15 @@ Rectangle {
         if (current < 0 && tabs.count > 0)
             current = 0
     }
+    // La selezione dell'editor in vista, per portarla nella chat (⌘L): file, text, from, to; null se non è un testo.
+    function selection() {
+        const page = current >= 0 ? editors.itemAt(current) : null
+        if (!page || page.kind !== "text" || !page.item)
+            return null
+        const s = page.item.selection()
+        s.file = page.file
+        return s
+    }
     // Porta il pannello aperto su una lezione.
     function showLesson(lesson) {
         const page = current >= 0 ? editors.itemAt(current) : null

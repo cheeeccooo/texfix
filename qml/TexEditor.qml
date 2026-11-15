@@ -31,6 +31,13 @@ Item {
         flick.contentY = Math.max(0, Math.min(rect.y - flick.height / 3, flick.contentHeight - flick.height))
     }
     function focusText() { edit.forceActiveFocus() }
+    // La selezione (o la riga del cursore): text, from, to.
+    function selection() {
+        if (edit.selectedText === "")
+            return { text: edit.text.split("\n")[page.currentLine - 1] || "", from: page.currentLine, to: page.currentLine }
+        const to = backend.lineOf(Math.max(edit.selectionStart, edit.selectionEnd - 1))
+        return { text: edit.selectedText.replace(/\u2029/g, "\n"), from: backend.lineOf(edit.selectionStart), to: to }
+    }
     Component.onCompleted: load()
 
     // Il file è cambiato su disco (un lavoro, un altro programma): senza modifiche in sospeso si rilegge.

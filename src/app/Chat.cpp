@@ -13,6 +13,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocalSocket>
+#include <QLocale>
+#include <QFile>
 #include <QPointer>
 #include <QThreadPool>
 
@@ -82,7 +84,8 @@ Chat::Chat()
                     continue;
                 }
                 if (message.value("method").toString() == "tools/call")
-                    add("tool", params.value("name").toString());
+                    add("tool", params.value("name").toString(),
+                        QString::fromUtf8(QJsonDocument(params.value("arguments").toObject()).toJson(QJsonDocument::Indented)).trimmed());
                 QPointer<QLocalSocket> target(socket);
                 QThreadPool::globalInstance()->start([request, target, project = workspace->project(), style = workspace->style()] {
                     const QByteArray reply = agent::handle(project, style, request);
@@ -109,6 +112,7 @@ Chat::Chat()
         m_messages.clear();
         m_session.clear();
         m_id.clear();
+        m_title.clear();
         load();
         emit messagesChanged();
     });
@@ -122,9 +126,9 @@ void Chat::setModel(const QString &model)
     emit modelChanged();
 }
 
-void Chat::add(const QString &role, const QString &text)
+void Chat::add(const QString &role, const QString &text, const QString &detail)
 {
-    m_messages << QVariantMap{{"role", role}, {"text", text}};
+    m_messages << QVariantMap{{"role", role}, {"text", text}, {"detail", detail}};
     emit messagesChanged();
 }
 
@@ -138,17 +142,42 @@ void Chat::appendToAssistant(const QString &text)
     emit messagesChanged();
 }
 
-void Chat::send(const QString &text)
+void Chat::send(const QString &typed, const QStringList &attachments)
 {
     Workspace *workspace = Workspace::instance();
-    if (text.trimmed().isEmpty() || running() || !workspace->hasProject())
+    if ((typed.trimmed().isEmpty() && attachments.isEmpty()) || running() || !workspace->hasProject())
         return;
     if (workspace->busy())
         return workspace->say(QStringLiteral("Aspetta la fine del lavoro in corso."));
     workspace->checkpoint(QStringLiteral("Modifiche a mano"));
     if (m_id.isEmpty())
         m_id = QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss");
-    add("user", text.trimmed());
+    // gli allegati entrano nel progetto, fra i salvataggi della chat: l'agente li legge da lì
+    QString text = typed.trimmed();
+    QStringList kept;
+    for (const QString &path : attachments) {
+        if (!QFileInfo(path).isFile())
+            continue;
+        const QString to = files::freeName(workspace->project().path("salvataggi/chat/allegati/" + m_id + '/' + QFileInfo(path).fileName()));
+        QDir().mkpath(QFileInfo(to).path());
+        if (QFile::copy(path, to))
+            kept << workspace->project().relative(to);
+    }
+    if (!kept.isEmpty())
+        text += QStringLiteral("\n\nFile allegati (leggili):\n- ") + kept.join("\n- ");
+    if (m_title.isEmpty())
+        m_title = typed.simplified().left(48);
+    m_messages << QVariantMap{{"role", "user"}, {"text", typed.trimmed()}, {"attachments", kept}};
+    emit messagesChanged();
+    m_retried = false;
+    launch(text);
+}
+
+void Chat::launch(const QString &text)
+{
+    Workspace *workspace = Workspace::instance();
+    m_lastText = text;
+    m_answered = false;
 
     const QJsonObject server{{"command", QCoreApplication::applicationFilePath()}, {"args", QJsonArray{"--strumenti", m_tools.serverName()}}};
     QStringList arguments{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
@@ -157,7 +186,7 @@ void Chat::send(const QString &text)
                           "--tools", "Read,Edit,Write,Grep,Glob", "--mcp-config",
                           QString::fromUtf8(QJsonDocument(QJsonObject{{"mcpServers", QJsonObject{{"texfix", server}}}}).toJson(QJsonDocument::Compact)),
                           "--strict-mcp-config", "--allowedTools",
-                          "mcp__texfix__stato_progetto,mcp__texfix__compila_lezione,mcp__texfix__compila_documento,mcp__texfix__dubbi,mcp__texfix__impagina,mcp__texfix__consegna_piano,mcp__texfix__consegna_esito",
+                          "mcp__texfix__stato_progetto,mcp__texfix__compila_lezione,mcp__texfix__compila_documento,mcp__texfix__dubbi,mcp__texfix__impagina,mcp__texfix__chiudi_lezione,mcp__texfix__consegna_piano,mcp__texfix__consegna_esito",
                           "--setting-sources", "", "--disable-slash-commands"};
     if (m_mode == "autonomo")
         arguments << "--permission-mode" << "bypassPermissions";
@@ -172,7 +201,7 @@ void Chat::send(const QString &text)
     m_process.setProcessEnvironment(tools::environment());
     m_process.setWorkingDirectory(workspace->root());
     m_process.start(custom.isEmpty() ? QStringLiteral("claude") : custom, arguments);
-    const QJsonObject message{{"type", "user"}, {"message", QJsonObject{{"role", "user"}, {"content", text.trimmed()}}}};
+    const QJsonObject message{{"type", "user"}, {"message", QJsonObject{{"role", "user"}, {"content", text}}}};
     m_process.write(QJsonDocument(message).toJson(QJsonDocument::Compact) + '\n');
     m_process.closeWriteChannel();
     workspace->setAgentRunning(true);
@@ -189,6 +218,8 @@ void Chat::readOutput()
         const QString type = line.value("type").toString();
         if (!line.value("session_id").toString().isEmpty())
             m_session = line.value("session_id").toString();
+        if (type == "assistant" || type == "stream_event")
+            m_answered = true;
         if (type == "stream_event") {                  // il testo, a pezzi mentre arriva
             const QJsonObject event = line.value("event").toObject();
             if (event.value("type").toString() == "content_block_delta" && event.value("delta").toObject().value("type").toString() == "text_delta") {
@@ -203,7 +234,12 @@ void Chat::readOutput()
                 if (block.value("type").toString() == "tool_use" && !block.value("name").toString().startsWith("mcp__")) {
                     const QJsonObject input = block.value("input").toObject();
                     const QString target = input.value("file_path").toString(input.value("pattern").toString());
-                    add("tool", block.value("name").toString() + (target.isEmpty() ? QString() : " · " + Workspace::instance()->project().relative(target)));
+                    QJsonObject shown = input;                 // il dettaglio: che cosa ha chiesto, senza i testi lunghi
+                    for (const QString &key : shown.keys())
+                        if (shown.value(key).isString() && shown.value(key).toString().size() > 600)
+                            shown[key] = shown.value(key).toString().left(600) + "…";
+                    add("tool", block.value("name").toString() + (target.isEmpty() ? QString() : " · " + Workspace::instance()->project().relative(target)),
+                        QString::fromUtf8(QJsonDocument(shown).toJson(QJsonDocument::Indented)).trimmed());
                 }
             }
             m_streamed = false;
@@ -216,6 +252,20 @@ void Chat::readOutput()
 void Chat::finished()
 {
     readOutput();
+    // la chat di prima non si riprende più (la sua memoria non c'è): riparte con la conversazione nel messaggio
+    if (!m_answered && !m_session.isEmpty() && !m_retried && !m_lastText.isEmpty()) {
+        m_retried = true;
+        m_session.clear();
+        if (!m_messages.isEmpty() && m_messages.last().toMap().value("role") == "note")
+            m_messages.removeLast();
+        QStringList talk;
+        for (qsizetype i = 0; i + 1 < m_messages.size(); ++i) {
+            const QVariantMap m = m_messages[i].toMap();
+            if (m.value("role") == "user" || m.value("role") == "assistant")
+                talk << (m.value("role") == "user" ? QStringLiteral("Utente: ") : QStringLiteral("Tu: ")) + m.value("text").toString();
+        }
+        return launch(QStringLiteral("La conversazione fin qui:\n\n%1\n\nIl messaggio nuovo:\n%2").arg(talk.join("\n\n").right(30000), m_lastText));
+    }
     Workspace *workspace = Workspace::instance();
     workspace->setAgentRunning(false);
     workspace->agentTurnDone();                        // il turno dell'agente è un passo della cronologia
@@ -240,6 +290,7 @@ void Chat::newChat()
     m_messages.clear();
     m_session.clear();
     m_id.clear();
+    m_title.clear();
     emit messagesChanged();
 }
 
@@ -248,7 +299,7 @@ void Chat::save() const
     const Workspace *workspace = Workspace::instance();
     if (!workspace->hasProject() || m_id.isEmpty())
         return;
-    const QJsonObject chat{{"sessione", m_session}, {"modello", m_model}, {"messaggi", QJsonArray::fromVariantList(m_messages)}};
+    const QJsonObject chat{{"sessione", m_session}, {"modello", m_model}, {"titolo", m_title}, {"messaggi", QJsonArray::fromVariantList(m_messages)}};
     files::write(workspace->project().path("salvataggi/chat/" + m_id + ".json"), QString::fromUtf8(QJsonDocument(chat).toJson()));
 }
 
@@ -259,15 +310,74 @@ void Chat::load()
     if (!workspace->hasProject())
         return;
     const QStringList chats = QDir(workspace->project().path("salvataggi/chat")).entryList({"*.json"}, QDir::Files, QDir::Name);
-    if (chats.isEmpty())
+    if (!chats.isEmpty())
+        openChat(QFileInfo(chats.last()).completeBaseName());
+}
+
+void Chat::openChat(const QString &id)
+{
+    const Workspace *workspace = Workspace::instance();
+    const QString path = workspace->project().path("salvataggi/chat/" + id + ".json");
+    if (running() || !QFileInfo::exists(path))
         return;
-    m_id = QFileInfo(chats.last()).completeBaseName();
-    const QJsonObject chat = QJsonDocument::fromJson(files::read(workspace->project().path("salvataggi/chat/" + chats.last())).toUtf8()).object();
+    const QJsonObject chat = QJsonDocument::fromJson(files::read(path).toUtf8()).object();
+    m_id = id;
     m_session = chat.value("sessione").toString();
+    m_title = chat.value("titolo").toString();
     m_messages = chat.value("messaggi").toArray().toVariantList();
     if (!chat.value("modello").toString().isEmpty())
         m_model = chat.value("modello").toString();
     emit modelChanged();
+    emit messagesChanged();
+}
+
+QVariantList Chat::chats() const
+{
+    QVariantList out;
+    const Workspace *workspace = Workspace::instance();
+    if (!workspace->hasProject())
+        return out;
+    const QDir dir(workspace->project().path("salvataggi/chat"));
+    for (const QString &name : dir.entryList({"*.json"}, QDir::Files, QDir::Name | QDir::Reversed)) {
+        const QString id = QFileInfo(name).completeBaseName();
+        const QJsonObject chat = QJsonDocument::fromJson(files::read(dir.filePath(name)).toUtf8()).object();
+        QString title = chat.value("titolo").toString();
+        if (title.isEmpty())                           // le chat di prima: la prima cosa detta
+            title = chat.value("messaggi").toArray().first().toObject().value("text").toString().simplified().left(48);
+        const QDateTime when = QDateTime::fromString(id, "yyyyMMdd-HHmmss");
+        out << QVariantMap{{"id", id}, {"title", title.isEmpty() ? QStringLiteral("Chat") : title},
+                           {"when", QLocale(QLocale::Italian).toString(when, "d MMM, HH:mm")}, {"current", id == m_id}};
+    }
+    return out;
+}
+
+void Chat::removeChat(const QString &id)
+{
+    const Workspace *workspace = Workspace::instance();
+    if (!workspace->hasProject() || (id == m_id && running()))
+        return;
+    QFile::remove(workspace->project().path("salvataggi/chat/" + id + ".json"));
+    QDir(workspace->project().path("salvataggi/chat/allegati/" + id)).removeRecursively();
+    if (id == m_id)
+        newChat();
+    else
+        emit messagesChanged();
+}
+
+void Chat::startProcedure(const QString &title, const QString &message)
+{
+    if (running())
+        return;
+    newChat();
+    m_title = title;
+    send(message);
+}
+
+QString Chat::shotPath() const
+{
+    const QString dir = Workspace::instance()->project().path("build/foto");
+    QDir().mkpath(dir);
+    return dir + "/Foto " + QDateTime::currentDateTime().toString("HH.mm.ss") + ".png";
 }
 
 void Chat::setMode(const QString &mode)

@@ -149,6 +149,7 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+B"; onActivated: Workspace.hasProject ? project.compileFile() : Workspace.say("Apri prima un progetto.") }
     Shortcut { sequence: "Ctrl+Shift+B"; onActivated: Workspace.hasProject ? project.compileDocument() : Workspace.say("Apri prima un progetto.") }
     Shortcut { sequence: "Ctrl+Shift+K"; onActivated: Workspace.hasProject ? window.askConvert() : Workspace.say("Apri prima un progetto.") }
+    Shortcut { sequence: "Ctrl+L"; onActivated: Workspace.hasProject ? project.quoteSelection() : Workspace.say("Apri prima un progetto.") }
     Shortcut { sequence: "Ctrl+Shift+D"; onActivated: Workspace.openDoubts > 0 ? project.openFile("rivedi:dubbi") : Workspace.say("Non ci sono dubbi da decidere.") }
     Shortcut { sequence: "Ctrl+Shift+E"; onActivated: Workspace.openDeclared > 0 ? project.openFile("rivedi:correzioni") : Workspace.say("Non ci sono aggiunte o correzioni da decidere.") }
     Shortcut { sequence: "Ctrl+Shift+F"; onActivated: Workspace.hasProject ? project.openFile("rivedi:figure") : Workspace.say("Apri prima un progetto.") }

@@ -8,6 +8,7 @@ Rectangle {
     property string placeholder
     property bool mono: false
     signal edited()
+    function focusEnd() { edit.forceActiveFocus(); edit.cursorPosition = edit.length }
     implicitHeight: Math.max(3 * Theme.rowHeight, edit.implicitHeight)
     radius: Theme.radius
     color: Theme.surface

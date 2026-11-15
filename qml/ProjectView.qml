@@ -20,6 +20,23 @@ Item {
     function saveAll() { editor.saveAll() }
 
     function openFile(file, line) { editor.openFile(file, line || 0) }
+    // ⌘L: la selezione dell'editor entra nel messaggio per l'agente.
+    function quoteSelection() {
+        const s = editor.selection()
+        if (!s)
+            return Workspace.say("Apri prima un file di testo.")
+        root.chatOpen = true
+        chat.quote(s.file, s.from, s.to, s.text)
+    }
+    // Una foto di un pezzo della finestra, allegata al prossimo messaggio.
+    function shot(what) {
+        const item = what === "editor" ? editor : what === "pdf" ? pdf : root
+        item.grabToImage(result => {
+            const path = Chat.shotPath()
+            if (result.saveToFile(path))
+                chat.attach([path])
+        })
+    }
     function save() { editor.saveAll() }
     // ▶ File: la lezione aperta da sola; un altro file, o nessuno, il documento.
     function compileFile() {
@@ -110,7 +127,7 @@ Item {
         function onPdfRebuilt() { pdf.reload() }
         function onPlanReady(id) { root.openFile("piano:" + id) }
         function onFileRenamed(from, to) { editor.fileRenamed(from, to) }
-        function onAgentAsked(message) { root.chatOpen = true; Chat.send(message) }
+        function onAgentAsked(message, title) { root.chatOpen = true; Chat.startProcedure(title, message) }
         function onBuildFinished() {
             if (Workspace.errorCount > 0)
                 root.bottomOpen = true
@@ -194,6 +211,21 @@ Item {
             } else if (name === "pannello") {
                 root.openFile(argument.split(" ")[0])
                 editor.showLesson(argument.split(" ")[1])
+            } else if (name === "cita") {
+                root.quoteSelection()
+            } else if (name === "allega") {
+                root.chatOpen = true
+                chat.attach([argument])
+            } else if (name === "foto") {
+                root.chatOpen = true
+                root.shot(argument)
+            } else if (name === "invia") {
+                chat.sendNow()
+            } else if (name === "storico") {
+                root.chatOpen = true
+                chat.showHistory()
+            } else if (name === "chat") {
+                root.chatOpen = true
             } else if (name === "avvia-piano") {
                 if (Workspace.jobs.length > 0) {
                     root.chatOpen = true
@@ -387,7 +419,9 @@ Item {
                 }
             }
             ChatPane {
+                id: chat
                 visible: root.chatOpen
+                onShotAsked: what => root.shot(what)
                 SplitView.preferredWidth: 360
                 SplitView.minimumWidth: 280
                 SplitView.maximumWidth: Math.max(280, root.width / 2)

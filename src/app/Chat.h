@@ -23,7 +23,8 @@ class Chat : public QObject {
     // Quanto l'agente fa da solo, come in Claude Code: auto (decide lui che cosa è sicuro, chiede per il resto),
     // chiedi (chiede conferma prima di ogni modifica), autonomo (non chiede mai). Vale per tutti i progetti.
     Q_PROPERTY(QString mode READ mode WRITE setMode NOTIFY modeChanged)
-    Q_PROPERTY(bool waiting READ waiting NOTIFY waitingChanged)           // aspetta una conferma dell'utente
+    Q_PROPERTY(bool waiting READ waiting NOTIFY waitingChanged)
+    Q_PROPERTY(QString title READ title NOTIFY messagesChanged)          // il nome della chat           // aspetta una conferma dell'utente
 
 public:
     static Chat *instance();
@@ -40,9 +41,19 @@ public:
     bool waiting() const { return m_asking != nullptr; }
     Q_INVOKABLE void answer(bool allow);               // la risposta a una richiesta di conferma
 
-    Q_INVOKABLE void send(const QString &text);
+    // Un messaggio, con i file allegati (percorsi sul disco): si copiano nel progetto, dove l'agente li legge.
+    Q_INVOKABLE void send(const QString &text, const QStringList &attachments = {});
     Q_INVOKABLE void stop();
     Q_INVOKABLE void newChat();
+    // Una procedura apre una chat sua, con il suo nome.
+    Q_INVOKABLE void startProcedure(const QString &title, const QString &message);
+    // Lo storico del progetto: id, title, when, current. openChat riprende una chat; removeChat la butta.
+    Q_INVOKABLE QVariantList chats() const;
+    Q_INVOKABLE void openChat(const QString &id);
+    Q_INVOKABLE void removeChat(const QString &id);
+    QString title() const { return m_title; }
+    // Dove salvare una foto da allegare (un file nuovo fra quelli che si rifanno).
+    Q_INVOKABLE QString shotPath() const;
 
 signals:
     void messagesChanged();
@@ -55,7 +66,8 @@ private:
     Chat();
     void readOutput();
     void finished();
-    void add(const QString &role, const QString &text);
+    void add(const QString &role, const QString &text, const QString &detail = {});
+    void launch(const QString &text);
     void appendToAssistant(const QString &text);
     void save() const;
     void load();
@@ -64,7 +76,9 @@ private:
     QLocalServer m_tools;
     QByteArray m_buffer;
     QVariantList m_messages;
-    QString m_model = "sonnet", m_session, m_id;
+    QString m_model = "sonnet", m_session, m_id, m_title;
+    QString m_lastText;                                // l'ultimo messaggio mandato: se la chat non si riprende, riparte con la conversazione
+    bool m_retried = false, m_answered = false;
     QString m_mode;
     QPointer<QLocalSocket> m_asking;                   // chi aspetta la conferma, la sua richiesta e che cosa voleva fare
     QJsonValue m_askingId;
