@@ -161,7 +161,7 @@ Rectangle {
                     dot: modelData.state === "piano" ? Theme.warn : modelData.state === "esito" ? Theme.good : Theme.accent
                 }
             }
-            GroupTitle { text: "Lezioni" }
+            GroupTitle { text: Workspace.byTopic ? "Argomenti" : "Lezioni" }
             TxLabel {
                 visible: Workspace.lessons.length === 0
                 x: Theme.gap + 4
@@ -178,8 +178,8 @@ Rectangle {
                     required property var modelData
                     file: modelData.file
                     name: modelData.title
-                    number: modelData.number > 0 ? modelData.number : ""
-                    detail: modelData.detail !== "" ? modelData.detail : modelData.date
+                    number: modelData.number > 0 && !Workspace.byTopic ? modelData.number : ""
+                    detail: modelData.detail !== "" ? modelData.detail : Workspace.byTopic ? "" : modelData.date
                     dot: modelData.done ? Theme.good : root.dotColor(modelData.state)
                     done: modelData.done
                     lesson: true

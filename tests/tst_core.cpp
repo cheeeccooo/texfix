@@ -6,6 +6,7 @@
 #include "core/NewLesson.h"
 #include "core/Plans.h"
 #include "core/Prompts.h"
+#include "core/Reorganize.h"
 #include "core/Review.h"
 #include "core/Figures.h"
 #include "core/Files.h"
@@ -298,7 +299,7 @@ private slots:
         QCOMPARE(r.lessons[0].corrections, 1);
         QVERIFY(!r.lessons[1].failure.isEmpty());                                      // il foglio di calcolo non si converte
         QCOMPARE(files::read(p.path("src/src1.tex")),
-                 "% File: src/src1.tex\n\\section{Numeri complessi}\n\\lezione{1}{}\n\n\\subsection{Modulo}\n"
+                 "\\section{Numeri complessi}\n\\lezione{1}{}\n\n\\subsection{Modulo}\n"
                  "% @L1.1 · Numeri_complessi.md\n\\begin{definition}[Modulo]\n    Il modulo è $|z|$, con \\textbf{z} complesso e $\\underline{w}$ no.\n\\end{definition}\n"
                  "% @L1.2 · Numeri_complessi.md\n\\begin{correction}\n    Negli appunti manca la radice.\n\\end{correction}\n"
                  "% @L1.3 · Numeri_complessi.md\n\\begin{center} % img src1-01\n    \\resizebox{\\linewidth}{!}{%\n    \\begin{tikzpicture}\n        \\draw[->] (0,0) -- (30,0);\n    \\end{tikzpicture}%\n    }\n\\end{center}\n");   // più larga della colonna: ristretta
@@ -772,6 +773,56 @@ private slots:
         QCOMPARE(fileops::duplicate(p, "src/a.tex"), "src/a (2).tex");
         QCOMPARE(files::read(p.path("src/a (2).tex")), "a");
         QCOMPARE(p.inputs(), (QStringList{"src/a.tex", "src/serie.tex"}));              // la copia non entra nel documento
+    }
+
+    // Riorganizza: per argomenti e ritorno a un file per lezione; lo stesso contenuto, i file di prima tornano uguali.
+    void reorganizeCourse()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\clearpage\n\n\\input{src/src2.tex}\n\\clearpage\n\n\\end{document}"));
+        const QString one = "\\section{Limiti}\n\\lezione{1}{01/10/2026}\n\n\\subsection{Definizione}\n% @L1.1 · a.pdf p.1\nTesto uno.\n\\paragraph{Nota.}\nResta dentro.\n\n\\subsection{Serie: primi esempi}\n% @L1.2 · a.pdf p.2\nTesto due.\n";
+        const QString two = "\\section{Serie}\n\\lezione{2}{03/10/2026}\n\n\\subsection{Criteri}\n% @L2.1 · b.pdf p.1\nTesto tre.\n\n\\subsection{Limiti notevoli}\n% @L2.2 · b.pdf p.3\nTesto quattro.\n";
+        files::write(p.path("src/src1.tex"), one);
+        files::write(p.path("src/src2.tex"), two);
+
+        const QList<reorganize::Section> all = reorganize::sections(p);
+        QCOMPARE(all.size(), 4);
+        QCOMPARE(all[1].id, "src/src1.tex#2");
+        QCOMPARE(all[1].title, "Serie: primi esempi");
+        QCOMPARE(all[2].lesson, 2);
+        QCOMPARE(all[0].lines.size(), 5);                                             // il \paragraph resta nella sua sezione
+
+        QVERIFY(!reorganize::toTopics(p, {{"Limiti", {"src/src1.tex#1"}}}).isEmpty());  // sezioni rimaste fuori: niente si tocca
+        QCOMPARE(files::read(p.path("src/src1.tex")), one);
+        QCOMPARE(reorganize::toTopics(p, {{"Limiti", {"src/src1.tex#1", "src/src2.tex#2"}}, {"Serie", {"src/src1.tex#2", "src/src2.tex#1"}}}), QString());
+        QCOMPARE(p.inputs(), (QStringList{"src/arg1.tex", "src/arg2.tex"}));
+        QVERIFY(!QFileInfo::exists(p.path("src/src1.tex")));
+        QCOMPARE(files::read(p.path("src/arg1.tex")),
+                 "\\section{Limiti}\n\\lezione{1}{01/10/2026}\n\n\\subsection{Definizione}\n% @L1.1 · a.pdf p.1\nTesto uno.\n\\paragraph{Nota.}\nResta dentro.\n"
+                 "\\lezione{2}{03/10/2026}\n\n\\subsection{Limiti notevoli}\n% @L2.2 · b.pdf p.3\nTesto quattro.\n");
+        QVERIFY(Settings::load(p).byTopic());
+        QVERIFY(!reorganize::toTopics(p, {}).isEmpty());                                // è già per argomenti
+
+        QCOMPARE(reorganize::toLessons(p), QString());
+        QCOMPARE(p.inputs(), (QStringList{"src/src1.tex", "src/src2.tex"}));
+        QCOMPARE(files::read(p.path("src/src1.tex")), one);
+        QCOMPARE(files::read(p.path("src/src2.tex")), two);
+        QVERIFY(!Settings::load(p).byTopic());
+        QVERIFY(!QFileInfo::exists(p.path("src/arg1.tex")));
+        QVERIFY(files::read(p.path("main.tex")).contains("\\input{src/src1.tex}\n\\clearpage\n\n\\input{src/src2.tex}\n\\clearpage\n\n\\end{document}"));
+
+        // senza modello che risponda bene, la proposta è un argomento per lezione
+        qputenv("TEXFIX_CLAUDE", "/usr/bin/false");
+        JobControl control;
+        const QList<reorganize::Topic> proposal = reorganize::propose(p, Settings(), &control);
+        qunsetenv("TEXFIX_CLAUDE");
+        QCOMPARE(proposal.size(), 2);
+        QCOMPARE(proposal[0].title, "Limiti");
+        QCOMPARE(proposal[1].sections, (QStringList{"src/src2.tex#1", "src/src2.tex#2"}));
     }
 
     // La cronologia: lavori e modifiche a mano si annullano e si ripetono; un passo nuovo toglie il «ripeti».

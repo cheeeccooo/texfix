@@ -81,6 +81,7 @@ Settings Settings::load(const Project &project)
         if (!rule.toString().trimmed().isEmpty())
             s.rules << rule.toString().trimmed();
     s.style = root.value("stile").toString();
+    s.topics = root.value("argomenti").toObject();
     for (const QJsonValue &name : root.value("pacchetti").toArray())
         s.packages << name.toString();
     const QJsonObject done = root.value("fatte").toObject();
@@ -99,6 +100,8 @@ bool Settings::save(const Project &project) const
     QJsonObject root{{"formato", Project::FORMAT}, {"impostazioni", choices}, {"regole", QJsonArray::fromStringList(rules)}, {"fatte", doneObject}};
     if (!style.isEmpty())
         root.insert("stile", style);
+    if (!topics.isEmpty())
+        root.insert("argomenti", topics);
     if (!packages.isEmpty())
         root.insert("pacchetti", QJsonArray::fromStringList(packages));
     return files::write(project.path(Project::STATE), QString::fromUtf8(QJsonDocument(root).toJson()));

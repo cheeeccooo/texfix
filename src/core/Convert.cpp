@@ -352,8 +352,7 @@ void Convert::assemble(Work &work) const
     QString title = work.outline.value("title").toString().trimmed();
     if (title.isEmpty())
         title = QFileInfo(work.source).completeBaseName().replace('_', ' ');
-    const QString text = QStringLiteral("% File: %1\n\\section{%2}\n\\lezione{%3}{%4}\n\n%5\n")
-                             .arg(work.file, title).arg(work.lesson.number).arg(work.lesson.date, body.join("\n\n"));
+    const QString text = QStringLiteral("\\section{%1}\n\\lezione{%2}{%3}\n\n%4\n").arg(title).arg(work.lesson.number).arg(work.lesson.date, body.join("\n\n"));
     if (!files::write(m_project.path(work.file), text))
         throw std::runtime_error("non riesco a scrivere la lezione");
     if (!doubts.isEmpty())

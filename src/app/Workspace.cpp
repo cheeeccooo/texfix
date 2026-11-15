@@ -8,6 +8,7 @@
 #include "core/NewLesson.h"
 #include "core/Pages.h"
 #include "core/Plans.h"
+#include "core/Reorganize.h"
 #include "core/Review.h"
 #include "core/Rules.h"
 #include "core/Sort.h"
@@ -1267,3 +1268,81 @@ void Workspace::trashFile(const QString &file)
 void Workspace::revealFile(const QString &file) const { QProcess::startDetached("open", {"-R", m_project.path(file)}); }
 
 void Workspace::copyText(const QString &text) const { QGuiApplication::clipboard()->setText(text); }
+
+void Workspace::proposeTopics()
+{
+    if (!hasProject())
+        return;
+    if (busy())
+        return say(QStringLiteral("C'è già un lavoro in corso."));
+    if (byTopic())
+        return say(QStringLiteral("Il progetto è già per argomenti."));
+    startJob(QStringLiteral("Propongo gli argomenti"), [this, project = m_project, settings = m_settings](JobControl *control) {
+        double cost = 0;
+        QList<reorganize::Topic> topics;
+        QString failure;
+        try {
+            topics = reorganize::propose(project, settings, control, &cost);
+        } catch (const Stopped &) {
+            failure = QStringLiteral("Lavoro fermato.");
+        }
+        QHash<QString, reorganize::Section> byId;
+        for (const reorganize::Section &s : reorganize::sections(project))
+            byId.insert(s.id, s);
+        QVariantList outline;
+        for (const reorganize::Topic &topic : std::as_const(topics)) {
+            QVariantList sections;
+            for (const QString &id : topic.sections)
+                sections << QVariantMap{{"id", id}, {"title", byId.value(id).title}, {"lesson", byId.value(id).lesson}};
+            outline << QVariantMap{{"title", topic.title}, {"sections", sections}};
+        }
+        return std::function<void()>([this, outline, failure, cost] {
+            if (!failure.isEmpty())
+                return say(failure);
+            say(QStringLiteral("Scaletta degli argomenti pronta. Costo: %1 $.").arg(QLocale(QLocale::Italian).toString(cost, 'f', 2)));
+            emit outlineReady(outline);
+        });
+    });
+}
+
+QString Workspace::applyTopics(const QVariantList &topics)
+{
+    if (busy())
+        return QStringLiteral("C'è già un lavoro in corso.");
+    QList<reorganize::Topic> list;
+    for (const QVariant &t : topics) {
+        reorganize::Topic topic{t.toMap().value("title").toString(), {}};
+        for (const QVariant &s : t.toMap().value("sections").toList())
+            topic.sections << s.toMap().value("id").toString();
+        list << topic;
+    }
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    const QString error = reorganize::toTopics(m_project, list);
+    if (!error.isEmpty())
+        return error;
+    checkpoint(QStringLiteral("Riorganizza per argomenti"));
+    m_states.clear();                                  // gli stati valevano per i file di prima
+    m_details.clear();
+    loadSettings();
+    refreshTree();
+    emit filesChanged();
+    m_compiler.compileDocument();
+    return {};
+}
+
+void Workspace::backToLessons()
+{
+    if (busy())
+        return say(QStringLiteral("C'è già un lavoro in corso."));
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    const QString error = reorganize::toLessons(m_project);
+    if (!error.isEmpty())
+        return say(error);
+    checkpoint(QStringLiteral("Riorganizza per data di lezione"));
+    m_states.clear();
+    m_details.clear();
+    loadSettings();
+    refreshTree();
+    emit filesChanged();
+    m_compiler.compileDocument();
+}

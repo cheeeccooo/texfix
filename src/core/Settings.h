@@ -1,6 +1,7 @@
 #pragma once
 #include "core/Project.h"
 
+#include <QJsonObject>
 #include <QMap>
 #include <QString>
 #include <QStringList>
@@ -19,6 +20,9 @@ struct Settings {
     QString style;                         // lo stile importato (<nome>.sty nella radice); vuoto: nessuno
     QStringList packages;                  // i pacchetti che le figure chiedono oltre lo stile (circuitikz…)
     QMap<QString, QString> done;           // lezione fatta → quando
+    // Il progetto è riorganizzato per argomenti: le lezioni com'erano (numero → file e titolo), per tornare indietro.
+    QJsonObject topics;
+    bool byTopic() const { return !topics.isEmpty(); }
 
     static Settings load(const Project &project);
     bool save(const Project &project) const;

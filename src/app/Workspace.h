@@ -202,6 +202,16 @@ public:
 public:
     QStringList console() const { return m_console; }
 
+    // Riorganizza. byTopic: i file sono per argomenti. proposeTopics chiede al modello gli argomenti (un lavoro) e
+    // poi outlineReady con la scaletta: topics [{title, sections [{id, title, lesson}]}]. applyTopics la scrive;
+    // backToLessons torna a un file per lezione. Ognuno è un passo della cronologia, poi si compila il documento.
+    Q_PROPERTY(bool byTopic READ byTopic NOTIFY settingsChanged)
+public:
+    bool byTopic() const { return m_settings.byTopic(); }
+    Q_INVOKABLE void proposeTopics();
+    Q_INVOKABLE QString applyTopics(const QVariantList &topics);          // vuoto se è andata
+    Q_INVOKABLE void backToLessons();
+
     // Converti. Le fonti di «Da convertire»: file, name, detail, convertible; la stima del costo in dollari.
     // convert le fa diventare lezioni (un passo solo della cronologia), poi compila il documento; alla fine
     // outcomeReady con title, lines, cost, minutes. resume riprende un lavoro interrotto senza rifare ciò che è fatto.
@@ -258,6 +268,7 @@ signals:
     void outcomeReady(const QVariantMap &outcome);
     void planReady(const QString &id);
     void consoleChanged();
+    void outlineReady(const QVariantList &topics);
     void fileRenamed(const QString &from, const QString &to);
     void agentAsked(const QString &message);          // una procedura da affidare all'agente, nella chat
     void settingsChanged();

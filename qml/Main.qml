@@ -102,6 +102,9 @@ ApplicationWindow {
         }
         Menu {
             title: "Progetto"
+            Action { text: "Riorganizza per argomenti…"; enabled: Workspace.hasProject && !Workspace.byTopic; onTriggered: { project.save(); Workspace.proposeTopics() } }
+            Action { text: "Riorganizza per data di lezione"; enabled: Workspace.hasProject && Workspace.byTopic; onTriggered: { project.save(); Workspace.backToLessons() } }
+            MenuSeparator {}
             Action { text: "Riepilogo dubbi"; enabled: Workspace.hasProject; onTriggered: project.openFile("rivedi:dubbi") }
             Action { text: "Riepilogo correzioni"; enabled: Workspace.hasProject; onTriggered: project.openFile("rivedi:correzioni") }
             Action { text: "Riepilogo figure"; enabled: Workspace.hasProject; onTriggered: project.openFile("rivedi:figure") }
@@ -189,6 +192,8 @@ ApplicationWindow {
     OutcomeSheet { id: outcomeSheet }
     NewLessonSheet { id: newLessonSheet }
     RenameSheet { id: renameSheet }
+    OutlineSheet { id: outlineSheet }
+    Connections { target: Workspace; function onOutlineReady(topics) { outlineSheet.show(topics) } }
     FileDialog {
         id: materialDialog
         title: "Aggiungi materiale"
@@ -215,7 +220,14 @@ ApplicationWindow {
     Connections {
         target: Workspace
         function onGesture(name, argument) {
-            if (name === "converti") {
+            if (name === "argomenti") {
+                Workspace.proposeTopics()
+            } else if (name === "applica-argomenti") {
+                Workspace.say(Workspace.applyTopics(outlineSheet.topics))
+                outlineSheet.close()
+            } else if (name === "per-data") {
+                Workspace.backToLessons()
+            } else if (name === "converti") {
                 if (argument === "finestra")
                     convertSheet.open()
                 else
