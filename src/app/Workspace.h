@@ -281,6 +281,17 @@ public:
     Q_INVOKABLE QVariantList styleRoles() const;                           // value, label
     Q_INVOKABLE void setStyleRoles(const QString &name, const QVariantMap &roles);   // ambiente → ruolo
     Q_INVOKABLE void applyStyle(const QString &name);
+    // Gli ambienti senza corrispondente nel nuovo stile sono una domanda (styleQuestions: name, role, options); la
+    // risposta torna qui: ambiente di prima → ambiente del nuovo stile, o «=» per lasciarlo com'è.
+    Q_INVOKABLE void applyStyleWith(const QString &name, const QVariantMap &choices);
+    // Il modello legge lo stile importato e propone ruoli e convenzioni (un lavoro); poi styleProposed con gli ambienti
+    // da confermare. styleFileChanged: il .sty del progetto è cambiato, la descrizione lo segue.
+    Q_INVOKABLE void proposeStyle(const QString &name);
+    void styleFileChanged();
+    // La libreria degli stili, per le Preferenze: name, bundled (di Texfix: non si toglie).
+    Q_INVOKABLE QVariantList libraryStyles() const;
+    Q_INVOKABLE QString addStyleToLibrary(const QString &styPath);          // vuoto se è andata
+    Q_INVOKABLE void removeLibraryStyle(const QString &name);
 
     // Le regole editoriali delle Preferenze, per tutti i progetti: id, title, text, custom.
     Q_INVOKABLE QVariantList ruleSections() const;
@@ -321,6 +332,8 @@ signals:
     void tagsChanged();
     void snippetsReady();
     void versionAsked(const QString &path, const QString &used);
+    void styleProposed(const QString &name, const QVariantList &environments);
+    void styleQuestions(const QString &name, const QVariantList &questions);
     void outlineReady(const QVariantList &topics);
     void fileRenamed(const QString &from, const QString &to);
     void agentAsked(const QString &message, const QString &title);   // una procedura da affidare all'agente, in una chat sua con il suo nome

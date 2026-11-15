@@ -547,6 +547,76 @@ private slots:
         QCOMPARE(figures::authored(p, Settings(), Style::classic(), model, "src/src1.tex", "autore.tex").fitted, 0);   // di nuovo: niente da fare
     }
 
+    // Il cambio di stile oltre gli ambienti: ciò che non ha un corrispondente è una domanda; una macro dello stile di
+    // prima che il nuovo non ha cambia nome (stesso significato) o la sua definizione passa in texfix.sty; la
+    // descrizione segue il .sty quando cambia; la libreria tiene gli stili dell'utente.
+    void styleQuestionsAndMacros()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        const QString sty = "\\ProvidesPackage{mio}\n\\RequirePackage{amsthm,amssymb}\n\\newtheorem{teorema}{Teorema}\n"
+                            "\\newenvironment{nota}{\\par\\textit{Nota.}}{\\par}\n\\newcommand{\\R}{\\mathbb{R}}\n"
+                            "\\newcommand{\\norma}[1]{\\left\\|\n  #1 \\right\\|}\n";
+        files::write(dir.filePath("mio.sty"), sty);
+        const styleswitch::Imported in = styleswitch::import(p, dir.filePath("mio.sty"));
+        QCOMPARE(in.error, QString());
+        Style mio = in.style;
+        for (Style::Environment &env : mio.environments)
+            env.role = env.name == "teorema" ? "teorema" : "attenzione";
+        for (Style::Macro &macro : mio.macros)
+            macro.meaning = macro.name == "\\R" ? "i numeri reali" : "la norma";
+        QVERIFY(mio.save(p.path("mio.stile.json")));
+        QCOMPARE(styleswitch::apply(p, "mio").error, QString());
+        files::write(p.path("src/src1.tex"), "\\section{S}\n\\begin{teorema}\nIn $\\R$ vale $\\norma{x} \\ge 0$.\n\\end{teorema}\n\\begin{nota}\nOcchio.\n\\end{nota}\n");
+
+        // tornare a nessuno stile: «nota» (avvertenza) non ha corrispondente nel classico
+        const QList<styleswitch::Orphan> orphans = styleswitch::orphans(p, {});
+        QCOMPARE(orphans.size(), 1);
+        QCOMPARE(orphans[0].name, "nota");
+        QVERIFY(orphans[0].options.contains("remark"));
+        const styleswitch::Outcome o = styleswitch::apply(p, {}, {{"nota", "remark"}});
+        QCOMPARE(o.error, QString());
+        QCOMPARE(o.carried, (QStringList{"\\R", "\\norma"}));
+        const QString text = files::read(p.path("src/src1.tex"));
+        QVERIFY(text.contains("\\begin{theorem}") && text.contains("\\begin{remark}") && text.contains("\\norma{x}"));
+        const QString package = files::read(p.path("texfix.sty"));
+        QVERIFY(package.contains("\\ifdefined\\R\\else \\newcommand{\\R}{\\mathbb{R}}\\fi"));
+        QVERIFY(package.contains("\\ifdefined\\norma\\else \\newcommand{\\norma}[1]{\\left\\|\n  #1 \\right\\|}\\fi"));
+        if (hasLatexmk())
+            QVERIFY(!Compiler::compileSync(p, {}).hasErrors());                         // il documento compila ancora
+
+        // di nuovo allo stile: le macro tornano sue, niente resta portato
+        QCOMPARE(styleswitch::apply(p, "mio").error, QString());
+        QVERIFY(!files::read(p.path("texfix.sty")).contains("ifdefined\\R"));
+
+        // lo stile cambia sul disco: un ambiente nuovo entra nella descrizione, ed è una domanda
+        files::write(p.path("mio.sty"), sty + "\\newenvironment{esempietto}{\\par}{\\par}\n");
+        QCOMPARE(styleswitch::refresh(p), QStringList{"esempietto"});
+        const Style now = styleswitch::current(p);
+        QVERIFY(now.environment("esempietto"));
+        QCOMPARE(now.environment("teorema")->role, "teorema");                         // ciò che c'era resta com'era
+        QCOMPARE(styleswitch::refresh(p), QStringList());
+
+        // la libreria dell'utente
+        styleswitch::setLibraryHome(dir.filePath("libreria"));
+        QVERIFY(!styleswitch::library().contains("mio"));
+        QCOMPARE(styleswitch::addToLibrary(p.path("mio.sty")), QString());
+        QVERIFY(styleswitch::library().contains("mio") && styleswitch::library().contains("styles"));
+        QVERIFY(!styleswitch::addToLibrary(dir.filePath("styles.sty")).isEmpty());      // non è un file, e il nome è di Texfix
+        const QString other = dir.filePath("altro");
+        QCOMPARE(Project::create(other), QString());
+        const styleswitch::Imported lib = styleswitch::importFromLibrary(Project(other), "mio");
+        QCOMPARE(lib.error, QString());
+        QCOMPARE(lib.style.environment("teorema")->role, "teorema");                   // con la sua descrizione
+        QVERIFY(styleswitch::removeFromLibrary("mio"));
+        QVERIFY(!styleswitch::removeFromLibrary("styles"));
+        styleswitch::setLibraryHome({});
+    }
+
     // L'impaginazione oltre i riquadri spezzati: una figura che non ci stava ed è passata oltre lascia un grande vuoto.
     // Non c'è una mossa sicura: si segnala, e si decide a mano o con l'agente.
     void layoutHole()

@@ -196,7 +196,10 @@ QStringList Project::complete() const
     QStringList packages;
     for (const QJsonValue &name : state.value("pacchetti").toArray())
         packages << name.toString();
-    const QString package = packageText(state.value("stile").toString(), packages);
+    QStringList carried;
+    for (const QJsonValue &line : state.value("macro_portate").toArray())
+        carried << line.toString();
+    const QString package = packageText(state.value("stile").toString(), packages, carried);
     if (files::read(path(PACKAGE)) != package && files::write(path(PACKAGE), package))
         added << QString::fromUtf8(PACKAGE);
 
@@ -212,7 +215,7 @@ QStringList Project::complete() const
     return added;
 }
 
-QString Project::packageText(const QString &style, const QStringList &packages)
+QString Project::packageText(const QString &style, const QStringList &packages, const QStringList &carried)
 {
     QString middle = style.isEmpty() ? QString::fromUtf8(PACKAGE_CLASSIC)
                                      : QStringLiteral("\n% Lo stile del progetto\n\\RequirePackage{%1}\n").arg(style);
@@ -221,6 +224,11 @@ QString Project::packageText(const QString &style, const QStringList &packages)
                              "\\pgfplotsset{compat=1.18}\n");
     for (const QString &package : packages)
         middle += QStringLiteral("\\RequirePackage{%1}\n").arg(package);
+    if (!carried.isEmpty()) {                         // dopo lo stile: chi le definisce già vince
+        middle += QStringLiteral("\n% Macro dello stile di prima che le lezioni usano ancora\n");
+        for (const QString &line : carried)
+            middle += line + '\n';
+    }
     return QString::fromUtf8(PACKAGE_HEAD) + middle + QString::fromUtf8(PACKAGE_TAIL);
 }
 

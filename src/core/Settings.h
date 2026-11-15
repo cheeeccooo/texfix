@@ -19,6 +19,7 @@ struct Settings {
     QStringList rules;                     // le regole del progetto, una per voce
     QString style;                         // lo stile importato (<nome>.sty nella radice); vuoto: nessuno
     QStringList packages;                  // i pacchetti che le figure chiedono oltre lo stile (circuitikz…)
+    QStringList carried;                   // le definizioni delle macro dello stile di prima che le lezioni usano ancora
     QMap<QString, QString> done;           // lezione fatta → quando
     // Il progetto è riorganizzato per argomenti: le lezioni com'erano (numero → file e titolo), per tornare indietro.
     QJsonObject topics;

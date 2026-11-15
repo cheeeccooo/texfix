@@ -27,7 +27,7 @@ ApplicationWindow {
         if (result.described)
             Workspace.applyStyle(result.name)
         else
-            rolesSheet.ask(result.name, result.environments)
+            Workspace.proposeStyle(result.name)        // il modello legge lo stile e propone i ruoli: poi le domande
     }
 
     function createProject(path, profile) {
@@ -271,6 +271,12 @@ ApplicationWindow {
     Connections { target: Workspace; function onOutcomeReady(outcome) { outcomeSheet.show(outcome) } }
     SettingsSheet { id: settingsSheet; onImportAsked: styleDialog.open() }
     StyleRolesSheet { id: rolesSheet; onConfirmed: Workspace.applyStyle(styleName) }
+    StyleMatchSheet { id: matchSheet }
+    Connections {
+        target: Workspace
+        function onStyleProposed(name, environments) { if (environments.length > 0) rolesSheet.ask(name, environments); else Workspace.applyStyle(name) }
+        function onStyleQuestions(name, questions) { settingsSheet.close(); matchSheet.ask(name, questions) }
+    }
     FileDialog {
         id: styleDialog
         title: "Importa uno stile"

@@ -84,6 +84,8 @@ Settings Settings::load(const Project &project)
     s.topics = root.value("argomenti").toObject();
     for (const QJsonValue &name : root.value("pacchetti").toArray())
         s.packages << name.toString();
+    for (const QJsonValue &line : root.value("macro_portate").toArray())
+        s.carried << line.toString();
     const QJsonObject done = root.value("fatte").toObject();
     for (auto it = done.begin(); it != done.end(); ++it)
         s.done.insert(it.key(), it.value().toString());
@@ -104,6 +106,8 @@ bool Settings::save(const Project &project) const
         root.insert("argomenti", topics);
     if (!packages.isEmpty())
         root.insert("pacchetti", QJsonArray::fromStringList(packages));
+    if (!carried.isEmpty())
+        root.insert("macro_portate", QJsonArray::fromStringList(carried));
     return files::write(project.path(Project::STATE), QString::fromUtf8(QJsonDocument(root).toJson()));
 }
 

@@ -48,7 +48,7 @@ public:
     // Restituisce che cosa ha aggiunto.
     QStringList complete() const;
     // Il testo di texfix.sty: lo stile del progetto (o, senza stile, il classico amsthm) e ciò che è di Texfix.
-    static QString packageText(const QString &style, const QStringList &packages = {});
+    static QString packageText(const QString &style, const QStringList &packages = {}, const QStringList &carried = {});
 
     // Le lezioni sono una regola sola: gli \input{src/…} non commentati dopo \begin{document} di main.tex, in
     // ordine, sempre con «.tex». Anche quelli che mancano su disco: chi li usa decide.

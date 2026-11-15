@@ -384,8 +384,11 @@ QString Workspace::read(const QString &file) const { return files::read(m_projec
 
 bool Workspace::save(const QString &file, const QString &text)
 {
-    if (files::write(m_project.path(file), text))
+    if (files::write(m_project.path(file), text)) {
+        if (!m_settings.style.isEmpty() && file == m_settings.style + ".sty")
+            QTimer::singleShot(0, this, &Workspace::styleFileChanged);      // lo stile cambiato a mano: la descrizione lo segue
         return true;
+    }
     say(QStringLiteral("Non riesco a salvare «%1».").arg(file));
     return false;
 }
@@ -673,12 +676,32 @@ void Workspace::setStyleRoles(const QString &name, const QVariantMap &roles)
     style.save(path);
 }
 
-void Workspace::applyStyle(const QString &name)
+void Workspace::applyStyle(const QString &name) { applyStyleWith(name, {}); }
+
+void Workspace::applyStyleWith(const QString &name, const QVariantMap &choices)
 {
-    if (!hasProject() || compiling())
-        return say(QStringLiteral("Aspetta la fine della compilazione."));
+    if (!hasProject() || busy())
+        return say(QStringLiteral("Aspetta la fine del lavoro in corso."));
+    // ciò che nel nuovo stile non ha un corrispondente è una domanda, prima di toccare le lezioni
+    if (choices.isEmpty()) {
+        QVariantList questions;
+        for (const styleswitch::Orphan &o : styleswitch::orphans(m_project, name)) {
+            QString role = o.role;
+            for (const Style::Role &r : Style::roles())
+                if (r.value == o.role)
+                    role = r.label;
+            questions << QVariantMap{{"name", o.name}, {"role", role}, {"options", o.options}};
+        }
+        if (!questions.isEmpty()) {
+            emit styleQuestions(name, questions);
+            return;
+        }
+    }
+    QHash<QString, QString> chosen;
+    for (auto it = choices.constBegin(); it != choices.constEnd(); ++it)
+        chosen.insert(it.key(), it.value().toString());
     checkpoint(QStringLiteral("Modifiche a mano"));
-    const styleswitch::Outcome outcome = styleswitch::apply(m_project, name);
+    const styleswitch::Outcome outcome = styleswitch::apply(m_project, name, chosen);
     checkpoint(name.isEmpty() ? QStringLiteral("Ritorno a nessuno stile") : QStringLiteral("Stile «%1»").arg(name));
     loadSettings();
     refreshTree();
@@ -689,8 +712,70 @@ void Workspace::applyStyle(const QString &name)
     text += QStringLiteral(": %1.").arg(plural(outcome.lessons, "lezione riscritta", "lezioni riscritte"));
     if (!outcome.unmatched.isEmpty())
         text += QStringLiteral(" Senza corrispondente nel nuovo stile, rimasti com'erano: %1.").arg(outcome.unmatched.join(", "));
+    if (!outcome.renamed.isEmpty())
+        text += QStringLiteral(" Macro che hanno cambiato nome: %1.").arg(outcome.renamed.join(", "));
+    if (!outcome.carried.isEmpty())
+        text += QStringLiteral(" Macro dello stile di prima tenute nel documento: %1.").arg(outcome.carried.join(", "));
     say(text);
+    m_compiler.compileDocument();                      // si rivede subito com'è venuto
 }
+
+namespace {
+QVariantList environmentsOf(const Style &style, const QStringList &only = {})
+{
+    QVariantList out;
+    for (const Style::Environment &env : style.environments)
+        if (only.isEmpty() || only.contains(env.name))
+            out << QVariantMap{{"name", env.name}, {"role", env.role}, {"color", env.color}};
+    return out;
+}
+}
+
+void Workspace::proposeStyle(const QString &name)
+{
+    if (!hasProject())
+        return;
+    if (busy())
+        return say(QStringLiteral("Aspetta la fine del lavoro in corso."));
+    startJob(QStringLiteral("Leggo lo stile"), [this, name, project = m_project, quality = m_settings.quality](JobControl *control) {
+        QString note;
+        try {
+            control->progress(0.3, QStringLiteral("a che cosa serve ogni ambiente"));
+            note = styleswitch::propose(project, quality, name, control);
+        } catch (const Stopped &) {
+            note = QStringLiteral("Lettura fermata: i ruoli vengono dai nomi.");
+        }
+        return std::function<void()>([this, name, note] {
+            if (!note.isEmpty())
+                say(note);
+            bool ok = false;
+            const Style style = Style::load(m_project.path(Style::descriptionFile(name)), &ok);
+            emit styleProposed(name, environmentsOf(style));
+        });
+    });
+}
+
+void Workspace::styleFileChanged()
+{
+    if (!hasProject() || m_settings.style.isEmpty())
+        return;
+    const QStringList fresh = styleswitch::refresh(m_project);
+    loadSettings();
+    if (!fresh.isEmpty())                              // un ambiente nuovo nello stile: a che cosa serve?
+        emit styleProposed(m_style.name, environmentsOf(m_style, fresh));
+}
+
+QVariantList Workspace::libraryStyles() const
+{
+    QVariantList out;
+    for (const QString &name : styleswitch::library())
+        out << QVariantMap{{"name", name}, {"bundled", styleswitch::isBundled(name)}};
+    return out;
+}
+
+QString Workspace::addStyleToLibrary(const QString &styPath) { return styleswitch::addToLibrary(styPath); }
+
+void Workspace::removeLibraryStyle(const QString &name) { styleswitch::removeFromLibrary(name); }
 
 QVariantList Workspace::convertSources() const
 {
@@ -1146,6 +1231,7 @@ void Workspace::agentTurnDone()
     for (const QVariant &job : std::as_const(m_jobs))
         before.insert(job.toMap().value("id").toString(), job.toMap().value("state").toString());
     checkpoint(QStringLiteral("Agente"));
+    styleFileChanged();                                // se l'agente ha toccato lo stile, la descrizione lo segue
     loadSettings();
     refreshTree();
     emit filesChanged();

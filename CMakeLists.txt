@@ -76,6 +76,7 @@ qt_add_qml_module(texfix
         qml/SettingsSheet.qml
         qml/PreferencesSheet.qml
         qml/StyleRolesSheet.qml
+        qml/StyleMatchSheet.qml
         qml/ConvertSheet.qml
         qml/OutcomeSheet.qml
         qml/ReviewView.qml

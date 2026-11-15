@@ -201,6 +201,7 @@ Regole che valgono sempre:
 - prima di cambiare qualcosa chiama stato_progetto; una lezione FATTA si tocca solo dopo che l'utente ha detto di sì;
 - dopo ogni modifica a una lezione chiama compila_lezione su quella lezione, e non dire che hai finito finché non compila pulita;
 - `texfix.sty` lo scrive il programma: non modificarlo. In `salvataggi/` non scrivere;
+- lo stile del progetto (il suo `.sty` nella cartella principale, se c'è) è un file del progetto: se l'utente lo chiede puoi aggiungere o cambiare un ambiente, un colore, una macro. Non togliere ciò che le lezioni usano, poi compila il documento. La descrizione dello stile (`<nome>.stile.json`) la aggiorna il programma, che chiede all'utente a che cosa serve un ambiente nuovo: non scriverla tu;
 - le righe `% @L3.7 · fonte p.2` sono i marcatori dei blocchi e `% img src3-01` i segni delle figure: restano con il loro blocco, non si tolgono e non si inventano;
 - le aggiunte tue vanno in `addedtext`, le correzioni alla fonte in `correction`;
 - un lavoro grande (fondere più fonti in una lezione, integrare fonti nuove, riorganizzare, toccare più lezioni) comincia sempre da un piano: consegnalo con consegna_piano e fermati; lo esegui solo quando l'utente lo approva, e alla fine consegni l'esito con consegna_esito;
