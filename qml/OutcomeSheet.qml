@@ -9,6 +9,7 @@ TxSheet {
     property var outcome: ({ title: "", lines: [], cost: "", minutes: "" })
     title: outcome.title
     function show(o) { outcome = o; open() }
+    signal logAsked()                                  // il resoconto completo: il registro del lavoro, nella Console
 
     Repeater {
         model: root.outcome.lines
@@ -27,5 +28,8 @@ TxSheet {
         color: Theme.textMuted
         font.pixelSize: Theme.smallSize
     }
-    buttons: TxButton { text: "Chiudi"; primary: true; onClicked: root.close() }
+    buttons: [
+        TxButton { text: "Resoconto completo"; flat: true; onClicked: { root.close(); root.logAsked() } },
+        TxButton { text: "Chiudi"; primary: true; onClicked: root.close() }
+    ]
 }

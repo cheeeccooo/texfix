@@ -160,6 +160,11 @@ public:
     // (how: ridisegna) o la ritaglia dalla fonte (ritaglia): un lavoro, un passo della cronologia.
     Q_INVOKABLE QVariantList figureItems() const;
     Q_INVOKABLE void redoFigure(const QString &id, const QString &how);
+    // «Ricontrolla con le fonti»: l'agente rilegge le fonti e propone un piano.
+    Q_INVOKABLE void recheckFigures();
+    // Le lezioni di un .tex in coda che il corso ha già (file, name, count, dates); integrateTex le affida all'agente, con un piano.
+    Q_INVOKABLE QVariantList texAlreadyThere() const;
+    Q_INVOKABLE void integrateTex(const QString &file);
 
     // «Risolvi tutto»: errori e righe fuori misura delle lezioni non fatte (prima le mosse che non costano, poi il
     // modello), poi compila il documento. Un lavoro, un passo della cronologia.

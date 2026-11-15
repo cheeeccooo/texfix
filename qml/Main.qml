@@ -41,6 +41,10 @@ ApplicationWindow {
     function askConvert() {
         if (Workspace.jobRunning)
             return Workspace.say("C'è già un lavoro in corso.")
+        // un piano di materiale da approvare: Converti apre quello
+        for (const job of Workspace.jobs)
+            if (job.kind === "materiale" && job.state === "piano")
+                return project.openFile("piano:" + job.id)
         convertSheet.open()
     }
 
@@ -245,7 +249,7 @@ ApplicationWindow {
         onSettingsAsked: settingsSheet.open()
         onStarted: sources => { project.saveAll(); Workspace.convert(sources) }
     }
-    OutcomeSheet { id: outcomeSheet }
+    OutcomeSheet { id: outcomeSheet; onLogAsked: project.showConsole() }
     NewLessonSheet { id: newLessonSheet }
     RenameSheet { id: renameSheet }
     ProfileSheet { id: profileSheet; onChosen: (path, profile) => window.createProject(path, profile) }

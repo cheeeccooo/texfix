@@ -343,7 +343,7 @@ void Workspace::refreshTree()
     m_changeCount = changeCount;
     QVariantList jobs;
     for (const plans::Info &info : plans::open(m_project))
-        jobs << QVariantMap{{"id", info.id}, {"title", info.title}, {"state", info.state}};
+        jobs << QVariantMap{{"id", info.id}, {"title", info.title}, {"state", info.state}, {"kind", plans::load(m_project, info.id).value("tipo").toString()}};
     QVariantList outcomes;                             // «AAAA-MM-GG HH.MM — titolo.md»: il titolo a sinistra, quando a destra
     for (const QString &name : QDir(m_project.path("salvataggi/esiti")).entryList({"*.md"}, QDir::Files, QDir::Name | QDir::Reversed)) {
         const QString stem = QFileInfo(name).completeBaseName();
@@ -1745,4 +1745,60 @@ void Workspace::renderSnippets()
             renderSnippets();
         });
     });
+}
+
+void Workspace::recheckFigures()
+{
+    if (!hasProject())
+        return;
+    if (busy())
+        return say(QStringLiteral("Aspetta la fine del lavoro in corso."));
+    emit agentAsked(QStringLiteral("Ricontrolla le figure del progetto con le fonti.\n"
+                                   "- Rileggi tutte le fonti usate (`fonti/usate/`) e, lezione per lezione, confrontale con le figure che ci sono "
+                                   "(il segno `% img <nome>` nelle lezioni; il registro è `salvataggi/figure.json`).\n"
+                                   "- Cerca: figure delle fonti che mancano nelle lezioni, figure che non corrispondono al disegno della fonte, "
+                                   "figure doppie o nel posto sbagliato, didascalie sbagliate.\n"
+                                   "- Consegna un piano con consegna_piano: una sezione per lezione, una voce per figura da aggiungere, rifare o "
+                                   "spostare, con la fonte e la pagina. Se è tutto a posto dillo e non consegnare niente.\n"
+                                   "- Quando il piano è approvato fai le modifiche, compila le lezioni toccate finché sono pulite e consegna l'esito."),
+                    QStringLiteral("Figure: ricontrollo con le fonti"));
+}
+
+QVariantList Workspace::texAlreadyThere() const
+{
+    QVariantList out;
+    if (!hasProject())
+        return out;
+    QStringList have;
+    for (const Lesson &lesson : m_project.lessons())
+        have << lesson.date;
+    const QDir dir(m_project.path("fonti/coda"));
+    for (const QString &name : dir.entryList({"*.tex"}, QDir::Files, QDir::Name)) {
+        QStringList dates;
+        for (const texsource::Lesson &lesson : texsource::lessons(files::read(dir.filePath(name))))
+            if (have.contains(lesson.date.toString("dd/MM/yyyy")))
+                dates << lesson.date.toString("dd/MM/yyyy");
+        if (!dates.isEmpty())
+            out << QVariantMap{{"file", "fonti/coda/" + name}, {"name", name}, {"count", int(dates.size())}, {"dates", dates}};
+    }
+    return out;
+}
+
+void Workspace::integrateTex(const QString &file)
+{
+    if (busy())
+        return say(QStringLiteral("Aspetta la fine del lavoro in corso."));
+    QStringList dates;
+    for (const QVariant &v : texAlreadyThere())
+        if (v.toMap().value("file").toString() == file)
+            dates = v.toMap().value("dates").toStringList();
+    if (dates.isEmpty())
+        return;
+    emit agentAsked(QStringLiteral("Il file `%1` ha lezioni che il corso ha già, per data: %2.\n"
+                                   "- Per ognuna leggi la parte del file (`\\section{Lezione del …}`) e la lezione del corso con quella data. Porta "
+                                   "nella lezione solo ciò che manca o le correzioni, vicino al blocco a cui appartiene; ciò che c'è già non si riscrive.\n"
+                                   "- Prima consegna un piano con consegna_piano: una sezione per lezione, una voce per ogni aggiunta.\n"
+                                   "- Quando il piano è approvato fai le aggiunte, compila finché è pulito e consegna l'esito. Il file resta dov'è.")
+                        .arg(file, dates.join(", ")),
+                    QStringLiteral("Materiale da %1").arg(QFileInfo(file).fileName()));
 }

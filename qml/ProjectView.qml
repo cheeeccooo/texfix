@@ -21,6 +21,7 @@ Item {
     function saveAll() { editor.saveAll() }
 
     function openFile(file, line) { editor.openFile(file, line || 0) }
+    function showConsole() { root.bottomOpen = true; bottom.tab = 1 }
     // ⌘L: la selezione dell'editor entra nel messaggio per l'agente.
     function quoteSelection() {
         const s = editor.selection()

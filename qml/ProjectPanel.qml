@@ -87,10 +87,23 @@ Rectangle {
         property string title
         property var files: []
         property bool open: true
+        property string action                         // un'azione sul gruppo, a destra del titolo
+        signal actionAsked()
         width: parent ? parent.width : 0
         GroupTitle {
             text: (group.open ? "▾ " : "▸ ") + group.title + (group.open ? "" : "  " + group.files.length)
             MouseArea { anchors.fill: parent; onClicked: group.open = !group.open }
+            TxLabel {
+                visible: group.action !== ""
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 4
+                text: group.action
+                color: actionArea.containsMouse ? Theme.text : Theme.accent
+                font.pixelSize: Theme.smallSize
+                font.capitalization: Font.MixedCase
+                MouseArea { id: actionArea; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; onClicked: group.actionAsked() }
+            }
         }
         Repeater {
             model: group.open ? group.files : []
@@ -237,7 +250,13 @@ Rectangle {
                     }
                 }
             }
-            FileGroup { title: "Da convertire"; files: Workspace.queue; visible: files.length > 0 }
+            FileGroup {
+                title: "Da convertire"
+                files: Workspace.queue
+                visible: files.length > 0
+                action: "Smista in lezioni"
+                onActionAsked: Workspace.sortMaterial(Workspace.queue.map(q => q.file))
+            }
             FileGroup { title: "Documento"; files: Workspace.documentFiles }
             FileGroup { title: "Fonti senza lezione"; files: Workspace.strays; visible: files.length > 0 }
             // ci si trascinano file: restano del progetto, e nessuno li cambia

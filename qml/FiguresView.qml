@@ -27,12 +27,16 @@ Rectangle {
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
-        TxLabel {
+        RowLayout {
             Layout.fillWidth: true
             Layout.margins: Theme.gap + 4
-            text: "Rivedi figure"
-            font.pixelSize: Theme.textSize + 3
-            font.weight: Font.DemiBold
+            TxLabel { Layout.fillWidth: true; text: "Rivedi figure"; font.pixelSize: Theme.textSize + 3; font.weight: Font.DemiBold }
+            TxButton {
+                text: "Ricontrolla con le fonti"
+                hint: "L'agente rilegge le fonti e propone un piano"
+                enabled: !Workspace.busy
+                onClicked: Workspace.recheckFigures()
+            }
         }
         ListView {
             id: list

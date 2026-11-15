@@ -13,9 +13,11 @@ TxSheet {
     property var sources: []
     property real estimate: 0
     property int revision: 0
+    property var already: []                           // le lezioni dei .tex che il corso ha già
     readonly property var convertible: sources.filter(s => s.convertible).map(s => s.file)
     function reload() {
         sources = Workspace.convertSources()
+        already = Workspace.texAlreadyThere()
         estimate = Workspace.convertEstimate()
         revision++
     }
@@ -32,7 +34,7 @@ TxSheet {
 
     TxLabel {
         Layout.fillWidth: true
-        visible: root.sources.length === 0
+        visible: root.sources.length === 0 && root.already.length === 0
         text: "Non c'è niente da convertire: trascina le fonti in «Da convertire» (la cartella fonti/coda del progetto)."
         color: Theme.textMuted
         wrapMode: Text.WordWrap
@@ -48,6 +50,24 @@ TxSheet {
             opacity: modelData.convertible ? 1 : 0.5
             TxLabel { Layout.fillWidth: true; text: row.modelData.name; elide: Text.ElideMiddle }
             TxLabel { text: row.modelData.detail; color: Theme.textMuted; font.pixelSize: Theme.smallSize }
+        }
+    }
+    // le lezioni di un .tex che il corso ha già non si convertono: l'agente porta ciò che manca, con un piano
+    Repeater {
+        model: root.already
+        RowLayout {
+            id: there
+            required property var modelData
+            Layout.fillWidth: true
+            spacing: Theme.gap
+            TxLabel {
+                Layout.fillWidth: true
+                text: there.modelData.name + ": " + (there.modelData.count === 1 ? "una lezione c'è già nel corso" : there.modelData.count + " lezioni ci sono già nel corso")
+                color: Theme.textMuted
+                wrapMode: Text.WordWrap
+                elide: Text.ElideNone
+            }
+            TxButton { text: "Fai il piano"; enabled: !Workspace.busy; onClicked: { root.close(); Workspace.integrateTex(there.modelData.file) } }
         }
     }
     Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.border; visible: root.sources.length > 0 }
