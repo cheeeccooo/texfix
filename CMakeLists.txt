@@ -12,6 +12,7 @@ qt_standard_project_setup(REQUIRES 6.8)
 qt_add_library(texfix_core STATIC
     src/core/Files.cpp
     src/core/Tools.cpp
+    src/core/Snippets.cpp
     src/core/Project.cpp
     src/core/TexLog.cpp
     src/core/Compiler.cpp

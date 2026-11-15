@@ -28,6 +28,49 @@ Rectangle {
                 return list.positionViewAtIndex(i, ListView.Beginning)
     }
 
+    // Le rese compilate: quando ne arrivano di nuove, chi le mostra le richiede.
+    property int renderTick: 0
+    Connections { target: Workspace; function onSnippetsReady() { root.renderTick++ } }
+    readonly property string ink: ("" + Theme.text).slice(-6)
+
+    // Un pezzo come nel PDF: intanto il testo; se non compila resta il testo.
+    component Rendered: Item {
+        id: piece
+        property string text
+        property string kind: "prosa"
+        property string shown: text                    // il testo da mostrare intanto
+        property bool mono: false
+        property color textColor: Theme.text
+        property int weight: Font.Normal
+        property bool fit: true                        // sta nella larghezza che ha; altrimenti prende la sua
+        readonly property string path: text !== "" && root.renderTick >= 0 ? Workspace.snippet(text, kind, root.ink) : ""
+        readonly property bool ready: picture.status === Image.Ready
+        Layout.fillWidth: true
+        implicitWidth: ready ? picture.width : label.implicitWidth
+        implicitHeight: ready ? picture.height : label.implicitHeight
+        TxLabel {
+            id: label
+            visible: !piece.ready
+            width: parent.width
+            text: piece.shown
+            color: piece.textColor
+            font.weight: piece.weight
+            font.family: piece.mono ? Theme.monoFamily : Qt.application.font.family
+            wrapMode: piece.mono ? Text.WrapAnywhere : Text.WordWrap
+            elide: Text.ElideNone
+        }
+        Image {
+            id: picture
+            visible: piece.ready
+            source: piece.path !== "" ? "file://" + piece.path : ""
+            asynchronous: true
+            width: piece.fit ? Math.min(piece.width, sourceSize.width * 0.52) : sourceSize.width * 0.52
+            height: sourceSize.width > 0 ? width * sourceSize.height / sourceSize.width : 0
+            smooth: true
+            mipmap: true
+        }
+    }
+
     PdfBackend { id: pdf }                             // per l'indirizzo delle pagine delle fonti
 
     ColumnLayout {
@@ -60,7 +103,7 @@ Rectangle {
                 required property var modelData
                 x: Theme.gap + 4
                 width: Math.min(list.width - 2 * Theme.gap - 8, 860)
-                sourceComponent: modelData.type === "lesson" ? lessonHead : modelData.type === "doubt" ? doubtCard : declaredCard
+                sourceComponent: modelData.type === "lesson" ? lessonHead : modelData.type === "doubt" ? doubtCard : modelData.type === "issue" ? issueCard : declaredCard
                 onLoaded: item.row = modelData
             }
         }
@@ -114,7 +157,7 @@ Rectangle {
             id: card
             property var row: ({ readings: [] })
             property bool showSource: false
-            TxLabel { Layout.fillWidth: true; text: card.row.what || ""; font.weight: Font.Medium; wrapMode: Text.WordWrap; elide: Text.ElideNone }
+            Rendered { text: card.row.what || ""; weight: Font.Medium }
             // la pagina della fonte
             Image {
                 Layout.fillWidth: true
@@ -140,11 +183,23 @@ Rectangle {
                 }
                 Repeater {
                     model: card.row.before || []
-                    TxLabel { required property string modelData; Layout.fillWidth: true; text: "− " + modelData; color: Theme.bad; font.family: Theme.monoFamily; wrapMode: Text.WrapAnywhere; elide: Text.ElideNone }
+                    RowLayout {
+                        required property string modelData
+                        Layout.fillWidth: true
+                        spacing: 6
+                        TxLabel { text: "−"; color: Theme.bad; Layout.alignment: Qt.AlignTop }
+                        Rendered { text: parent.modelData; kind: "latex"; mono: true; textColor: Theme.bad }
+                    }
                 }
                 Repeater {
                     model: card.row.after || []
-                    TxLabel { required property string modelData; Layout.fillWidth: true; text: "+ " + modelData; color: Theme.good; font.family: Theme.monoFamily; wrapMode: Text.WrapAnywhere; elide: Text.ElideNone }
+                    RowLayout {
+                        required property string modelData
+                        Layout.fillWidth: true
+                        spacing: 6
+                        TxLabel { text: "+"; color: Theme.good; Layout.alignment: Qt.AlignTop }
+                        Rendered { text: parent.modelData; kind: "latex"; mono: true; textColor: Theme.good }
+                    }
                 }
                 RowLayout {
                     Layout.alignment: Qt.AlignRight
@@ -160,14 +215,37 @@ Rectangle {
                 visible: card.row.pending !== true
                 Repeater {
                     model: card.row.readings
-                    TxButton {
+                    // una lettura: com'è nel PDF; un clic la sceglie
+                    Rectangle {
+                        id: reading
                         required property var modelData
                         required property int index
                         readonly property bool mine: !card.row.open && card.row.chosen === index
-                        text: (mine ? "✓ " : "") + modelData.text + (index === 0 && card.row.open ? "  (com'è scritto)" : "")
-                        primary: mine
-                        width: Math.min(implicitWidth, card.width - 2 * Theme.gap - 4)
-                        onClicked: Workspace.chooseReading(card.row.lesson, card.row.id, index)
+                        width: Math.min(inside.implicitWidth + 2 * Theme.gap + 4, card.width - 2 * Theme.gap - 4)
+                        height: Math.max(Theme.rowHeight + 2, inside.implicitHeight + Theme.gap)
+                        radius: Theme.radius
+                        color: readingArea.containsMouse ? Theme.hover : Theme.window
+                        border.width: mine ? 2 : 1
+                        border.color: mine ? Theme.accent : Theme.border
+                        RowLayout {
+                            id: inside
+                            anchors.centerIn: parent
+                            width: Math.min(implicitWidth, parent.width - 2 * Theme.gap)
+                            spacing: 6
+                            TxLabel { visible: reading.mine; text: "✓"; color: Theme.accent }
+                            Rendered {
+                                Layout.fillWidth: false
+                                fit: false
+                                text: reading.modelData.latex || ""
+                                kind: "latex"
+                                shown: reading.modelData.text
+                            }
+                            TxLabel { visible: reading.index === 0 && card.row.open === true; text: "com'è scritto"; color: Theme.textFaint; font.pixelSize: Theme.smallSize }
+                        }
+                        MouseArea { id: readingArea; anchors.fill: parent; hoverEnabled: true; onClicked: Workspace.chooseReading(card.row.lesson, card.row.id, reading.index) }
+                        ToolTip.visible: readingArea.containsMouse
+                        ToolTip.delay: 700
+                        ToolTip.text: reading.modelData.text
                     }
                 }
             }
@@ -232,6 +310,28 @@ Rectangle {
         }
     }
 
+    // un errore o una riga fuori misura dell'ultima compilazione
+    Component {
+        id: issueCard
+        Card {
+            id: card
+            property var row: ({})
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.gap
+                TxLabel {
+                    text: card.row.kind === "error" ? "Errore" : card.row.kind === "wide" ? "Riga troppo larga" : "Riga troppo vuota"
+                    color: card.row.kind === "error" ? Theme.bad : Theme.warn
+                    font.weight: Font.Medium
+                }
+                TxLabel { Layout.fillWidth: true; text: card.row.line > 0 ? "riga " + card.row.line : ""; color: Theme.textFaint; font.pixelSize: Theme.smallSize }
+                TxButton { visible: card.row.line > 0; text: "Apri alla riga"; flat: true; onClicked: root.lineAsked(card.row.lesson, card.row.line) }
+                TxButton { text: "Sistema"; hint: "Sistema errori e righe di questa lezione"; enabled: !Workspace.busy; onClicked: Workspace.fixAll(card.row.lesson) }
+            }
+            TxLabel { Layout.fillWidth: true; visible: text !== ""; text: card.row.text || card.row.detail || ""; color: Theme.textMuted; wrapMode: Text.WordWrap; elide: Text.ElideNone }
+        }
+    }
+
     Component {
         id: declaredCard
         Card {
@@ -249,7 +349,7 @@ Rectangle {
                 }
                 TxButton { visible: card.row.line > 0; text: "Apri alla riga"; flat: true; onClicked: root.lineAsked(card.row.lesson, card.row.line) }
             }
-            TxLabel { Layout.fillWidth: true; text: card.row.text || ""; wrapMode: Text.WordWrap; elide: Text.ElideNone; opacity: card.row.state === "tolta" ? 0.55 : 1 }
+            Rendered { text: card.row.text || ""; kind: "latex"; opacity: card.row.state === "tolta" ? 0.55 : 1 }
             RowLayout {
                 Layout.alignment: Qt.AlignRight
                 spacing: Theme.gap

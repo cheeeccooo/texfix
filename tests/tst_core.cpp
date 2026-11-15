@@ -19,6 +19,7 @@
 #include "core/Project.h"
 #include "core/Rules.h"
 #include "core/Settings.h"
+#include "core/Snippets.h"
 #include "core/Sort.h"
 #include "core/Style.h"
 #include "core/StyleSwitch.h"
@@ -35,6 +36,7 @@
 #include <future>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QImage>
 #include <QTest>
 
 using namespace tx;
@@ -465,6 +467,29 @@ private slots:
         // i marcatori restano, la variante che peggiorava non è rimasta
         QCOMPARE(files::read(p.path("src/src1.tex")), "\\section{S}\n% @L1.1\nTesto qui.\n\n% @L1.2\nUna riga che ci sta.\n");
         QCOMPARE(model.calls().size(), 2);
+    }
+
+    // La resa compilata dei pezzi per i pannelli Rivedi: la prosa con «ω0» e «V_CB», un tratto di formula, e un
+    // pezzo che non compila resta senza resa (e non si riprova).
+    void snippetRender()
+    {
+        QCOMPARE(snippets::prose("Vale ω0 o V_CB al 50%? Con $x_1$."), "Vale $\\omega_{0}$ o $V_{CB}$ al 50\\%? Con $x_1$.");
+        QCOMPARE(snippets::prose("un $ solo"), "un  solo");
+        if (!hasLatexmk())
+            QSKIP("latexmk non c'è");
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        const QStringList texts{"f(x) = \\ell", "\\begin{theorem}Vero.\\end{theorem}", "\\nonesiste{"};
+        const QStringList done = snippets::render(p, texts, snippets::Kind::Latex, "202020");
+        QCOMPARE(done.size(), 2);
+        QVERIFY(QFileInfo::exists(snippets::pathOf(p, texts[0], snippets::Kind::Latex, "202020")));
+        QVERIFY(!QFileInfo::exists(snippets::pathOf(p, texts[2], snippets::Kind::Latex, "202020")));
+        QImage formula(snippets::pathOf(p, texts[0], snippets::Kind::Latex, "202020"));
+        QVERIFY(formula.width() > 20 && formula.width() < 400);                        // ritagliata a ciò che è scritto
+        QVERIFY(formula.hasAlphaChannel());
+        QCOMPARE(snippets::render(p, texts, snippets::Kind::Latex, "202020").size(), 0);   // niente da rifare
     }
 
     // L'impaginazione oltre i riquadri spezzati: una figura che non ci stava ed è passata oltre lascia un grande vuoto.

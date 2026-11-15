@@ -13,6 +13,7 @@
 #include "core/Reorganize.h"
 #include "core/Review.h"
 #include "core/Rules.h"
+#include "core/Snippets.h"
 #include "core/Sort.h"
 #include "core/TexSource.h"
 #include "core/StyleSwitch.h"
@@ -854,6 +855,16 @@ QVariantList Workspace::reviewItems(const QString &section, bool summary) const
                 rows << QVariantMap{{"type", "declared"}, {"lesson", d.lesson}, {"kind", d.kind}, {"text", d.text}, {"hash", d.hash},
                                     {"state", d.state}, {"line", d.line}};
             }
+            // anche gli errori e le righe fuori misura dell'ultima compilazione: portano a «Sistema»
+            if (!done)
+                for (const QVariant &v : m_issues) {
+                    const QVariantMap issue = v.toMap();
+                    if (issue.value("file").toString() != lesson.file)
+                        continue;
+                    ++open;
+                    rows << QVariantMap{{"type", "issue"}, {"lesson", lesson.file}, {"kind", issue.value("kind")}, {"text", issue.value("text")},
+                                        {"detail", issue.value("detail")}, {"line", issue.value("line")}};
+                }
         }
         if (rows.isEmpty())
             continue;
@@ -983,7 +994,7 @@ void Workspace::redoFigure(const QString &id, const QString &how)
              });
 }
 
-void Workspace::fixAll()
+void Workspace::fixAll(const QString &only)
 {
     if (!hasProject())
         return;
@@ -992,7 +1003,7 @@ void Workspace::fixAll()
     // le lezioni con errori o righe fuori misura nell'ultima compilazione; quelle fatte si saltano
     QStringList lessons;
     for (const QString &file : m_project.inputs())
-        if (!m_settings.isDone(file) && (m_states.value(file) == "bad" || m_states.value(file) == "warn") && !m_details.value(file).isEmpty())
+        if ((only.isEmpty() || file == only) && !m_settings.isDone(file) && (m_states.value(file) == "bad" || m_states.value(file) == "warn") && !m_details.value(file).isEmpty())
             lessons << file;
     if (lessons.isEmpty())
         return say(QStringLiteral("Non c'è niente da sistemare."));
@@ -1603,6 +1614,45 @@ void Workspace::computeTags()
                 return;
             m_tags = tags;
             emit tagsChanged();
+        });
+    });
+}
+
+QString Workspace::snippet(const QString &text, const QString &kind, const QString &color)
+{
+    if (!hasProject() || text.trimmed().isEmpty())
+        return {};
+    const snippets::Kind k = kind == "latex" ? snippets::Kind::Latex : snippets::Kind::Prose;
+    const QString path = snippets::pathOf(m_project, text, k, color);
+    if (QFileInfo::exists(path))
+        return path;
+    if (QFileInfo::exists(path.chopped(4) + ".no"))
+        return {};                                     // non compila: resta il testo
+    const QStringList wanted{text, kind, color};
+    if (!m_snippetQueue.contains(wanted))
+        m_snippetQueue << wanted;
+    QTimer::singleShot(40, this, &Workspace::renderSnippets);   // quelle chieste insieme si fanno insieme
+    return {};
+}
+
+void Workspace::renderSnippets()
+{
+    if (m_snippetsRunning || m_snippetQueue.isEmpty() || !hasProject())
+        return;
+    m_snippetsRunning = true;
+    const QList<QStringList> queue = m_snippetQueue;
+    m_snippetQueue.clear();
+    QThreadPool::globalInstance()->start([this, queue, project = m_project] {
+        // un giro per ogni tipo e colore
+        QHash<QString, QStringList> groups;
+        for (const QStringList &q : queue)
+            groups[q[1] + '\n' + q[2]] << q[0];
+        for (auto it = groups.constBegin(); it != groups.constEnd(); ++it)
+            snippets::render(project, it.value(), it.key().startsWith("latex") ? snippets::Kind::Latex : snippets::Kind::Prose, it.key().section('\n', 1));
+        QMetaObject::invokeMethod(this, [this] {
+            m_snippetsRunning = false;
+            emit snippetsReady();
+            renderSnippets();
         });
     });
 }

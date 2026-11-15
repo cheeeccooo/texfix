@@ -158,7 +158,7 @@ public:
 
     // «Risolvi tutto»: errori e righe fuori misura delle lezioni non fatte (prima le mosse che non costano, poi il
     // modello), poi compila il documento. Un lavoro, un passo della cronologia.
-    Q_INVOKABLE void fixAll();
+    Q_INVOKABLE void fixAll(const QString &only = {});               // only: una lezione sola
 
     // Impaginazione. paginate impagina le lezioni non fatte che sono nuove o cambiate (un lavoro, un passo della
     // cronologia). layoutItems: le mosse, lezione per lezione (type lesson | move). decideMove: accettata | lasciata.
@@ -284,6 +284,10 @@ public:
     // Un passo della cronologia con ciò che è cambiato finora (prima di un lavoro: le modifiche a mano; dopo: il lavoro).
     Q_INVOKABLE void checkpoint(const QString &title);
 
+    // La resa compilata di un pezzo, per i pannelli Rivedi (kind: prosa | latex; color: il colore del testo, «rrggbb»).
+    // Il file dell'immagine se c'è; vuoto se non compila o se la si sta facendo: allora snippetsReady quando è pronta.
+    Q_INVOKABLE QString snippet(const QString &text, const QString &kind, const QString &color);
+    bool rendering() const { return m_snippetsRunning || !m_snippetQueue.isEmpty(); }
     Q_INVOKABLE void say(const QString &text);         // un messaggio breve nella barra di stato
 
 signals:
@@ -302,6 +306,7 @@ signals:
     void planReady(const QString &id);
     void consoleChanged();
     void tagsChanged();
+    void snippetsReady();
     void outlineReady(const QVariantList &topics);
     void fileRenamed(const QString &from, const QString &to);
     void agentAsked(const QString &message, const QString &title);   // una procedura da affidare all'agente, in una chat sua con il suo nome
@@ -342,6 +347,9 @@ private:
     QStringList m_jobLog;
     QStringList m_agentQueue, m_console, m_hiddenMarks;
     QVariantList m_tags;
+    QList<QStringList> m_snippetQueue;                 // le rese chieste e non ancora fatte: testo, tipo, colore
+    bool m_snippetsRunning = false;
+    void renderSnippets();
     bool m_showTags = false;
     int m_tagsRun = 0;                                 // l'ultimo calcolo dei tag chiesto: quelli di prima si buttano
     void computeTags();                          // procedure dell'agente che aspettano il loro turno
