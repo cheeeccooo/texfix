@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
 import Texfix
@@ -9,6 +10,7 @@ TxSheet {
     title: "Nuova lezione"
     wantedWidth: 520
     property var sources: []                           // percorsi assoluti
+    property var important: []                         // le fonti che decidono dove le altre dicono altro
     property string warning
     property bool warned: false                        // «Crea» ha già avvisato: un secondo clic tiene i valori scritti
 
@@ -17,6 +19,7 @@ TxSheet {
         number.text = marks.next
         date.text = marks.today
         sources = []
+        important = []
         warning = ""
         warned = false
     }
@@ -48,7 +51,7 @@ TxSheet {
             warned = true
             return
         }
-        const error = Workspace.createLesson(parseInt(number.text) || 0, date.text.trim(), sources)
+        const error = Workspace.createLesson(parseInt(number.text) || 0, date.text.trim(), sources, important)
         if (error !== "") {
             warning = error
             return
@@ -90,21 +93,97 @@ TxSheet {
     TxLabel {
         Layout.fillWidth: true
         visible: root.sources.length === 0
-        text: "Scansioni, PDF, immagini o documenti di questa lezione."
+        text: "Scansioni, PDF, immagini o documenti di questa lezione: trascinali qui, o aggiungili."
         color: Theme.textFaint
         wrapMode: Text.WordWrap
         elide: Text.ElideNone
     }
-    Repeater {
-        model: root.sources
-        RowLayout {
-            id: row
-            required property string modelData
-            required property int index
-            Layout.fillWidth: true
-            spacing: Theme.gap
-            TxLabel { Layout.fillWidth: true; text: row.modelData.substring(row.modelData.lastIndexOf("/") + 1); elide: Text.ElideMiddle }
-            TxButton { text: "Togli"; flat: true; onClicked: { const all = root.sources.slice(); all.splice(row.index, 1); root.sources = all } }
+    // le fonti in miniatura: un clic col tasto destro apre il menu (apri, dai importanza, togli)
+    Flow {
+        Layout.fillWidth: true
+        spacing: Theme.gap
+        visible: root.sources.length > 0
+        Repeater {
+            model: root.sources
+            Rectangle {
+                id: tile
+                required property string modelData
+                required property int index
+                readonly property string name: modelData.substring(modelData.lastIndexOf("/") + 1)
+                readonly property bool weighty: root.important.includes(modelData)
+                readonly property string picture: /\.pdf$/i.test(modelData) ? "image://pdf/0/0/220/" + encodeURIComponent(modelData)
+                                                  : /\.(png|jpe?g|gif|webp)$/i.test(modelData) ? "file://" + modelData : ""
+                width: 96
+                height: 124
+                radius: Theme.radius
+                color: Theme.surface
+                border.width: weighty ? 2 : 1
+                border.color: weighty ? Theme.accent : tileArea.containsMouse ? Theme.textFaint : Theme.border
+                clip: true
+                Image {
+                    visible: tile.picture !== ""
+                    x: 3; y: 3
+                    width: parent.width - 6
+                    height: parent.height - 30
+                    source: tile.picture
+                    sourceSize.width: 220
+                    fillMode: Image.PreserveAspectCrop
+                    verticalAlignment: Image.AlignTop
+                    asynchronous: true
+                }
+                TxLabel {
+                    visible: tile.picture === ""
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    y: 34
+                    text: tile.name.includes(".") ? tile.name.substring(tile.name.lastIndexOf(".") + 1).toUpperCase() : "FILE"
+                    color: Theme.textFaint
+                    font.weight: Font.DemiBold
+                }
+                TxLabel {
+                    x: 4
+                    width: parent.width - 8
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 5
+                    text: (tile.weighty ? "★ " : "") + tile.name
+                    font.pixelSize: Theme.smallSize
+                    elide: Text.ElideMiddle
+                    horizontalAlignment: Text.AlignHCenter
+                }
+                MouseArea {
+                    id: tileArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onClicked: { tileMenu.path = tile.modelData; tileMenu.index = tile.index; tileMenu.popup() }
+                }
+                ToolTip.visible: tileArea.containsMouse
+                ToolTip.delay: 700
+                ToolTip.text: tile.name + (tile.weighty ? " · importante" : "")
+            }
+        }
+    }
+    Menu {
+        id: tileMenu
+        property string path
+        property int index
+        MenuItem { text: "Apri"; onTriggered: Qt.openUrlExternally("file://" + tileMenu.path) }
+        MenuItem {
+            text: root.important.includes(tileMenu.path) ? "Togli importanza" : "Dai importanza"
+            onTriggered: {
+                const all = root.important.slice()
+                const at = all.indexOf(tileMenu.path)
+                if (at >= 0) all.splice(at, 1); else all.push(tileMenu.path)
+                root.important = all
+            }
+        }
+        MenuItem {
+            text: "Togli"
+            onTriggered: {
+                const all = root.sources.slice()
+                all.splice(tileMenu.index, 1)
+                root.sources = all
+                root.important = root.important.filter(p => all.includes(p))
+            }
         }
     }
     RowLayout {
@@ -120,7 +199,7 @@ TxSheet {
     TxLabel {
         Layout.fillWidth: true
         visible: root.sources.length > 1
-        text: "Più fonti: le fonde l'agente, e prima ti mostra un piano da approvare."
+        text: "Più fonti: se non hanno parti in comune si uniscono e si convertono; se si sovrappongono le fonde l'agente, e prima ti mostra un piano da approvare. Una fonte importante (tasto destro) decide dove le altre dicono altro."
         color: Theme.textMuted
         font.pixelSize: Theme.smallSize
         wrapMode: Text.WordWrap
@@ -133,6 +212,11 @@ TxSheet {
         color: Theme.warn
         wrapMode: Text.WordWrap
         elide: Text.ElideNone
+    }
+    DropArea {
+        parent: root.background
+        anchors.fill: parent
+        onDropped: drop => { if (drop.hasUrls) root.add(Workspace.localPaths(drop.urls)) }
     }
     FileDialog {
         id: picker

@@ -14,6 +14,7 @@ Item {
     signal newLessonAsked()
     signal materialAsked()
     signal sourcesAsked(string lesson)
+    signal newVersionAsked(string used)
     signal renameAsked(string file)
     // Rivedi impaginazione: apre il riepilogo; le lezioni nuove si impaginano dal suo tasto, non aprendolo.
     function reviewLayout() { root.openFile("rivedi:impaginazione") }
@@ -344,6 +345,7 @@ Item {
                 onNewLessonAsked: root.newLessonAsked()
                 onMaterialAsked: root.materialAsked()
                 onSourcesAsked: lesson => root.sourcesAsked(lesson)
+                onNewVersionAsked: used => root.newVersionAsked(used)
                 onCompileAsked: file => { root.openFile(file); root.compileFile() }
                 onRenameAsked: file => root.renameAsked(file)
             }

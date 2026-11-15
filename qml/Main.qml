@@ -171,12 +171,14 @@ ApplicationWindow {
         onMaterialAsked: materialDialog.open()
         onRenameAsked: file => renameSheet.ask(file)
         onSourcesAsked: lesson => { sourcesDialog.lesson = lesson; sourcesDialog.open() }
+        onNewVersionAsked: used => { versionDialog.used = used; versionDialog.open() }
         visible: Workspace.hasProject
     }
 
     Connections {
         target: Workspace
         function onPrepareAsked(path) { prepare.path = path; prepare.open() }
+        function onVersionAsked(path, used) { versionSheet.path = path; versionSheet.used = used; versionSheet.open() }
     }
 
     FolderDialog {
@@ -197,6 +199,32 @@ ApplicationWindow {
         }
     }
 
+    // un file con il nome di una fonte già usata, ma diverso
+    TxSheet {
+        id: versionSheet
+        property string path
+        property string used
+        title: "È la versione nuova?"
+        TxLabel {
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            elide: Text.ElideNone
+            text: "«" + versionSheet.path.substring(versionSheet.path.lastIndexOf("/") + 1) + "» ha il nome di una fonte già usata (" + versionSheet.used
+                  + ") ma è diversa. Se è la versione nuova, la vecchia va in «precedenti» con la data di oggi, e l'agente porta nella lezione le parti nuove e le correzioni, con un piano."
+        }
+        buttons: [
+            TxButton { text: "Annulla"; onClicked: versionSheet.close() },
+            TxButton { text: "No, è un'altra fonte"; onClicked: { versionSheet.close(); Workspace.acceptVersion(versionSheet.path, versionSheet.used, false) } },
+            TxButton { text: "Sì, è la versione nuova"; primary: true; onClicked: { versionSheet.close(); Workspace.acceptVersion(versionSheet.path, versionSheet.used, true) } }
+        ]
+    }
+    FileDialog {
+        id: versionDialog
+        property string used
+        title: "La versione nuova della fonte"
+        fileMode: FileDialog.OpenFile
+        onAccepted: Workspace.acceptVersion(Workspace.localPaths([selectedFile])[0], used, true)
+    }
     TxSheet {
         id: prepare
         property string path
@@ -251,6 +279,12 @@ ApplicationWindow {
         function onGesture(name, argument) {
             if (name === "nuovo") {
                 window.createProject(argument.split(" ")[0], argument.split(" ").slice(1).join(" "))
+            } else if (name === "versione") {
+                versionSheet.close()
+                Workspace.acceptVersion(versionSheet.path, versionSheet.used, argument === "si")
+            } else if (name === "fonti-lezione") {
+                newLessonSheet.open()
+                newLessonSheet.add(argument.split(" "))
             } else if (name === "salva-profilo") {
                 Workspace.say(Workspace.saveProfile(argument))
             } else if (name === "argomenti") {

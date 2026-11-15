@@ -2,7 +2,13 @@
 
 #include "core/Blocks.h"
 #include "core/Files.h"
+#include "core/Model.h"
 #include "core/Pages.h"
+#include "core/Tools.h"
+#include <QDirIterator>
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonObject>
 
 #include <QDate>
 #include <QDir>
@@ -111,15 +117,17 @@ QStringList settle(const Project &project, const QStringList &boxes, const QStri
     return did.isEmpty() ? QStringList{QStringLiteral("era già tutto a posto")} : did;
 }
 
-QString fuseMessage(const QString &file, int number, const QString &date, const QStringList &sources)
+QString fuseMessage(const QString &file, int number, const QString &date, const QStringList &sources, const QStringList &important)
 {
+    const QString weight = important.isEmpty() ? QString()
+        : QStringLiteral("\n- Fonti importanti: %1. Dove le fonti dicono cose diverse, decide una fonte importante, senza farne una domanda.").arg(important.join(", "));
     return QStringLiteral("Crea la lezione %1%2 fondendo queste fonti, che parlano della stessa lezione: %3.\n"
                           "- Leggile tutte per intero. Non c'è una fonte che comanda: la struttura la dà la più ricca, e dove due fonti dicono cose "
                           "diverse non scegliere tu: fanne una domanda del piano.\n"
                           "- Prima consegna un piano con consegna_piano: che cosa prendi da ogni fonte, in che ordine, le domande.\n"
                           "- Quando il piano è approvato scrivi `%4` (comincia con `\\section{…}` e sotto `\\lezione{%1}{%5}`), compilala finché è pulita, "
                           "poi chiama chiudi_lezione con la lezione e le fonti, e consegna l'esito.")
-        .arg(number).arg(date.isEmpty() ? QString() : " del " + date, sources.join(", "), file, date);
+        .arg(number).arg(date.isEmpty() ? QString() : " del " + date, sources.join(", "), file, date) + weight;
 }
 
 QString integrateMessage(const QString &lesson, const QStringList &sources)
@@ -131,6 +139,122 @@ QString integrateMessage(const QString &lesson, const QStringList &sources)
                           "- Quando il piano è approvato fai le aggiunte, compila finché è pulita, chiama chiudi_lezione con la lezione e le fonti, e "
                           "consegna l'esito.")
         .arg(lesson, sources.join(", "));
+}
+
+
+Version versionOf(const Project &project, const QString &path)
+{
+    Version out;
+    const QFileInfo info(path);
+    if (!info.isFile() || info.absoluteFilePath().startsWith(project.path("fonti/")))
+        return out;
+    const QString bare = files::bare(info.fileName()), suffix = info.suffix().toLower();
+    for (QDirIterator it(project.path("fonti/usate"), QDir::Files, QDirIterator::Subdirectories); it.hasNext();) {
+        const QString used = it.next();
+        if (used.contains("/precedenti/") || files::bare(it.fileName()) != bare || QFileInfo(used).suffix().toLower() != suffix)
+            continue;
+        out.used = project.relative(used);
+        QFile a(path), b(used);
+        out.identical = a.size() == b.size() && a.open(QIODevice::ReadOnly) && b.open(QIODevice::ReadOnly) && a.readAll() == b.readAll();
+        if (out.identical)
+            break;                                     // una identica vince: non si aggiunge due volte
+    }
+    return out;
+}
+
+QString replaceVersion(const Project &project, const QString &used, const QString &path)
+{
+    const QString old = project.path(used);
+    if (!QFileInfo::exists(old) || !QFileInfo(path).isFile())
+        return {};
+    const QString before = QFileInfo(old).path() + "/precedenti";
+    QDir().mkpath(before);
+    const QString kept = files::freeName(before + '/' + QDate::currentDate().toString("yyyy-MM-dd") + ' ' + QFileInfo(old).fileName());
+    if (!QFile::rename(old, kept))
+        return {};
+    if (!QFile::copy(path, old)) {
+        QFile::rename(kept, old);
+        return {};
+    }
+    QDir().mkpath(project.path("fonti/coda"));
+    const QString copy = files::freeName(project.path("fonti/coda/" + QFileInfo(old).fileName()));
+    return QFile::copy(path, copy) ? project.relative(copy) : QString();
+}
+
+QString updateMessage(const QString &lesson, const QString &source, const QString &previous)
+{
+    return QStringLiteral("La fonte `%1` è una versione nuova di una fonte già usata in `%2` (la vecchia è in `%3`).\n"
+                          "- Confronta la versione nuova con la lezione: porta nella lezione le parti nuove e le correzioni, vicino al blocco a cui "
+                          "appartengono; ciò che non è cambiato non si riscrive.\n"
+                          "- Prima consegna un piano con consegna_piano: una voce per ogni parte nuova o corretta.\n"
+                          "- Quando il piano è approvato fai le modifiche, compila finché è pulita, chiama chiudi_lezione con la lezione e la fonte, "
+                          "e consegna l'esito.")
+        .arg(source, lesson, previous);
+}
+
+Overlap overlap(const Project &project, const QString &quality, const QStringList &sources, JobControl *control)
+{
+    Overlap out;
+    QStringList parts;
+    try {
+        for (qsizetype i = 0; i < sources.size(); ++i) {
+            if (Pages::kindOf(sources[i]) != "pagine")
+                return out;                            // tipi diversi: le fonde l'agente
+            const Pages pages = Pages::read(project.path(sources[i]), project.path("build/lavori/fonti/" + QFileInfo(sources[i]).fileName()));
+            parts << QStringLiteral("SOURCE %1: %2 (%3 pages). Its pages, small:").arg(i).arg(QFileInfo(sources[i]).fileName()).arg(pages.count());
+            const int step = qMax(1, pages.count() / 6);       // al più sei pagine per fonte: l'inizio, la fine e qualcosa in mezzo
+            for (int p = 0; p < pages.count(); p += step)
+                parts << pages.thumb.value(p);
+        }
+        Model model(quality, project.root(), control);
+        const QString system = QStringLiteral(
+            "Several sources (scans or PDFs) are given for ONE lecture of a course. Decide whether they overlap: do two of them cover the same "
+            "material (the same lecture written twice, e.g. the teacher's notes and a student's notes), or are they consecutive pieces of one "
+            "lecture with nothing in common? Return only a JSON object: {\"overlap\": true|false, \"order\": [source indices in reading order], "
+            "\"richest\": <index of the most complete source>, \"why\": \"<Italian, one short sentence; name the sources by file name, never by index>\"}. When unsure, answer overlap true.");
+        const QJsonObject answer = Model::json(model.ask("outline", system, parts, "fonti")).toObject();
+        out.cost = model.cost();
+        QList<int> order;
+        for (const QJsonValue &v : answer.value("order").toArray())
+            if (v.toInt(-1) >= 0 && v.toInt() < sources.size() && !order.contains(v.toInt()))
+                order << v.toInt();
+        if (order.size() != sources.size() || !answer.contains("overlap"))
+            return out;
+        out.known = true;
+        out.overlap = answer.value("overlap").toBool(true);
+        out.order = order;
+        out.why = answer.value("why").toString().trimmed();
+    } catch (const Stopped &) {
+        throw;
+    } catch (const std::exception &) {
+    }
+    return out;
+}
+
+QString unite(const Project &project, const QStringList &sources, const QList<int> &order, int number)
+{
+    const QString work = project.path("build/lavori/fonti/unite");
+    QDir().mkpath(work);
+    QStringList pieces;
+    for (int i : order) {
+        const QString source = project.path(sources.value(i));
+        if (source.endsWith(".pdf", Qt::CaseInsensitive)) {
+            pieces << source;
+            continue;
+        }
+        const QString pdf = work + QStringLiteral("/%1.pdf").arg(i);       // un'immagine: una pagina
+        QFile::remove(pdf);
+        if (!tools::run("sips", {"-s", "format", "pdf", source, "--out", pdf}, work, 60000).ok || !QFileInfo::exists(pdf))
+            return {};
+        pieces << pdf;
+    }
+    const QString target = files::freeName(project.path(QStringLiteral("fonti/coda/lezione %1.pdf").arg(number)));
+    if (!tools::run("pdfunite", pieces + QStringList{target}, work, 120000).ok || !QFileInfo::exists(target))
+        return {};
+    for (const QString &source : sources)              // le fonti sono dentro il file unito: quelle in coda non servono più
+        if (source.startsWith("fonti/coda/"))
+            QFile::remove(project.path(source));
+    return project.relative(target);
 }
 
 }

@@ -191,7 +191,10 @@ public:
     Q_INVOKABLE QStringList addSources(const QStringList &paths);
     Q_INVOKABLE void addDocuments(const QStringList &paths);               // copia dei file fra quelli da consultare (docs/)
     Q_INVOKABLE QVariantMap lessonMarks(const QStringList &paths) const;
-    Q_INVOKABLE QString createLesson(int number, const QString &date, const QStringList &paths);
+    Q_INVOKABLE QString createLesson(int number, const QString &date, const QStringList &paths, const QStringList &important = {});
+    // Un file con il nome di una fonte già usata, ma diverso (versionAsked): isNew, è la versione nuova (la vecchia va in
+    // «precedenti/», l'agente porta nella lezione ciò che è cambiato); altrimenti è un'altra fonte.
+    Q_INVOKABLE void acceptVersion(const QString &path, const QString &used, bool isNew);
     Q_INVOKABLE void integrateSources(const QString &lesson, const QStringList &paths);
     Q_INVOKABLE static QStringList localPaths(const QList<QUrl> &urls);
 
@@ -312,6 +315,7 @@ signals:
     void consoleChanged();
     void tagsChanged();
     void snippetsReady();
+    void versionAsked(const QString &path, const QString &used);
     void outlineReady(const QVariantList &topics);
     void fileRenamed(const QString &from, const QString &to);
     void agentAsked(const QString &message, const QString &title);   // una procedura da affidare all'agente, in una chat sua con il suo nome
@@ -352,6 +356,7 @@ private:
     QStringList m_jobLog;
     QStringList m_agentQueue, m_console, m_hiddenMarks;
     QVariantList m_tags;
+    QString m_outcomeHead;                             // una riga in testa al prossimo esito di Converti
     QList<QStringList> m_snippetQueue;                 // le rese chieste e non ancora fatte: testo, tipo, colore
     bool m_snippetsRunning = false;
     void renderSnippets();

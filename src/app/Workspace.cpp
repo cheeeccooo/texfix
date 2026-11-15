@@ -809,6 +809,9 @@ void Workspace::convertFinished(const Convert::Result &result)
         lines << QStringLiteral("Lavoro fermato: ciò che è fatto resta, e si riprende da lì con «Riprendi».");
     if (!result.failure.isEmpty())
         lines << result.failure;
+    if (!m_outcomeHead.isEmpty())                      // una riga in testa: che cosa si è fatto delle fonti
+        lines.prepend(m_outcomeHead);
+    m_outcomeHead.clear();
     emit outcomeReady(QVariantMap{{"title", result.stopped ? QStringLiteral("Converti: fermato") : QStringLiteral("Converti: esito")},
                                   {"lines", lines},
                                   {"cost", QStringLiteral("%1 $").arg(italian.toString(result.cost, 'f', 2))},
@@ -1202,8 +1205,21 @@ QStringList Workspace::addSources(const QStringList &paths)
 {
     if (!hasProject() || paths.isEmpty())
         return {};
+    // un file con il nome di una fonte già usata: identico non si aggiunge; diverso, si chiede se è la versione nuova
+    QStringList fresh;
+    for (const QString &path : paths) {
+        const newlesson::Version version = newlesson::versionOf(m_project, path);
+        if (version.used.isEmpty())
+            fresh << path;
+        else if (version.identical)
+            say(QStringLiteral("«%1» è già fra le fonti usate, identica: non la aggiungo.").arg(QFileInfo(path).fileName()));
+        else
+            emit versionAsked(path, version.used);
+    }
+    if (fresh.isEmpty())
+        return {};
     checkpoint(QStringLiteral("Modifiche a mano"));
-    const QStringList added = newlesson::toQueue(m_project, paths);
+    const QStringList added = newlesson::toQueue(m_project, fresh);
     checkpoint(QStringLiteral("Fonti aggiunte"));
     refreshTree();
     return added;
@@ -1227,7 +1243,39 @@ QVariantMap Workspace::lessonMarks(const QStringList &paths) const
             {"today", QDate::currentDate().toString("dd/MM/yyyy")}};
 }
 
-QString Workspace::createLesson(int number, const QString &date, const QStringList &paths)
+void Workspace::acceptVersion(const QString &path, const QString &used, bool isNew)
+{
+    if (!hasProject())
+        return;
+    if (busy())
+        return say(QStringLiteral("Aspetta la fine del lavoro in corso."));
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    if (!isNew) {                                      // un'altra fonte con lo stesso nome: va fra quelle da convertire
+        const QStringList added = newlesson::toQueue(m_project, {path});
+        checkpoint(QStringLiteral("Fonti aggiunte"));
+        refreshTree();
+        if (!added.isEmpty())
+            sortMaterial(added);
+        return;
+    }
+    QString lesson;                                    // la lezione che ha quella fonte
+    for (const QVariant &v : m_lessons)
+        for (const QVariant &s : v.toMap().value("sources").toList())
+            if (s.toMap().value("file").toString() == used)
+                lesson = v.toMap().value("file").toString();
+    const QString copy = newlesson::replaceVersion(m_project, used, path);
+    if (copy.isEmpty())
+        return say(QStringLiteral("Non riesco a mettere la versione nuova al posto della vecchia."));
+    checkpoint(QStringLiteral("Versione nuova di una fonte"));
+    refreshTree();
+    const QString previous = QFileInfo(used).path() + "/precedenti/";
+    if (lesson.isEmpty())
+        sortMaterial({copy});
+    else
+        emit agentAsked(newlesson::updateMessage(lesson, copy, previous), QStringLiteral("Versione nuova di %1").arg(QFileInfo(used).fileName()));
+}
+
+QString Workspace::createLesson(int number, const QString &date, const QStringList &paths, const QStringList &important)
 {
     if (!hasProject())
         return QStringLiteral("Apri prima un progetto.");
@@ -1252,7 +1300,45 @@ QString Workspace::createLesson(int number, const QString &date, const QStringLi
     int last = 0;
     for (const QString &name : QDir(m_project.path("src")).entryList({"*.tex"}, QDir::Files))
         last = qMax(last, numbered.match(QFileInfo(name).completeBaseName()).captured(1).toInt());
-    emit agentAsked(newlesson::fuseMessage(QStringLiteral("src/src%1.tex").arg(last + 1), number, date, sources), QStringLiteral("Lezione %1: fusione delle fonti").arg(number));
+    QStringList weighty;                               // le fonti importanti, con il nome che hanno nel progetto
+    for (const QString &path : important)
+        for (const QString &source : sources)
+            if (files::bare(QFileInfo(path).fileName()) == files::bare(QFileInfo(source).fileName()))
+                weighty << source;
+    const QString fuse = newlesson::fuseMessage(QStringLiteral("src/src%1.tex").arg(last + 1), number, date, sources, weighty);
+    const QString title = QStringLiteral("Lezione %1: fusione delle fonti").arg(number);
+    bool pages = sources.size() > 1;
+    for (const QString &source : sources)
+        pages = pages && Pages::kindOf(source) == "pagine";
+    if (!pages) {                                      // tipi diversi: le fonde l'agente
+        emit agentAsked(fuse, title);
+        return {};
+    }
+    // più scansioni o PDF: una chiamata leggera dice se si sovrappongono. Se no, si uniscono e si convertono.
+    startJob(QStringLiteral("Guardo le fonti"), [=, this, project = m_project, quality = m_settings.quality](JobControl *control) {
+        newlesson::Overlap seen;
+        QString united;
+        try {
+            control->progress(0.2, QStringLiteral("che cosa hanno in comune"));
+            seen = newlesson::overlap(project, quality, sources, control);
+            if (seen.known && !seen.overlap)
+                united = newlesson::unite(project, sources, seen.order, number);
+        } catch (const Stopped &) {
+            return std::function<void()>([this] { say(QStringLiteral("Lavoro fermato: le fonti restano fra quelle da convertire.")); refreshTree(); });
+        }
+        return std::function<void()>([=, this] {
+            refreshTree();
+            if (united.isEmpty()) {                    // si sovrappongono (o non si sa): le fonde l'agente, con un piano
+                QTimer::singleShot(0, this, [=, this] { emit agentAsked(fuse, title); });
+                return;
+            }
+            QStringList names;
+            for (int i : seen.order)
+                names << QFileInfo(sources.value(i)).fileName();
+            m_outcomeHead = QStringLiteral("Fonti unite in quest'ordine: %1. %2").arg(names.join(", "), seen.why);
+            QTimer::singleShot(0, this, [=, this] { convert({united}, {{united, Convert::Wanted{number, date}}}); });
+        });
+    });
     return {};
 }
 

@@ -492,6 +492,36 @@ private slots:
         QCOMPARE(snippets::render(p, texts, snippets::Kind::Latex, "202020").size(), 0);   // niente da rifare
     }
 
+    // Le versioni delle fonti: un file identico a una fonte usata non si aggiunge; uno diverso con lo stesso nome prende
+    // il suo posto, la vecchia va in «precedenti» con la data, e una copia va fra le fonti da convertire.
+    void sourceVersions()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QDir().mkpath(p.path("fonti/usate/lezione 1"));
+        files::write(p.path("fonti/usate/lezione 1/notes_LabSS_1.pdf"), "vecchia");
+        files::write(dir.filePath("notes_LabSS (1).pdf"), "vecchia");
+        QCOMPARE(files::bare("notes_LabSS (1).pdf"), files::bare("notes_LabSS_1.pdf"));
+        newlesson::Version v = newlesson::versionOf(p, dir.filePath("notes_LabSS (1).pdf"));
+        QCOMPARE(v.used, "fonti/usate/lezione 1/notes_LabSS_1.pdf");
+        QVERIFY(v.identical);
+        files::write(dir.filePath("notes_LabSS (1).pdf"), "nuova");
+        v = newlesson::versionOf(p, dir.filePath("notes_LabSS (1).pdf"));
+        QVERIFY(!v.identical);
+        QVERIFY(newlesson::versionOf(p, dir.filePath("altro.pdf")).used.isEmpty());
+        const QString copy = newlesson::replaceVersion(p, v.used, dir.filePath("notes_LabSS (1).pdf"));
+        QCOMPARE(copy, "fonti/coda/notes_LabSS_1.pdf");
+        QCOMPARE(files::read(p.path(copy)), "nuova");
+        QCOMPARE(files::read(p.path(v.used)), "nuova");
+        const QStringList old = QDir(p.path("fonti/usate/lezione 1/precedenti")).entryList(QDir::Files);
+        QCOMPARE(old.size(), 1);
+        QVERIFY(old[0].endsWith(" notes_LabSS_1.pdf"));
+        QCOMPARE(files::read(p.path("fonti/usate/lezione 1/precedenti/" + old[0])), "vecchia");
+        QVERIFY(newlesson::fuseMessage("src/src2.tex", 2, "", {"a.pdf", "b.pdf"}, {"b.pdf"}).contains("Fonti importanti: b.pdf"));
+    }
+
     // L'impaginazione oltre i riquadri spezzati: una figura che non ci stava ed è passata oltre lascia un grande vuoto.
     // Non c'è una mossa sicura: si segnala, e si decide a mano o con l'agente.
     void layoutHole()
