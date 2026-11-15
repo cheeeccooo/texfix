@@ -9,6 +9,10 @@ Rectangle {
     color: Theme.pdfBackdrop
     property alias source: backend.source
     signal sourceAsked(int page, real x, real y)       // page da 1
+    // i tag di provenienza: page, y (punti), mark, source, sourcePage, path; un clic chiede la pagina della fonte
+    property var tags: []
+    property var hiddenMarks: []
+    signal tagClicked(string path, int page)
     readonly property int margin: Theme.gap + 4
     // la larghezza in pixel a cui si disegnano le pagine: segue il pannello con un po' di ritardo, non a ogni pixel
     property int renderWidth: 0
@@ -77,6 +81,30 @@ Rectangle {
                 width: parent.width
                 height: root.markHeight * page.scale + 4
                 color: Theme.accent
+            }
+            Repeater {
+                model: root.tags.filter(t => t.page === page.index + 1 && !root.hiddenMarks.includes(t.mark))
+                Rectangle {
+                    id: tag
+                    required property var modelData
+                    x: page.width - width - 3
+                    y: Math.max(0, modelData.y * page.scale - 2)
+                    width: mark.implicitWidth + 8
+                    height: mark.implicitHeight + 2
+                    radius: 3
+                    color: tagArea.containsMouse ? Theme.accent : Qt.rgba(1, 1, 1, 0.85)
+                    border.width: 1
+                    border.color: Theme.accent
+                    Text { id: mark; anchors.centerIn: parent; text: tag.modelData.mark; color: tagArea.containsMouse ? Theme.onAccent : Theme.accent; font.pixelSize: 9; font.weight: Font.Bold }
+                    MouseArea {
+                        id: tagArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: root.tagClicked(tag.modelData.path, tag.modelData.sourcePage)
+                    }
+                    ToolTip.visible: tagArea.containsMouse
+                    ToolTip.text: tag.modelData.source + (tag.modelData.sourcePage > 0 ? ", pagina " + tag.modelData.sourcePage : "")
+                }
             }
             TapHandler {
                 acceptedModifiers: Qt.KeyboardModifierMask

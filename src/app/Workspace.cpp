@@ -9,6 +9,7 @@
 #include "core/Pages.h"
 #include "core/Plans.h"
 #include "core/Profiles.h"
+#include "core/Provenance.h"
 #include "core/Reorganize.h"
 #include "core/Review.h"
 #include "core/Rules.h"
@@ -22,6 +23,7 @@
 #include <QDesktopServices>
 #include <QGuiApplication>
 #include <QProcess>
+#include <QThreadPool>
 
 #include <QDir>
 #include <QDirIterator>
@@ -58,6 +60,9 @@ Workspace::Workspace()
     connect(this, &Workspace::compilingChanged, this, &Workspace::busyChanged);
     connect(this, &Workspace::jobChanged, this, &Workspace::busyChanged);
     connect(this, &Workspace::busyChanged, this, &Workspace::nextProcedure, Qt::QueuedConnection);
+    connect(this, &Workspace::pdfChanged, this, &Workspace::computeTags);
+    connect(this, &Workspace::pdfRebuilt, this, &Workspace::computeTags);
+    m_showTags = settings().value("vista/tag", false).toBool();
     connect(&m_compiler, &Compiler::started, this, [this] {
         m_progress = 0;
         m_progressLabel.clear();
@@ -1448,4 +1453,60 @@ void Workspace::useLibraryStyle(const QString &name)
     if (!in.error.isEmpty())
         return say(in.error);
     applyStyle(name);
+}
+
+void Workspace::setShowTags(bool show)
+{
+    if (show == m_showTags)
+        return;
+    m_showTags = show;
+    settings().setValue("vista/tag", show);
+    emit tagsChanged();
+    computeTags();
+}
+
+void Workspace::setMarkHidden(const QString &mark, bool hidden)
+{
+    m_hiddenMarks.removeAll(mark);
+    if (hidden)
+        m_hiddenMarks << mark;
+    emit tagsChanged();
+}
+
+QVariantList Workspace::tagSources() const
+{
+    QVariantList out;
+    if (!hasProject())
+        return out;
+    for (const provenance::Source &s : provenance::sources(m_project, m_style))
+        out << QVariantMap{{"mark", s.mark}, {"name", s.name}, {"path", s.path}, {"hidden", m_hiddenMarks.contains(s.mark)}};
+    return out;
+}
+
+// Dove cade ogni blocco lo dice la compilazione: si calcola in un thread, e resta solo l'ultimo calcolo chiesto.
+void Workspace::computeTags()
+{
+    const int run = ++m_tagsRun;
+    if (!m_showTags || m_pdf.isEmpty() || !hasProject()) {
+        if (!m_tags.isEmpty()) {
+            m_tags.clear();
+            emit tagsChanged();
+        }
+        return;
+    }
+    QThreadPool::globalInstance()->start([this, run, project = m_project, style = m_style, pdf = m_pdf] {
+        QHash<QString, QString> paths;
+        for (const provenance::Source &s : provenance::sources(project, style))
+            paths.insert(s.name, s.path);
+        QVariantList tags;
+        for (const provenance::Tag &t : provenance::tags(project, style, pdf))
+            tags << QVariantMap{{"page", t.page}, {"y", t.y}, {"mark", t.mark}, {"source", t.source}, {"sourcePage", t.sourcePage},
+                                {"path", paths.value(t.source)}, {"block", t.block}};
+        QMetaObject::invokeMethod(this, [this, run, tags] {
+            if (run != m_tagsRun)
+                return;
+            m_tags = tags;
+            emit tagsChanged();
+        });
+    });
 }

@@ -175,7 +175,12 @@ Rectangle {
                     readonly property bool modified: kind === "text" && item ? item.modified : false
                     onModifiedChanged: tabs.setProperty(index, "modified", modified)
                     function save() { if (kind === "text" && item) item.save() }
-                    function goToLine(line) { if (kind === "text" && item) item.goToLine(line) }
+                    function goToLine(line) {              // per un PDF la «riga» è la pagina
+                        if (kind === "text" && item)
+                            item.goToLine(line)
+                        else if (kind === "pdf" && item)
+                            Qt.callLater(() => item.show(line, 0, 0))
+                    }
                     function focusText() { if (kind === "text" && item) item.focusText() }
                     readonly property int currentLine: kind === "text" && item ? item.currentLine : 0
 

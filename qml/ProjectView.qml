@@ -185,6 +185,8 @@ Item {
                 Workspace.correctDoubt(argument.split(" ")[0], argument.split(" ")[1])
             } else if (name === "decidi") {
                 Workspace.decideDoubts(argument.split(" ")[0], argument.split(" ").slice(1))
+            } else if (name === "tag") {
+                Workspace.showTags = argument !== "no"
             } else if (name === "avvisi") {
                 root.bottomOpen = true
             } else if (name === "progetto") {
@@ -321,6 +323,9 @@ Item {
                         SplitView.minimumWidth: 0
                         source: Workspace.pdf
                         onSourceAsked: (page, x, y) => root.jumpToSource(page, x, y)
+                        tags: Workspace.showTags ? Workspace.tags : []
+                        hiddenMarks: Workspace.tagSources.filter(s => s.hidden).map(s => s.mark)
+                        onTagClicked: (path, sourcePage) => path !== "" ? root.openFile(path, sourcePage) : Workspace.say("La fonte di questo blocco non è più nel progetto.")
                     }
                     }
                     // la capsula sul divisore: PDF pieno, alla pari, editor pieno

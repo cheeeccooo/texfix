@@ -224,6 +224,19 @@ public:
     Q_INVOKABLE QString applyTopics(const QVariantList &topics);          // vuoto se è andata
     Q_INVOKABLE void backToLessons();
 
+    // I tag di provenienza sul PDF: da quale fonte viene ogni blocco. showTags li mostra o li nasconde (non sposta una
+    // riga: nel documento non c'è niente); tags: page, y, mark, source, sourcePage, path; tagSources: la legenda
+    // (mark, name, path, hidden); una sigla si nasconde da sola con setMarkHidden.
+    Q_PROPERTY(bool showTags READ showTags WRITE setShowTags NOTIFY tagsChanged)
+    Q_PROPERTY(QVariantList tags READ tags NOTIFY tagsChanged)
+    Q_PROPERTY(QVariantList tagSources READ tagSources NOTIFY tagsChanged)
+public:
+    bool showTags() const { return m_showTags; }
+    void setShowTags(bool show);
+    QVariantList tags() const { return m_tags; }
+    QVariantList tagSources() const;
+    Q_INVOKABLE void setMarkHidden(const QString &mark, bool hidden);
+
     // Converti. Le fonti di «Da convertire»: file, name, detail, convertible; la stima del costo in dollari.
     // convert le fa diventare lezioni (un passo solo della cronologia), poi compila il documento; alla fine
     // outcomeReady con title, lines, cost, minutes. resume riprende un lavoro interrotto senza rifare ciò che è fatto.
@@ -282,6 +295,7 @@ signals:
     void outcomeReady(const QVariantMap &outcome);
     void planReady(const QString &id);
     void consoleChanged();
+    void tagsChanged();
     void outlineReady(const QVariantList &topics);
     void fileRenamed(const QString &from, const QString &to);
     void agentAsked(const QString &message);          // una procedura da affidare all'agente, nella chat
@@ -320,7 +334,11 @@ private:
     double m_jobProgress = 0;
     bool m_agentRunning = false;
     QStringList m_jobLog;
-    QStringList m_agentQueue, m_console;                          // procedure dell'agente che aspettano il loro turno
+    QStringList m_agentQueue, m_console, m_hiddenMarks;
+    QVariantList m_tags;
+    bool m_showTags = false;
+    int m_tagsRun = 0;                                 // l'ultimo calcolo dei tag chiesto: quelli di prima si buttano
+    void computeTags();                          // procedure dell'agente che aspettano il loro turno
     QFileSystemWatcher m_watcher;
     QTimer m_refresh;                                  // più cambiamenti vicini, un aggiornamento solo
     QVariantList m_jobs, m_lessons, m_documentFiles, m_queue, m_documents, m_images, m_issues;

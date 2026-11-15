@@ -123,6 +123,25 @@ ApplicationWindow {
         Menu {
             title: "Vista"
             Action { text: "A capo nell'editor"; shortcut: "Alt+Z"; enabled: Workspace.hasProject; onTriggered: project.toggleWrap() }
+            MenuSeparator {}
+            Action { text: "Tag di provenienza"; checkable: true; checked: Workspace.showTags; enabled: Workspace.hasProject; onTriggered: Workspace.showTags = !Workspace.showTags }
+            Menu {
+                id: marksMenu
+                title: "Fonti (legenda)"
+                enabled: Workspace.hasProject && Workspace.showTags
+                Instantiator {
+                    model: Workspace.showTags ? Workspace.tagSources : []
+                    delegate: MenuItem {
+                        required property var modelData
+                        text: modelData.mark + "  " + modelData.name
+                        checkable: true
+                        checked: !modelData.hidden
+                        onTriggered: Workspace.setMarkHidden(modelData.mark, !modelData.hidden)
+                    }
+                    onObjectAdded: (index, object) => marksMenu.insertItem(index, object)
+                    onObjectRemoved: (index, object) => marksMenu.removeItem(object)
+                }
+            }
         }
     }
 

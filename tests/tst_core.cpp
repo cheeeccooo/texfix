@@ -6,6 +6,7 @@
 #include "core/NewLesson.h"
 #include "core/Plans.h"
 #include "core/Profiles.h"
+#include "core/Provenance.h"
 #include "core/Prompts.h"
 #include "core/Reorganize.h"
 #include "core/Review.h"
@@ -1009,6 +1010,42 @@ private slots:
         QCOMPARE(d.why, "Nel testo è scritto 2.");
         QCOMPARE(review::reopen(p, lesson, "src1-d1", true), QString());                // annulla la modifica del modello
         QCOMPARE(files::read(p.path(lesson)), tex);
+    }
+
+    // I tag di provenienza: le fonti con la loro sigla, e dove cade nel PDF ogni blocco che ne ha una.
+    void provenanceTags()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        files::write(p.path("src/src1.tex"), "\\section{S}\n\\lezione{1}{}\n% @L1.1 · appunti.pdf p.2\nPrimo.\n\n% @L1.2 · dispensa.tex r.10-80\n\\begin{theorem}\nx\n\\end{theorem}\n"
+                                             "% @L1.3\nSenza fonte.\n\n% @L1.4 · appunti.pdf pp.3-4\nUltimo.\n");
+        files::write(p.path("fonti/usate/lezione 1/appunti.pdf"), "x");
+        const Style style = Style::classic();
+        const QList<provenance::Source> sources = provenance::sources(p, style);
+        QCOMPARE(sources.size(), 2);
+        QCOMPARE(sources[0].mark, "A");
+        QCOMPARE(sources[0].path, "fonti/usate/lezione 1/appunti.pdf");
+        QCOMPARE(sources[1].name, "dispensa.tex");
+        QCOMPARE(sources[1].path, QString());                                          // la fonte non c'è più: resta la sigla
+        if (!hasLatexmk())
+            QSKIP("latexmk non c'è");
+        Compiler compiler;
+        compiler.setProject(p);
+        const BuildResult r = build(compiler, {});
+        QVERIFY(!r.hasErrors());
+        const QList<provenance::Tag> tags = provenance::tags(p, style, r.pdf);
+        QCOMPARE(tags.size(), 3);                                                      // il blocco senza fonte non ha tag
+        QCOMPARE(tags[0].mark, "A");
+        QCOMPARE(tags[0].sourcePage, 2);
+        QCOMPARE(tags[1].mark, "B");
+        QCOMPARE(tags[1].sourcePage, 0);
+        QCOMPARE(tags[2].block, "L1.4");
+        QCOMPARE(tags[2].sourcePage, 3);
+        QVERIFY(tags[0].page == 2 && tags[1].y > tags[0].y && tags[2].y > tags[1].y);
     }
 
     // La cronologia: lavori e modifiche a mano si annullano e si ripetono; un passo nuovo toglie il «ripeti».
