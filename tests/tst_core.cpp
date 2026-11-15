@@ -533,13 +533,16 @@ private slots:
         QCOMPARE(Project::create(root), QString());
         const Project p(root);
         const QString small = "\\begin{center}\n\\begin{tikzpicture}\n\\draw (0,0) -- (2,1);\n\\end{tikzpicture}\n\\end{center}\n";
+        const QString noisy = "\\begin{center}\n\\begin{tikzpicture}\n% un commento dell'autore\n\\draw (0,0) -- (1,1);   % la diagonale\n\n\\end{tikzpicture}\n\\end{center}\n";
         const QString wide = "\\begin{center}\n\\begin{tikzpicture}\n\\draw (0,0) -- (30,1);\n\\end{tikzpicture}\n\\end{center}\n";
-        files::write(p.path("src/src1.tex"), "\\section{S}\nTesto.\n" + small + "Altro.\n" + wide + "Fine.\n");
+        files::write(p.path("src/src1.tex"), "\\section{S}\nTesto.\n" + small + "Altro.\n" + wide + "Ancora.\n" + noisy + "Fine.\n");
         JobControl control;
         Model model("veloce", root, &control);
         const figures::Authored a = figures::authored(p, Settings(), Style::classic(), model, "src/src1.tex", "autore.tex");
-        QCOMPARE(a.kept, 1);
+        QCOMPARE(a.kept, 2);
         QCOMPARE(a.fitted, 1);
+        QCOMPARE(a.tidied, 1);
+        QVERIFY(files::read(p.path("src/src1.tex")).contains("\\begin{tikzpicture}\n\\draw (0,0) -- (1,1);\n\\end{tikzpicture}"));
         QCOMPARE(a.failed, 0);
         const QString text = files::read(p.path("src/src1.tex"));
         QVERIFY(text.contains(small));
@@ -647,6 +650,41 @@ private slots:
         QCOMPARE(r.rowsAfter, 0);
         QCOMPARE(r.byMoves, 1);
         QVERIFY(files::read(p.path("src/src1.tex")).contains("\\begin{align*}\n    S &= a_{1}"));
+    }
+
+    // L'impaginazione segnala anche una formula rimasta in fondo senza la frase che la commenta, e un elenco che lascia
+    // una voce sola dall'altra parte: non c'è una mossa sicura, si decide a mano o con l'agente.
+    void layoutFormulaAndList()
+    {
+        if (!hasLatexmk())
+            QSKIP("latexmk non c'è");
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        const Style style = Style::classic();
+        const blocks::Units units{style.boxes(), {"center", "figure"}};
+        auto found = [&](const QString &tail, const QString &what) {
+            for (int filler = 30; filler <= 50; ++filler) {
+                QString tex = "\\section{S}\n";
+                for (int i = 0; i < filler; ++i)
+                    tex += QStringLiteral("Riga %1 di testo.\n\n").arg(i + 1);
+                files::write(p.path("src/src1.tex"), blocks::mark(tex + tail, 1, units));
+                QFile::remove(p.path("salvataggi/impaginazione.json"));
+                layout::lesson(p, style, "src/src1.tex");
+                for (const layout::Move &m : layout::moves(p, "src/src1.tex"))
+                    if (m.state == "segnalata" && m.what.startsWith(what))
+                        return true;
+            }
+            return false;
+        };
+        QVERIFY(found("Vale la relazione\n\\[\n    a = b\n\\]\ndove $a$ e $b$ sono quelli di prima, e questo commento è lungo abbastanza da occupare più di una riga del "
+                      "documento, anzi due righe intere, così che la pagina possa finire subito dopo la formula.\n",
+                      "Una formula resta in fondo"));
+        QVERIFY(found("\\begin{itemize}\n\\item Prima voce.\n\\item Seconda voce.\n\\item Terza voce.\n\\item Quarta voce.\n\\end{itemize}\nFine.\n",
+                      "Un elenco lascia una voce sola"));
     }
 
     // L'impaginazione oltre i riquadri spezzati: una figura che non ci stava ed è passata oltre lascia un grande vuoto.

@@ -40,10 +40,12 @@ QString draw(const Project &project, const Settings &settings, const Style &styl
 QString crop(const Project &project, Figure figure, const QString &pageImage);
 
 // Le figure di un .tex di un altro autore, dopo che la lezione è scritta. «Tieni» (Settings::texFigures): il codice
-// dell'autore resta, e un disegno più largo della colonna si restringe quanto basta. «Ridisegna»: il disegnatore la rifà
+// dell'autore resta, asciugato (via commenti e righe vuote) solo se la resa è identica, e un disegno più largo della
+// colonna si restringe quanto basta. «Ridisegna»: il disegnatore la rifà
 // nello stile del progetto guardando la resa del codice; entra nel registro come le altre.
 struct Authored {
     int kept = 0, fitted = 0, redrawn = 0, failed = 0;
+    int tidied = 0;                        // quelle asciugate (contate anche fra le tenute o le adattate)
 };
 Authored authored(const Project &project, const Settings &settings, const Style &style, Model &model, const QString &lesson, const QString &source);
 

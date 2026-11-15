@@ -379,7 +379,7 @@ Authored authored(const Project &project, const Settings &settings, const Style 
         if (begin < 0)
             break;
         from = end + 1;
-        const QString code = lines.mid(first, last - first + 1).join('\n');
+        QString code = lines.mid(first, last - first + 1).join('\n');
         const QString work = QStringLiteral("%1-autore-%2").arg(stem).arg(guard + 1);
         QString png;
         bool tooWide = false;
@@ -416,7 +416,32 @@ Authored authored(const Project &project, const Settings &settings, const Style 
             from = begin + 1;                          // il contenuto è cambiato: si riparte da dopo il suo inizio
             continue;
         }
-        // «tieni»: il codice dell'autore resta; se è più largo della colonna si restringe quanto basta
+        // «tieni»: il codice dell'autore resta, asciugato (via i suoi commenti e le righe vuote) solo se la resa è identica
+        {
+            QStringList dry;
+            for (const QString &line : code.split('\n')) {
+                QString kept = line.contains("% package:") ? line : uncommented(line).toString();
+                while (kept.endsWith(' ') || kept.endsWith('\t'))
+                    kept.chop(1);
+                if (!kept.trimmed().isEmpty())
+                    dry << kept;
+            }
+            const QString tidy = dry.join('\n');
+            QString other;
+            if (tidy != code && !tidy.isEmpty() && compile(project, work + "-asciutta", tidy, &other).isEmpty() && !QImage(png).isNull()
+                && QImage(other) == QImage(png)) {
+                for (int k = last; k >= first; --k)
+                    lines.removeAt(k);
+                for (qsizetype k = 0; k < dry.size(); ++k)
+                    lines.insert(first + k, dry[k]);
+                last = first + int(dry.size()) - 1;
+                code = tidy;
+                files::write(path, lines.join('\n'));
+                from = last + 2;
+                ++out.tidied;
+            }
+        }
+        // se è più largo della colonna si restringe quanto basta
         const bool alreadyFitted = first > 0 && lines[first - 1].trimmed().startsWith("\\resizebox");
         if (tooWide && !alreadyFitted && !code.trimmed().startsWith("\\resizebox")) {
             const QString fitted = "\\resizebox{\\linewidth}{!}{%\n" + code + "%\n}";

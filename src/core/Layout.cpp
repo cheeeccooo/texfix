@@ -433,6 +433,59 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
         const QString text = files::read(path);
         const QList<blocks::Block> parsed = blocks::parse(text, unitsOf(style));
         const Geometry g = geometryOf(project, style, file);
+        // una formula in fondo, separata dalla frase che la commenta; un elenco che lascia una voce sola dall'altra parte
+        {
+            const QStringList lines = text.split('\n');
+            auto owner = [&](int line) -> QString {       // il blocco che contiene la riga (da 1)
+                for (const blocks::Block &b : parsed)
+                    if (line >= b.line && line <= b.endLine)
+                        return b.id;
+                return {};
+            };
+            auto report = [&](int line, const QString &what) {
+                const QString id = owner(line);
+                if (id.isEmpty() || settled.contains(id))
+                    return;
+                settled << id;
+                ++result.found;
+                ++result.proposed;
+                fresh << Move{file, id, what, 0, "segnalata", 0};
+            };
+            static const QRegularExpression displayEnd(R"(^\s*(\\\]|\\end\{(align|equation|gather|multline)\*?\}))");
+            static const QRegularExpression listBegin(R"(^\s*\\begin\{(itemize|enumerate)\})"), listEnd(R"(^\s*\\end\{(itemize|enumerate)\})");
+            const QString side = style.twoColumns() ? QStringLiteral("colonna") : QStringLiteral("pagina");
+            for (int i = 1; i + 1 < lines.size(); ++i) {
+                if (control)
+                    control->check();
+                if (displayEnd.match(lines[i]).hasMatch()) {
+                    const QString next = lines[i + 1].trimmed();
+                    if (next.isEmpty() || next.startsWith('%') || next.startsWith("\\begin") || next.startsWith("\\end") || next.startsWith("\\["))
+                        continue;                      // dopo la formula comincia altro: non è il suo commento
+                    Where formula;
+                    for (int k = i; k >= i - 3 && k >= 1 && !formula.ok; --k)
+                        formula = whereIs(project, g, file, k);
+                    const Where comment = whereIs(project, g, file, i + 2);
+                    if (formula.ok && comment.ok && comment.slot > formula.slot)
+                        report(i + 1, QStringLiteral("Una formula resta in fondo alla %1, separata dalla frase che la commenta. Si può sistemare a mano o affidare all'agente.").arg(side));
+                } else if (listBegin.match(lines[i]).hasMatch()) {
+                    QList<int> places;                  // dove cade ogni voce del primo livello
+                    int depth = 0, j = i;
+                    for (; j < lines.size(); ++j) {
+                        if (listBegin.match(lines[j]).hasMatch())
+                            ++depth;
+                        else if (listEnd.match(lines[j]).hasMatch() && --depth == 0)
+                            break;
+                        else if (depth == 1 && lines[j].trimmed().startsWith("\\item"))
+                            if (const Where w = whereIs(project, g, file, j + 1); w.ok)
+                                places << w.slot;
+                    }
+                    if (places.size() >= 3 && places.first() != places.last()
+                        && (places.count(places.first()) == 1 || places.count(places.last()) == 1))
+                        report(i + 1, QStringLiteral("Un elenco lascia una voce sola dall'altra parte della %1. Si può sistemare a mano o affidare all'agente.").arg(side));
+                    i = j;
+                }
+            }
+        }
         for (qsizetype i = 1; i < parsed.size(); ++i) {
             const blocks::Block &b = parsed[i];
             if (b.kind == "testo" || b.id.isEmpty() || settled.contains(b.id))
