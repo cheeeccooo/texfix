@@ -56,6 +56,7 @@ Due parti, un processo solo.
 | `core/Sort` | Aggiungi materiale: data e argomento di ogni pagina (una chiamata per file, tenuta in `build/lavori/smistamento/`), poi una chiamata con le lezioni del corso; il piano (tipo «materiale») e `prepare`, che divide i PDF in pezzi e dice che cosa si converte e che cosa passa dall'agente |
 | `core/Git` | il version control dell'utente: modifiche, differenze, commit di tutto, cronologia (chiama `git`) |
 | `core/Reorganize` | Riorganizza: le sezioni del corso (fra un `\subsection` e il successivo), gli argomenti proposti dal modello, la scrittura di un file per argomento e il ritorno a un file per lezione, tutti e due del programma; resta uguale il contenuto riga per riga, o non si tocca niente |
+| `core/TexSource` | le fonti `.tex` di altri autori: le lezioni per data (`\section{Lezione del …}`), le macro dell'autore, il testo per il modello; una lezione si indica con `file.tex@AAAA-MM-GG` |
 | `app/Chat` | la chat: il CLI `claude` chiuso nel progetto (file sì, shell no, nessuna impostazione dell'utente), messaggi in streaming, strumenti eseguiti dal motore in un thread; `Texfix --strumenti <nome>` è il passacarte fra il CLI e il programma, su un canale locale; storico in `salvataggi/chat/` |
 | `app/Workspace` | il progetto aperto per la finestra (singleton QML): lezioni con lo stato, avvisi, PDF, compilazione |
 | `app/Theme` | l'unico posto con colori e misure (singleton QML); chiaro e scuro col sistema, `TEXFIX_TEMA=chiaro\|scuro` |
@@ -133,7 +134,11 @@ Di §3.6 c'è: Converti per scansioni, PDF, immagini e documenti di testo, con s
 (il lavoro gira in un thread del programma: `Workspace::convert`). Le figure si ridisegnano o si ritagliano dentro Converti, insieme (§3.8); «Rivedi figure» (`qml/FiguresView.qml`,
 `Workspace::redoFigure`) le mostra tutte e le rifà una alla volta. Dopo le figure Converti sistema errori e righe della lezione (`fix::lesson`); «Risolvi tutto» negli Avvisi lo fa
 sulle lezioni non fatte (`Workspace::fixAll`). Un disegno più largo della colonna si restringe con `\resizebox`.
-Manca: le fonti `.tex`, «Ricontrolla con le fonti», le mosse sui display troppo larghi, l'impaginazione, il titolo per le fonti di testo, il dubbio su numero e data,
+Le fonti `.tex`: una riga per lezione nella coda (quelle che il corso ha già per data non si elencano), scaletta a
+blocchi di righe, il codice delle figure dell'autore tenuto, marcatori `file.tex r.a-b`, il file archiviato in
+`fonti/usate/più lezioni/` quando tutte le sue lezioni sono scritte. Una fonte senza scaletta prende il titolo da una
+chiamata leggera. Manca: le figure dei `.tex` ridisegnate o asciugate, «Fai il piano» per le lezioni che il corso ha
+già, «Ricontrolla con le fonti», le mosse sui display troppo larghi, l'impaginazione, il titolo per le fonti di testo, il dubbio su numero e data,
 la Console con il registro.
 
 Di §3.7 c'è: Rivedi dubbi e Rivedi correzioni come schede (`qml/ReviewView.qml`, `Workspace::reviewItems`), con la

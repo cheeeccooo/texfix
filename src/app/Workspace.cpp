@@ -12,6 +12,7 @@
 #include "core/Review.h"
 #include "core/Rules.h"
 #include "core/Sort.h"
+#include "core/TexSource.h"
 #include "core/StyleSwitch.h"
 #include "core/SyncTex.h"
 
@@ -597,11 +598,12 @@ QVariantList Workspace::convertSources() const
     if (!hasProject())
         return out;
     for (const Convert::Source &s : Convert::queue(m_project)) {
-        const bool can = s.kind == "pagine" || s.kind == "testo";
+        const bool can = s.kind != "altro";
+        const auto [path, date] = texsource::parseSpec(s.file);
         const QString detail = s.kind == "pagine" ? plural(s.size, "pagina", "pagine")
                                : s.kind == "testo" ? plural(s.size, "riga", "righe")
-                               : s.kind == "tex" ? QStringLiteral("i .tex non si convertono ancora") : QStringLiteral("non si converte");
-        out << QVariantMap{{"file", s.file}, {"name", QFileInfo(s.file).fileName()}, {"detail", detail}, {"convertible", can}};
+                               : s.kind == "tex" ? plural(s.size, "riga", "righe") : QStringLiteral("non si converte");
+        out << QVariantMap{{"file", s.file}, {"name", QFileInfo(path).fileName() + (date.isValid() ? QStringLiteral(" · lezione del %1").arg(date.toString("dd/MM/yyyy")) : QString())}, {"detail", detail}, {"convertible", can}};
     }
     return out;
 }

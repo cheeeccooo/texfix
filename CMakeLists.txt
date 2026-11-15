@@ -36,6 +36,7 @@ qt_add_library(texfix_core STATIC
     src/core/Sort.cpp
     src/core/Git.cpp
     src/core/Reorganize.cpp
+    src/core/TexSource.cpp
 )
 # Le regole editoriali predefinite entrano nel motore come :/regole/…
 file(GLOB_RECURSE RULE_FILES CONFIGURE_DEPENDS RELATIVE ${CMAKE_SOURCE_DIR} regole/*.md)

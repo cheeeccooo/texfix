@@ -21,6 +21,7 @@
 #include "core/Style.h"
 #include "core/StyleSwitch.h"
 #include "core/SyncTex.h"
+#include "core/TexSource.h"
 #include "core/TexLog.h"
 #include "core/Tools.h"
 
@@ -269,10 +270,12 @@ private slots:
         reply("verifica.json", "{\"missing\": [], \"wrong\": []}");
         reply("figura.json", "```latex\n\\begin{tikzpicture}\n    \\draw[->] (0,0) -- (30,0);\n\\end{tikzpicture}\n```");
         reply("bene.json", "OK");
+        reply("titolo.json", "{\"title\": \"Il modulo di un numero complesso\"}");
         files::write(dir.filePath("claude"), QString("#!/bin/sh\nin=$(cat)\necho x >> '%1/chiamate'\n"
                                                      "case \"$in\" in *'how your code renders'*) cat '%1/bene.json'; exit 0;; esac\n"
                                                      "for a; do case \"$a\" in *'You check LaTeX'*) cat '%1/verifica.json'; exit 0;;\n"
-                                                     "  *'You redraw one'*) cat '%1/figura.json'; exit 0;; esac; done\n"
+                                                     "  *'You redraw one'*) cat '%1/figura.json'; exit 0;;\n"
+                                                     "  *'beginning of the LaTeX notes'*) cat '%1/titolo.json'; exit 0;; esac; done\n"
                                                      "cat '%1/trascrizione.json'\n").arg(dir.path()));
         QFile(dir.filePath("claude")).setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
         qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
@@ -288,7 +291,7 @@ private slots:
         Convert::Result r = Convert(p, Settings::load(p), Style::classic(), &control).run(sources);
         QCOMPARE(r.failure, QString());
         QCOMPARE(r.written(), 1);
-        QCOMPARE(r.cost, 1.0);                                                         // trascrizione, verifica, disegno, revisione
+        QCOMPARE(r.cost, 1.25);                                                        // trascrizione, verifica, titolo, disegno, revisione
         QCOMPARE(r.lessons[0].file, "src/src1.tex");
         QCOMPARE(r.lessons[0].doubts, 1);
         QCOMPARE(r.lessons[0].figures, 0);                                             // la figura è stata disegnata e inserita
@@ -299,7 +302,7 @@ private slots:
         QCOMPARE(r.lessons[0].corrections, 1);
         QVERIFY(!r.lessons[1].failure.isEmpty());                                      // il foglio di calcolo non si converte
         QCOMPARE(files::read(p.path("src/src1.tex")),
-                 "\\section{Numeri complessi}\n\\lezione{1}{}\n\n\\subsection{Modulo}\n"
+                 "\\section{Il modulo di un numero complesso}\n\\lezione{1}{}\n\n\\subsection{Modulo}\n"
                  "% @L1.1 · Numeri_complessi.md\n\\begin{definition}[Modulo]\n    Il modulo è $|z|$, con \\textbf{z} complesso e $\\underline{w}$ no.\n\\end{definition}\n"
                  "% @L1.2 · Numeri_complessi.md\n\\begin{correction}\n    Negli appunti manca la radice.\n\\end{correction}\n"
                  "% @L1.3 · Numeri_complessi.md\n\\begin{center} % img src1-01\n    \\resizebox{\\linewidth}{!}{%\n    \\begin{tikzpicture}\n        \\draw[->] (0,0) -- (30,0);\n    \\end{tikzpicture}%\n    }\n\\end{center}\n");   // più larga della colonna: ristretta
@@ -320,7 +323,7 @@ private slots:
 
         // la stessa fonte di nuovo: il blocco è già fatto e pagato, il modello non si chiama
         const qsizetype callsBefore = files::read(dir.filePath("chiamate")).count('x');
-        QCOMPARE(callsBefore, 4);
+        QCOMPARE(callsBefore, 5);
         files::write(p.path("fonti/coda/Numeri_complessi.md"), "Def. modulo |z|. Oss. vedi disegno.\n");
         QFile::remove(p.path("src/src1.tex"));
         r = Convert(p, Settings::load(p), Style::classic(), &control).run({"fonti/coda/Numeri_complessi.md"});
@@ -823,6 +826,54 @@ private slots:
         QCOMPARE(proposal.size(), 2);
         QCOMPARE(proposal[0].title, "Limiti");
         QCOMPARE(proposal[1].sections, (QStringList{"src/src2.tex#1", "src/src2.tex#2"}));
+    }
+
+    // Le fonti .tex: un documento diviso in lezioni per data, una lezione nuova per ciascuna, con le macro dell'autore.
+    void texSources()
+    {
+        const QString doc = "\\documentclass{article}\n\\newcommand{\\RR}{\\mathbb{R}}\n\\usepackage{amsmath}\n\\begin{document}\n"
+                            "\\section{Lezione del 22 ottobre 2026}\nSeconda. $\\RR$\n\n\\section{Lezione del 20/10/2026}\nPrima.\nDue righe.\n\\end{document}\n";
+        const QList<texsource::Lesson> lessons = texsource::lessons(doc);
+        QCOMPARE(lessons.size(), 2);
+        QCOMPARE(lessons[0].date, QDate(2026, 10, 20));                                // in ordine di calendario
+        QCOMPARE(lessons[0].text, "Prima.\nDue righe.");
+        QCOMPARE(lessons[1].heading, "Lezione del 22 ottobre 2026");
+        QCOMPARE(texsource::macros(texsource::preamble(doc)), QStringList{"\\newcommand{\\RR}{\\mathbb{R}}"});
+        QVERIFY(texsource::workerText(doc, QDate(2026, 10, 22)).endsWith("% \\newcommand{\\RR}{\\mathbb{R}}\n\nSeconda. $\\RR$"));
+        QVERIFY(texsource::lessons("\\begin{document}\\section{Introduzione}x\\end{document}").isEmpty());   // non è diviso in lezioni
+        QCOMPARE(texsource::parseSpec("fonti/coda/a.tex@2026-10-20"), (std::pair<QString, QDate>{"fonti/coda/a.tex", QDate(2026, 10, 20)}));
+        QCOMPARE(texsource::parseSpec("fonti/coda/a@b.tex").first, "fonti/coda/a@b.tex");
+
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        files::write(p.path("fonti/coda/appunti.tex"), doc);
+        const QList<Convert::Source> queue = Convert::queue(p);
+        QCOMPARE(queue.size(), 2);
+        QCOMPARE(queue[0].file, "fonti/coda/appunti.tex@2026-10-20");
+        QCOMPARE(queue[0].kind, "tex");
+
+        const QString answer = "```json\n{\"units\": [{\"env\": \"text\", \"page\": 1}], \"figures\": [], \"doubts\": []}\n```\n```latex\n\\subsection{Uno}\nTesto.\n```\n";
+        const QJsonObject line{{"type", "result"}, {"result", answer}, {"total_cost_usd", 0.1}};
+        files::writeBytes(dir.filePath("t.json"), QJsonDocument(line).toJson(QJsonDocument::Compact) + '\n');
+        files::writeBytes(dir.filePath("v.json"), "{\"type\":\"result\",\"result\":\"{\\\"missing\\\": [], \\\"wrong\\\": []}\",\"total_cost_usd\":0.1}\n");
+        files::write(dir.filePath("claude"), QString("#!/bin/sh\ncat >> '%1/richieste'\nfor a; do case \"$a\" in *'You check LaTeX'*) cat '%1/v.json'; exit 0;; esac; done\n"
+                                                     "for a; do case \"$a\" in *'THE SOURCE IS LATEX'*) cat '%1/t.json'; exit 0;; esac; done\necho '{\"type\":\"result\",\"result\":\"{\\\"title\\\": \\\"Serie\\\"}\"}'\n").arg(dir.path()));
+        QFile(dir.filePath("claude")).setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
+        JobControl control;
+        const Convert::Result r = Convert(p, Settings::load(p), Style::classic(), &control).run({"fonti/coda/appunti.tex"});
+        qunsetenv("TEXFIX_CLAUDE");
+        QCOMPARE(r.failure, QString());
+        QCOMPARE(r.written(), 2);
+        QCOMPARE(r.lessons[0].source, "appunti.tex · lezione del 20/10/2026");
+        const QString first = files::read(p.path("src/src1.tex"));
+        QVERIFY2(first.startsWith("\\section{Serie}\n\\lezione{1}{20/10/2026}\n\n\\subsection{Uno}\n% @L1.1 · appunti.tex r.1-5\nTesto."), qPrintable(first));
+        QVERIFY(files::read(p.path("src/src2.tex")).contains("\\lezione{2}{22/10/2026}"));
+        QVERIFY(files::read(dir.filePath("richieste")).contains("SOURCE TEXT (lines 1-5 of the lecture)"));
+        QVERIFY(QFileInfo::exists(p.path("fonti/usate/più lezioni/appunti.tex")));      // tutte le lezioni scritte: la fonte è usata
+        QVERIFY(Convert::queue(p).isEmpty());
     }
 
     // La cronologia: lavori e modifiche a mano si annullano e si ripetono; un passo nuovo toglie il «ripeti».

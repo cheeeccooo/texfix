@@ -99,3 +99,49 @@ Return only JSON: {"missing": [{"page": k, "what": "..."}], "wrong": [{"page": k
 }
 
 }
+
+namespace tx::prompts {
+
+QString outlineTex()
+{
+    return QStringLiteral(
+        R"(You plan the conversion of one lecture of LaTeX study notes, written by another author, into the LaTeX of a notes project. You get the lecture's LaTeX with its line numbers (N lines in all).
+Return only a JSON object:
+{"title": "<Italian title for the lecture's \\section, at most 40 characters: the topic of the lecture, never 'Lezione del ...'>",
+ "chunks": [{"from": <first line>, "to": <last line>, "subsections": ["<titles of the \\subsection that start in this chunk>"]}]}
+Rules:
+- The chunks are consecutive line ranges that cover every line from 1 to N exactly once, 120 to 300 lines each (fewer only for the last one).
+- Cut only between the author's units (between subsections or paragraphs): never inside an environment (a statement with its proof, an example or exercise with its solution, a figure, an align).
+- Subsection titles come from the author's \subsection titles, rephrased only when they do not say the content. Titles about the lecture itself ("Riepilogo", "Richiamo", "Lezione del ...") are not subsections: their content becomes text of the neighbouring subsection.)");
+}
+
+QString texSource(const Style &style)
+{
+    return QStringLiteral(R"(
+
+THE SOURCE IS LATEX, NOT A SCAN. These rules override the ones above where they differ.
+- The source is LaTeX written by another author: study notes of one lecture, given as SOURCE TEXT. There are no pages and no handwriting: wherever the rules above speak of pages or readings, read the source text; in the inventory every unit has "page": 1.
+- Write it in the conventions of this project: the author's theorem-like environments become the matching environments of the DOCUMENT STYLE, the author's macros (listed, commented, at the top of the source) become the notation of this project, the author's references become references to labels you define in your fragment. Never copy the author's preamble definitions.
+- The author's errors are corrected and declared as usual. A doubt is about meaning (an ambiguous statement, a formula that cannot be right), never about reading.
+- FIGURES (this overrides the figure rule above): keep the author's code. For each figure of the source write
+    \begin{%1}
+        <the author's tikzpicture or circuitikz environment, the same drawing>
+    \end{%1}
+  without the author's \begin{figure}, \centering and \caption wrappers (a caption the text needs stays as a caption after the drawing). A circuit declares `% package: circuitikz` on its own line inside the tikzpicture. Do not redraw or simplify the drawing. Never write \imgslot, and leave "figures" empty in the inventory.)").arg(style.figureWrapper());
+}
+
+QString texVerify()
+{
+    return QStringLiteral("\nThe source is the LaTeX text above (another author's notes), not scans: compare the transcription with that text. Its "
+                          "figures are kept as the author's code: only check that every figure of the source is there.");
+}
+
+}
+
+namespace tx::prompts {
+QString title()
+{
+    return QStringLiteral("You get the beginning of the LaTeX notes of one university lecture (Italian). Return only a JSON object: "
+                          "{\"title\": \"<Italian title for the lecture's \\\\section, at most 40 characters: the topic, never 'Lezione del ...'>\"}");
+}
+}

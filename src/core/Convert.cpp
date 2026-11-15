@@ -8,6 +8,7 @@
 #include "core/Model.h"
 #include "core/Pages.h"
 #include "core/Prompts.h"
+#include "core/TexSource.h"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -58,6 +59,9 @@ struct Convert::Work {
     mutable QList<figures::Figure> figures;            // le figure della lezione, da disegnare o ritagliare
     Lesson lesson;
     QString mismatch;                                  // la riga \lezione come la direbbe la fonte, se non torna con quella scelta
+    QString path;                                      // il file della fonte, relativo alla radice (senza «@data»)
+    bool isTex = false;                                // un .tex di un altro autore: niente pagine, blocchi di righe
+    QDate texDate;                                     // la lezione del .tex, se il file ne ha più d'una
 };
 
 int Convert::Result::written() const
@@ -88,6 +92,18 @@ QList<Convert::Source> Convert::queue(const Project &project)
         if (name.startsWith('.'))
             continue;
         const QString kind = Pages::kindOf(name);
+        if (kind == "tex") {                           // una riga per lezione, in ordine di calendario; quelle che il corso ha già non si elencano
+            const QList<texsource::Lesson> lessons = texsource::lessons(files::read(dir.filePath(name)));
+            QStringList have;
+            for (const tx::Lesson &lesson : project.lessons())
+                have << lesson.date;
+            for (const texsource::Lesson &lesson : lessons)
+                if (!have.contains(lesson.date.toString("dd/MM/yyyy")))
+                    out << Source{texsource::spec("fonti/coda/" + name, lesson.date), kind, lesson.lines};
+            if (lessons.isEmpty())
+                out << Source{"fonti/coda/" + name, kind, Pages::size(dir.filePath(name))};
+            continue;
+        }
         out << Source{"fonti/coda/" + name, kind, kind == "altro" ? 0 : Pages::size(dir.filePath(name))};
     }
     return out;
@@ -107,7 +123,7 @@ QStringList Convert::interrupted(const Project &project)
 {
     QStringList out;
     for (const QJsonValue &v : readJson(project.path(RUNNING)).value("fonti").toArray())
-        if (QFileInfo::exists(project.path(v.toString())))
+        if (QFileInfo::exists(project.path(texsource::parseSpec(v.toString()).first)))
             out << v.toString();
     return out;
 }
@@ -121,7 +137,46 @@ void Convert::plan(Work &work)
         return;
     }
     const int n = work.pages.count();
-    if (work.pages.isText) {
+    if (work.isTex) {                                  // un .tex: blocchi di righe, tagliati fra le unità dell'autore
+        const QStringList lines = work.pages.text.split('\n');
+        const int count = int(lines.size());
+        QString numbered;
+        for (int i = 0; i < count; ++i)
+            numbered += QStringLiteral("%1| %2\n").arg(i + 1, 4).arg(lines[i]);
+        Model model(m_settings.quality, m_project.root(), m_control);
+        for (int attempt = 0; attempt < 2 && work.outline.isEmpty() && count > 150; ++attempt) {
+            try {
+                const QJsonObject o = Model::json(model.ask("outline", prompts::outlineTex(), {QStringLiteral("N = %1 lines.\n\n%2").arg(count).arg(numbered)}, work.name)).toObject();
+                int next = 1;
+                bool ok = !o.value("chunks").toArray().isEmpty();
+                for (const QJsonValue &c : o.value("chunks").toArray()) {
+                    ok = ok && c.toObject().value("from").toInt() == next && c.toObject().value("to").toInt() >= next;
+                    next = c.toObject().value("to").toInt() + 1;
+                }
+                if (ok && next == count + 1)
+                    work.outline = o;
+            } catch (const Stopped &) {
+                throw;
+            } catch (const LimitReached &) {
+                throw;
+            } catch (const std::exception &) {
+            }
+        }
+        if (work.outline.isEmpty()) {                  // una lezione corta, o il ripiego: blocchi di 200 righe
+            QJsonArray chunks;
+            for (int from = 1; from <= count; from += 200)
+                chunks.append(QJsonObject{{"from", from}, {"to", qMin(count, from + 199)}, {"subsections", QJsonArray()}});
+            work.outline = QJsonObject{{"title", ""}, {"chunks", chunks}};
+        }
+        QJsonArray chunks = work.outline.value("chunks").toArray();
+        for (qsizetype k = 0; k < chunks.size(); ++k) {
+            QJsonObject c = chunks[k].toObject();
+            c["pages"] = QJsonArray{int(k) + 1};
+            chunks[k] = c;
+        }
+        work.outline["chunks"] = chunks;
+        work.outline.insert("costo", model.cost());
+    } else if (work.pages.isText) {
         work.outline = QJsonObject{{"title", ""}, {"chunks", QJsonArray{QJsonObject{{"pages", QJsonArray{1}}, {"subsections", QJsonArray()}}}}};
     } else {
         Model model(m_settings.quality, m_project.root(), m_control);
@@ -189,7 +244,18 @@ QJsonObject Convert::chunk(const Work &work, int k, Model &model) const
     }
     auto parts = [&](const QString &request) {
         QStringList out;
-        if (work.pages.isText)
+        if (work.isTex) {                              // le righe del blocco, con le macro dell'autore sempre in testa
+            const QStringList lines = work.pages.text.split('\n');
+            QStringList head;
+            for (const QString &line : lines) {
+                if (!line.startsWith('%'))
+                    break;
+                head << line;
+            }
+            const int a = qMax(1, spec.value("from").toInt()), b = qMin(int(lines.size()), spec.value("to").toInt());
+            out << QStringLiteral("SOURCE TEXT (lines %1-%2 of the lecture):\n").arg(a).arg(b)
+                       + (a > head.size() ? head.join('\n') + "\n\n" : QString()) + lines.mid(a - 1, b - a + 1).join('\n');
+        } else if (work.pages.isText)
             out << "SOURCE TEXT:\n" + work.pages.text;
         else
             for (const QJsonValue &p : spec.value("pages").toArray())
@@ -198,7 +264,7 @@ QJsonObject Convert::chunk(const Work &work, int k, Model &model) const
                    .arg(work.outline.value("title").toString(), planLines.join('\n')).arg(k + 1).arg(pageList(spec.value("pages").toArray()), request);
         return out;
     };
-    const QString system = prompts::transcribe(work.file, m_settings, m_style);
+    const QString system = prompts::transcribe(work.file, m_settings, m_style) + (work.isTex ? prompts::texSource(m_style) : QString());
     const QString tag = QStringLiteral("%1#%2").arg(work.name).arg(k + 1);
 
     QJsonObject result;
@@ -214,7 +280,7 @@ QJsonObject Convert::chunk(const Work &work, int k, Model &model) const
 
     QJsonObject verdict;
     try {
-        verdict = Model::json(model.ask("verify", prompts::verify(m_settings),
+        verdict = Model::json(model.ask("verify", prompts::verify(m_settings) + (work.isTex ? prompts::texVerify() : QString()),
                                         parts("Check this transcription of your pages:\n```latex\n" + result.value("tex").toString() + "\n```"), tag)).toObject();
     } catch (const Stopped &) {
         throw;
@@ -261,7 +327,7 @@ void Convert::assemble(Work &work) const
     static const RE slot(R"(\\imgslot(?:\[[^\]]*\])?\{(F\d+)\})");
     static const RE mathSplit(R"(\$[^$]*\$|\\\[.*?\\\])", RE::DotMatchesEverythingOption);
     const blocks::Units units{m_style.boxes(), {m_style.figureWrapper(), "figure"}};
-    const QString sourceName = QFileInfo(work.source).fileName();
+    const QString sourceName = QFileInfo(work.path).fileName();
     QStringList body;
     QJsonArray doubts;
     int nextBlock = 1, figures = 0;
@@ -317,6 +383,10 @@ void Convert::assemble(Work &work) const
         const QJsonArray pages = c.value("pages").toArray();
         int unit = 0, page = pages.isEmpty() ? 0 : pages.first().toInt();
         tex = blocks::mark(tex, work.lesson.number, units, [&](const blocks::Block &block) {
+            if (work.isTex) {
+                const QJsonObject range = work.outline.value("chunks").toArray().at(k).toObject();
+                return QStringLiteral("%1 r.%2-%3").arg(sourceName).arg(range.value("from").toInt()).arg(range.value("to").toInt());
+            }
             if (work.pages.isText || !page)
                 return sourceName;
             const QString env = block.kind == "testo" ? QStringLiteral("text") : block.kind;
@@ -351,7 +421,7 @@ void Convert::assemble(Work &work) const
     }
     QString title = work.outline.value("title").toString().trimmed();
     if (title.isEmpty())
-        title = QFileInfo(work.source).completeBaseName().replace('_', ' ');
+        title = QFileInfo(work.path).completeBaseName().replace('_', ' ');
     const QString text = QStringLiteral("\\section{%1}\n\\lezione{%2}{%3}\n\n%4\n").arg(title).arg(work.lesson.number).arg(work.lesson.date, body.join("\n\n"));
     if (!files::write(m_project.path(work.file), text))
         throw std::runtime_error("non riesco a scrivere la lezione");
@@ -382,15 +452,35 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
         // le pagine e la scaletta di ogni fonte, insieme
         progress(0, QStringLiteral("leggo le fonti"));
         for (const QString &source : sources) {
+            const auto [path, date] = texsource::parseSpec(source);
             Work work;
             work.source = source;
-            work.lesson.source = QFileInfo(source).fileName();
-            const QString kind = Pages::kindOf(source);
-            if (kind == "tex")
-                work.lesson.failure = QStringLiteral("le fonti .tex non si convertono ancora");
-            else if (kind == "altro")
+            work.path = path;
+            work.lesson.source = QFileInfo(path).fileName();
+            const QString kind = Pages::kindOf(path);
+            if (kind == "altro")
                 work.lesson.failure = QStringLiteral("non so leggere questo tipo di file");
-            works << work;
+            if (kind != "tex") {
+                works << work;
+                continue;
+            }
+            // un .tex: una lezione per ogni \section{Lezione del …}, o il documento intero
+            work.isTex = true;
+            QList<QDate> dates{date};
+            if (!date.isValid()) {
+                dates.clear();
+                for (const texsource::Lesson &lesson : texsource::lessons(files::read(m_project.path(path))))
+                    dates << lesson.date;
+                if (dates.isEmpty())
+                    dates << QDate();
+            }
+            for (const QDate &d : std::as_const(dates)) {
+                work.texDate = d;
+                work.source = texsource::spec(path, d);
+                if (d.isValid())
+                    work.lesson.source = QStringLiteral("%1 · lezione del %2").arg(QFileInfo(path).fileName(), d.toString("dd/MM/yyyy"));
+                works << work;
+            }
         }
         std::vector<std::future<void>> planning;
         for (Work &work : works) {
@@ -398,11 +488,17 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
                 continue;
             planning.push_back(std::async(std::launch::async, [this, &work] {
                 try {
-                    QFile file(m_project.path(work.source));
+                    QFile file(m_project.path(work.path));
                     if (!file.open(QIODevice::ReadOnly))
                         throw std::runtime_error("non riesco a leggere la fonte");
-                    work.key = hash(file.readAll());
-                    work.pages = Pages::read(m_project.path(work.source), workDir(work.key + "/pagine"));
+                    if (work.isTex) {
+                        work.pages.isText = true;
+                        work.pages.text = texsource::workerText(QString::fromUtf8(file.readAll()), work.texDate);
+                        work.key = hash(work.pages.text.toUtf8());
+                    } else {
+                        work.key = hash(file.readAll());
+                        work.pages = Pages::read(m_project.path(work.path), workDir(work.key + "/pagine"));
+                    }
                     plan(work);
                 } catch (const Stopped &) {
                     throw;
@@ -454,6 +550,8 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
                 work.lesson.number = written > 0 && !taken.contains(written) ? written : ++lastNumber;
                 work.lesson.date = writtenDate;
             }
+            if (work.isTex && work.texDate.isValid() && wanted.value(work.source).number <= 0)
+                work.lesson.date = work.texDate.toString("dd/MM/yyyy");
             lastNumber = qMax(lastNumber, work.lesson.number);
             taken << work.lesson.number;
             total += work.outline.value("chunks").toArray().size();
@@ -496,6 +594,22 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
             if (!work.lesson.failure.isEmpty())
                 continue;
             try {
+                // una fonte senza scaletta (un testo, una lezione corta di un .tex) non ha ancora un titolo: una chiamata leggera
+                if (work.outline.value("title").toString().trimmed().isEmpty() && !work.chunks.isEmpty()) {
+                    try {
+                        const QString answer = model.ask("outline", prompts::title(), {work.chunks.first().value("tex").toString().left(6000)}, work.name + " titolo");
+                        const QString title = Model::json(answer).toObject().value("title").toString().trimmed();
+                        if (!title.isEmpty()) {
+                            work.outline["title"] = title;
+                            writeJson(workDir(QStringLiteral("%1/scaletta.json").arg(work.key)), work.outline);   // non si richiede due volte
+                        }
+                    } catch (const Stopped &) {
+                        throw;
+                    } catch (const LimitReached &) {
+                        throw;
+                    } catch (const std::exception &) {     // senza titolo resta il nome del file
+                    }
+                }
                 assemble(work);
                 work.lesson.file = work.file;
                 QString main = files::read(m_project.path(Project::MAIN));
@@ -539,13 +653,30 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
                 }
                 const QString used = m_project.path(QStringLiteral("fonti/usate/lezione %1").arg(work.lesson.number));
                 QDir().mkpath(used);
-                QFile::rename(m_project.path(work.source), files::freeName(used + '/' + work.lesson.source));
+                if (!work.isTex)                       // un .tex può avere altre lezioni: lo si archivia alla fine, se sono tutte fatte
+                    QFile::rename(m_project.path(work.path), files::freeName(used + '/' + work.lesson.source));
             } catch (const Stopped &) {
                 throw;
             } catch (const LimitReached &) {
                 throw;
             } catch (const std::exception &e) {
                 work.lesson.failure = QString::fromUtf8(e.what());
+            }
+        }
+        // un .tex di cui sono state scritte tutte le lezioni va fra le fonti usate
+        QHash<QString, bool> texDone;
+        for (const Work &work : std::as_const(works))
+            if (work.isTex)
+                texDone[work.path] = texDone.value(work.path, true) && !work.lesson.file.isEmpty();
+        for (auto it = texDone.begin(); it != texDone.end(); ++it) {
+            if (!it.value())
+                continue;
+            bool left = false;                         // restano lezioni di quel file ancora da convertire?
+            for (const Source &s : queue(m_project))
+                left = left || texsource::parseSpec(s.file).first == it.key();
+            if (!left) {
+                QDir().mkpath(m_project.path("fonti/usate/più lezioni"));
+                QFile::rename(m_project.path(it.key()), files::freeName(m_project.path("fonti/usate/più lezioni/" + QFileInfo(it.key()).fileName())));
             }
         }
         QFile::remove(m_project.path(RUNNING));        // arrivato in fondo: niente da riprendere
