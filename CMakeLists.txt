@@ -81,6 +81,7 @@ qt_add_qml_module(texfix
         qml/NewLessonSheet.qml
         qml/GitPanel.qml
         qml/DiffView.qml
+        qml/RenameSheet.qml
     SOURCES
         src/app/Theme.h src/app/Theme.cpp
         src/app/Workspace.h src/app/Workspace.cpp

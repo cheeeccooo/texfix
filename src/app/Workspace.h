@@ -191,6 +191,17 @@ public:
     Q_INVOKABLE QString gitCommit(const QString &message);                 // vuoto se è andata
     Q_INVOKABLE void gitInit();
 
+    // Il menu contestuale dei file: ogni azione è un passo della cronologia.
+    Q_INVOKABLE QString renameFile(const QString &file, const QString &newName);   // vuoto se è andata
+    Q_INVOKABLE void duplicateFile(const QString &file);
+    Q_INVOKABLE void trashFile(const QString &file);
+    Q_INVOKABLE void revealFile(const QString &file) const;                // nel Finder
+    Q_INVOKABLE void copyText(const QString &text) const;                  // negli appunti
+    // Il registro: i messaggi e le righe dei lavori, per la Console.
+    Q_PROPERTY(QStringList console READ console NOTIFY consoleChanged)
+public:
+    QStringList console() const { return m_console; }
+
     // Converti. Le fonti di «Da convertire»: file, name, detail, convertible; la stima del costo in dollari.
     // convert le fa diventare lezioni (un passo solo della cronologia), poi compila il documento; alla fine
     // outcomeReady con title, lines, cost, minutes. resume riprende un lavoro interrotto senza rifare ciò che è fatto.
@@ -246,6 +257,8 @@ signals:
     void busyChanged();
     void outcomeReady(const QVariantMap &outcome);
     void planReady(const QString &id);
+    void consoleChanged();
+    void fileRenamed(const QString &from, const QString &to);
     void agentAsked(const QString &message);          // una procedura da affidare all'agente, nella chat
     void settingsChanged();
     void styleChanged();
@@ -282,7 +295,7 @@ private:
     double m_jobProgress = 0;
     bool m_agentRunning = false;
     QStringList m_jobLog;
-    QStringList m_agentQueue;                          // procedure dell'agente che aspettano il loro turno
+    QStringList m_agentQueue, m_console;                          // procedure dell'agente che aspettano il loro turno
     QFileSystemWatcher m_watcher;
     QTimer m_refresh;                                  // più cambiamenti vicini, un aggiornamento solo
     QVariantList m_jobs, m_lessons, m_documentFiles, m_queue, m_documents, m_images, m_issues;

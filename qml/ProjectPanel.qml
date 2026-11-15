@@ -59,11 +59,12 @@ Rectangle {
             onClicked: mouse => {
                 if (mouse.button === Qt.LeftButton)
                     return root.fileChosen(row.file)
-                if (row.lesson) {
-                    lessonMenu.file = row.file
-                    lessonMenu.done = row.done
-                    lessonMenu.popup()
-                }
+                if (row.file.includes(":"))
+                    return                             // un lavoro, non un file
+                fileMenu.file = row.file
+                fileMenu.lesson = row.lesson
+                fileMenu.done = row.done
+                fileMenu.popup()
             }
         }
         ToolTip.visible: area.containsMouse
@@ -93,12 +94,28 @@ Rectangle {
     }
 
     // il menu di una lezione
+    signal compileAsked(string file)
+    signal renameAsked(string file)
     Menu {
-        id: lessonMenu
+        id: fileMenu
         property string file
+        property bool lesson
         property bool done
-        MenuItem { text: "Aggiungi fonti a questa lezione…"; onTriggered: root.sourcesAsked(lessonMenu.file) }
-        MenuItem { text: lessonMenu.done ? "Non è più fatta" : "Segna come fatta"; onTriggered: Workspace.setDone(lessonMenu.file, !lessonMenu.done) }
+        readonly property bool text: file.endsWith(".tex") || file.endsWith(".sty")
+        MenuItem { text: "Apri"; onTriggered: root.fileChosen(fileMenu.file) }
+        MenuItem { text: "Apri e compila"; visible: fileMenu.text; height: visible ? implicitHeight : 0; onTriggered: root.compileAsked(fileMenu.file) }
+        MenuItem { text: "Apri con l'app predefinita"; onTriggered: Workspace.openExternally(fileMenu.file) }
+        MenuItem { text: "Mostra nel Finder"; onTriggered: Workspace.revealFile(fileMenu.file) }
+        MenuSeparator {}
+        MenuItem { text: "Copia il percorso"; onTriggered: Workspace.copyText(Workspace.root + "/" + fileMenu.file) }
+        MenuItem { text: "Copia il nome"; onTriggered: Workspace.copyText(fileMenu.file.substring(fileMenu.file.lastIndexOf("/") + 1)) }
+        MenuSeparator {}
+        MenuItem { text: "Rinomina…"; onTriggered: root.renameAsked(fileMenu.file) }
+        MenuItem { text: "Duplica"; onTriggered: Workspace.duplicateFile(fileMenu.file) }
+        MenuItem { text: "Sposta nel Cestino"; onTriggered: Workspace.trashFile(fileMenu.file) }
+        MenuSeparator { visible: fileMenu.lesson; height: visible ? implicitHeight : 0 }
+        MenuItem { text: "Aggiungi fonti a questa lezione…"; visible: fileMenu.lesson; height: visible ? implicitHeight : 0; onTriggered: root.sourcesAsked(fileMenu.file) }
+        MenuItem { text: fileMenu.done ? "Non è più fatta" : "Segna come fatta"; visible: fileMenu.lesson; height: visible ? implicitHeight : 0; onTriggered: Workspace.setDone(fileMenu.file, !fileMenu.done) }
     }
 
     function dotColor(state) {

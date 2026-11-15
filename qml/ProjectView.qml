@@ -14,6 +14,7 @@ Item {
     signal newLessonAsked()
     signal materialAsked()
     signal sourcesAsked(string lesson)
+    signal renameAsked(string file)
     // Rivedi impaginazione: apre il riepilogo; le lezioni nuove si impaginano dal suo tasto, non aprendolo.
     function reviewLayout() { root.openFile("rivedi:impaginazione") }
     function saveAll() { editor.saveAll() }
@@ -108,6 +109,7 @@ Item {
         function onProjectChanged() { editor.closeAll() }
         function onPdfRebuilt() { pdf.reload() }
         function onPlanReady(id) { root.openFile("piano:" + id) }
+        function onFileRenamed(from, to) { editor.fileRenamed(from, to) }
         function onAgentAsked(message) { root.chatOpen = true; Chat.send(message) }
         function onBuildFinished() {
             if (Workspace.errorCount > 0)
@@ -174,6 +176,11 @@ Item {
                     Workspace.startSortPlan(Workspace.jobs[0].id)
             } else if (name === "versioni") {
                 root.leftTab = 1
+            } else if (name === "rinomina") {
+                Workspace.say(Workspace.renameFile(argument.split(" ")[0], argument.split(" ")[1]))
+            } else if (name === "console") {
+                root.bottomOpen = true
+                bottom.tab = 1
             } else if (name === "avvisi") {
                 root.bottomOpen = true
             } else if (name === "progetto") {
@@ -279,6 +286,8 @@ Item {
                 onNewLessonAsked: root.newLessonAsked()
                 onMaterialAsked: root.materialAsked()
                 onSourcesAsked: lesson => root.sourcesAsked(lesson)
+                onCompileAsked: file => { root.openFile(file); root.compileFile() }
+                onRenameAsked: file => root.renameAsked(file)
             }
             }
             SplitView {
@@ -342,6 +351,7 @@ Item {
                     }
                 }
                 BottomPanel {
+                    id: bottom
                     visible: root.bottomOpen
                     SplitView.preferredHeight: 170
                     SplitView.minimumHeight: 80

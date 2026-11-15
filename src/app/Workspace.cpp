@@ -15,7 +15,10 @@
 #include "core/SyncTex.h"
 
 #include <QCoreApplication>
+#include <QClipboard>
 #include <QDesktopServices>
+#include <QGuiApplication>
+#include <QProcess>
 
 #include <QDir>
 #include <QDirIterator>
@@ -310,7 +313,14 @@ void Workspace::stop()
     m_compiler.stop();
 }
 
-void Workspace::say(const QString &text) { emit message(text); }
+void Workspace::say(const QString &text)
+{
+    if (text.isEmpty())
+        return;
+    m_console << QTime::currentTime().toString("HH:mm:ss  ") + text;
+    emit consoleChanged();
+    emit message(text);
+}
 
 void Workspace::onBuildFinished(const BuildResult &result)
 {
@@ -633,6 +643,8 @@ void Workspace::startJob(const QString &title, std::function<std::function<void(
         QMetaObject::invokeMethod(this, [this, line] {
             m_jobLog << QTime::currentTime().toString("HH:mm:ss ") + line;
             emit jobLogChanged();
+            m_console << QTime::currentTime().toString("HH:mm:ss  ") + line;
+            emit consoleChanged();
         });
     };
     m_jobTitle = title;
@@ -1211,3 +1223,47 @@ void Workspace::gitInit()
     refreshTree();
     emit treeChanged();
 }
+
+QString Workspace::renameFile(const QString &file, const QString &newName)
+{
+    if (busy())
+        return QStringLiteral("Aspetta la fine del lavoro in corso.");
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    const QString error = fileops::rename(m_project, file, newName);
+    if (!error.isEmpty())
+        return error;
+    checkpoint(QStringLiteral("File rinominato"));
+    refreshTree();
+    QString name = newName.trimmed();
+    if (QFileInfo(name).suffix().isEmpty() && !QFileInfo(file).suffix().isEmpty())
+        name += '.' + QFileInfo(file).suffix();
+    emit fileRenamed(file, QFileInfo(file).path() + '/' + name);
+    return {};
+}
+
+void Workspace::duplicateFile(const QString &file)
+{
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    if (fileops::duplicate(m_project, file).isEmpty())
+        return say(QStringLiteral("Non riesco a duplicare il file."));
+    checkpoint(QStringLiteral("File duplicato"));
+    refreshTree();
+}
+
+void Workspace::trashFile(const QString &file)
+{
+    if (busy())
+        return say(QStringLiteral("Aspetta la fine del lavoro in corso."));
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    const QString error = fileops::trash(m_project, file);
+    if (!error.isEmpty())
+        return say(error);
+    checkpoint(QStringLiteral("File nel Cestino"));     // ⌘Z lo riporta
+    refreshTree();
+    emit fileRenamed(file, QString());
+    say(QStringLiteral("«%1» è nel Cestino.").arg(QFileInfo(file).fileName()));
+}
+
+void Workspace::revealFile(const QString &file) const { QProcess::startDetached("open", {"-R", m_project.path(file)}); }
+
+void Workspace::copyText(const QString &text) const { QGuiApplication::clipboard()->setText(text); }

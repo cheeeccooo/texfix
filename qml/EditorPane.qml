@@ -63,6 +63,16 @@ Rectangle {
             current = 0
     }
     function closeAll() { tabs.clear(); current = -1 }
+    // Un file rinominato o buttato: la sua scheda lo segue o si chiude (prima si salva ciò che c'era).
+    function fileRenamed(from, to) {
+        const at = indexOf(from)
+        if (at < 0)
+            return
+        tabs.remove(at)
+        current = Math.min(current, tabs.count - 1)
+        if (to !== "")
+            openFile(to, 0)
+    }
     function saveAll() {
         for (let i = 0; i < tabs.count; ++i) {
             const editor = editors.itemAt(i)

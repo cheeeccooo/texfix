@@ -283,3 +283,66 @@ bool Project::hasRepository() const
 }
 
 }
+
+namespace tx::fileops {
+
+namespace {
+// Toglie o rinomina l'\input di una lezione nel documento (con il \clearpage che lo segue, se si toglie).
+void updateMain(const Project &project, const QString &lesson, const QString &replacement)
+{
+    QStringList lines = files::read(project.path(Project::MAIN)).split('\n');
+    const QString stem = lesson.chopped(4);
+    static const QRegularExpression input(R"(\\input\{\s*(src/[^}\s]+)\s*\})");
+    for (int i = 0; i < lines.size(); ++i) {
+        const auto m = input.match(uncommented(lines[i]).toString());
+        if (!m.hasMatch() || (m.captured(1) != lesson && m.captured(1) != stem))
+            continue;
+        if (!replacement.isEmpty()) {
+            lines[i].replace(m.captured(0), QStringLiteral("\\input{%1}").arg(replacement));
+            continue;
+        }
+        lines.removeAt(i);
+        if (i < lines.size() && lines[i].trimmed() == "\\clearpage")
+            lines.removeAt(i);
+        --i;
+    }
+    files::write(project.path(Project::MAIN), lines.join('\n'));
+}
+}
+
+QString rename(const Project &project, const QString &file, const QString &newName)
+{
+    QString name = newName.trimmed();
+    if (name.isEmpty() || name.contains('/'))
+        return QStringLiteral("Serve un nome, senza barre.");
+    const QFileInfo info(project.path(file));
+    if (!info.suffix().isEmpty() && QFileInfo(name).suffix().isEmpty())
+        name += '.' + info.suffix();                   // l'estensione resta, se non la si scrive
+    const QString target = info.path() + '/' + name;
+    if (QFileInfo::exists(target))
+        return QStringLiteral("«%1» c'è già.").arg(name);
+    const bool lesson = project.inputs().contains(file);
+    if (!QFile::rename(info.filePath(), target))
+        return QStringLiteral("Non riesco a rinominare il file.");
+    if (lesson)
+        updateMain(project, file, project.relative(target));
+    return {};
+}
+
+QString duplicate(const Project &project, const QString &file)
+{
+    const QString target = files::freeName(project.path(file));
+    return QFile::copy(project.path(file), target) ? project.relative(target) : QString();
+}
+
+QString trash(const Project &project, const QString &file)
+{
+    const bool lesson = project.inputs().contains(file);
+    if (!QFile::moveToTrash(project.path(file)))
+        return QStringLiteral("Non riesco a spostare il file nel Cestino.");
+    if (lesson)
+        updateMain(project, file, {});
+    return {};
+}
+
+}

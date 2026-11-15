@@ -68,3 +68,13 @@ private:
 QStringView uncommented(QStringView line);
 
 }
+
+namespace tx::fileops {
+// Rinomina un file del progetto (percorsi relativi). Se è una lezione, il documento la segue: il suo \input cambia
+// nome. Vuoto se è andata; altrimenti il perché.
+QString rename(const Project &project, const QString &file, const QString &newName);
+// Una copia accanto all'originale, «nome (2).tex». Restituisce il file nuovo (vuoto se non è andata).
+QString duplicate(const Project &project, const QString &file);
+// Nel Cestino. Una lezione esce anche dal documento.
+QString trash(const Project &project, const QString &file);
+}

@@ -757,6 +757,23 @@ private slots:
         QVERIFY(git::show(p, log[0].hash).contains("+ciao"));
     }
 
+    // Rinomina, duplica: il documento segue la lezione rinominata.
+    void fileOperations()
+    {
+        QTemporaryDir dir;
+        const Project p(dir.path());
+        files::write(p.path("main.tex"), "\\begin{document}\n\\input{src/a.tex}\n\\clearpage\n\\input{src/b}\n\\end{document}\n");
+        files::write(p.path("src/a.tex"), "a");
+        files::write(p.path("src/b.tex"), "b");
+        QCOMPARE(fileops::rename(p, "src/b.tex", "serie"), QString());                  // l'estensione resta
+        QCOMPARE(p.inputs(), (QStringList{"src/a.tex", "src/serie.tex"}));
+        QVERIFY(!fileops::rename(p, "src/a.tex", "serie.tex").isEmpty());               // c'è già
+        QVERIFY(!fileops::rename(p, "src/a.tex", "x/y").isEmpty());
+        QCOMPARE(fileops::duplicate(p, "src/a.tex"), "src/a (2).tex");
+        QCOMPARE(files::read(p.path("src/a (2).tex")), "a");
+        QCOMPARE(p.inputs(), (QStringList{"src/a.tex", "src/serie.tex"}));              // la copia non entra nel documento
+    }
+
     // La cronologia: lavori e modifiche a mano si annullano e si ripetono; un passo nuovo toglie il «ripeti».
     void history()
     {

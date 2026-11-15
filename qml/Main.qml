@@ -138,6 +138,7 @@ ApplicationWindow {
         onConvertAsked: window.askConvert()
         onNewLessonAsked: newLessonSheet.open()
         onMaterialAsked: materialDialog.open()
+        onRenameAsked: file => renameSheet.ask(file)
         onSourcesAsked: lesson => { sourcesDialog.lesson = lesson; sourcesDialog.open() }
         visible: Workspace.hasProject
     }
@@ -187,6 +188,7 @@ ApplicationWindow {
     }
     OutcomeSheet { id: outcomeSheet }
     NewLessonSheet { id: newLessonSheet }
+    RenameSheet { id: renameSheet }
     FileDialog {
         id: materialDialog
         title: "Aggiungi materiale"

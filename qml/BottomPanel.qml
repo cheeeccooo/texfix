@@ -9,6 +9,7 @@ Rectangle {
     color: Theme.panel
     signal issueChosen(string file, int line)
     signal closeAsked()
+    property int tab: 0                                // 0 Avvisi, 1 Console
     signal fixAsked()
 
     function label(kind) {
@@ -23,13 +24,20 @@ Rectangle {
             Layout.leftMargin: Theme.gap + 4
             Layout.rightMargin: 6
             implicitHeight: Theme.rowHeight + 2
-            TxLabel {
-                Layout.fillWidth: true
-                text: Workspace.issues.length === 0 ? "Avvisi" : "Avvisi (" + Workspace.issues.length + ")"
-                color: Theme.textMuted
-                font.pixelSize: Theme.smallSize
-                font.capitalization: Font.AllUppercase
+            Repeater {
+                model: [Workspace.issues.length === 0 ? "Avvisi" : "Avvisi (" + Workspace.issues.length + ")", "Console"]
+                TxLabel {
+                    required property string modelData
+                    required property int index
+                    text: modelData
+                    color: root.tab === index ? Theme.text : Theme.textFaint
+                    font.pixelSize: Theme.smallSize
+                    font.capitalization: Font.AllUppercase
+                    rightPadding: Theme.gap
+                    MouseArea { anchors.fill: parent; onClicked: root.tab = index }
+                }
             }
+            Item { Layout.fillWidth: true }
             TxButton {
                 visible: Workspace.issues.length > 0
                 text: "Risolvi tutto"
@@ -40,10 +48,33 @@ Rectangle {
             }
             TxButton { text: "×"; flat: true; implicitWidth: 24; hint: "Chiudi"; onClicked: root.closeAsked() }
         }
+        // la Console: il registro dei messaggi e dei lavori
+        ListView {
+            id: consoleList
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            visible: root.tab === 1
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            model: Workspace.console
+            ScrollBar.vertical: ScrollBar {}
+            onCountChanged: Qt.callLater(positionViewAtEnd)
+            delegate: Text {
+                required property string modelData
+                x: Theme.gap + 4
+                width: consoleList.width - 2 * Theme.gap - 8
+                text: modelData
+                wrapMode: Text.Wrap
+                color: Theme.textMuted
+                font.family: Theme.monoFamily
+                font.pixelSize: Theme.smallSize
+            }
+        }
         ListView {
             id: list
             Layout.fillWidth: true
             Layout.fillHeight: true
+            visible: root.tab === 0
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             model: Workspace.issues
@@ -81,7 +112,7 @@ Rectangle {
     TxLabel {
         anchors.centerIn: parent
         anchors.verticalCenterOffset: Theme.rowHeight / 2
-        visible: Workspace.issues.length === 0
+        visible: root.tab === 0 && Workspace.issues.length === 0
         text: "Nessun avviso."
         color: Theme.textFaint
     }
