@@ -57,6 +57,9 @@ class Workspace : public QObject {
     Q_PROPERTY(QString jobLabel READ jobLabel NOTIFY jobProgressChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
     Q_PROPERTY(bool resumable READ resumable NOTIFY jobChanged)           // un lavoro interrotto, da riprendere
+    // Per il pannello Attività: i lavori finiti da poco (title, when, stopped) e le procedure dell'agente che aspettano il turno.
+    Q_PROPERTY(QVariantList recentJobs READ recentJobs NOTIFY jobChanged)
+    Q_PROPERTY(int waitingProcedures READ waitingProcedures NOTIFY jobChanged)
     Q_PROPERTY(QStringList jobLog READ jobLog NOTIFY jobLogChanged)       // il registro del lavoro (Console)
     // Le regole del progetto, una per voce (Impostazioni del progetto).
     Q_PROPERTY(QStringList projectRules READ projectRules WRITE setProjectRules NOTIFY settingsChanged)
@@ -95,6 +98,8 @@ public:
     bool busy() const { return compiling() || jobRunning() || m_agentRunning; }
     bool resumable() const { return hasProject() && !jobRunning() && !tx::Convert::interrupted(m_project).isEmpty(); }
     QStringList jobLog() const { return m_jobLog; }
+    QVariantList recentJobs() const { return m_recent; }
+    int waitingProcedures() const { return int(m_agentQueue.size()); }
     QStringList projectRules() const { return m_settings.rules; }
     void setProjectRules(const QStringList &rules);
     QString styleName() const { return m_style.name; }
@@ -206,7 +211,7 @@ public:
     Q_INVOKABLE QVariantList gitChanges() const;                           // file, state
     Q_INVOKABLE QVariantList gitLog() const;                               // hash, when, subject
     Q_INVOKABLE QString gitDiff(const QString &what) const;                // «diff:<file>» o «commit:<hash>»
-    Q_INVOKABLE QString gitCommit(const QString &message);                 // vuoto se è andata
+    Q_INVOKABLE QString gitCommit(const QString &message, const QStringList &files = {});   // vuoto se è andata; files: solo quelli
     Q_INVOKABLE void gitInit();
 
     // Il menu contestuale dei file: ogni azione è un passo della cronologia.
@@ -355,7 +360,7 @@ private:
     void computeTags();                          // procedure dell'agente che aspettano il loro turno
     QFileSystemWatcher m_watcher;
     QTimer m_refresh;                                  // più cambiamenti vicini, un aggiornamento solo
-    QVariantList m_outcomes, m_strays, m_jobs, m_lessons, m_documentFiles, m_queue, m_documents, m_images, m_issues;
+    QVariantList m_recent, m_outcomes, m_strays, m_jobs, m_lessons, m_documentFiles, m_queue, m_documents, m_images, m_issues;
     QHash<QString, QString> m_states;                  // lezione → stato dell'ultima compilazione
     QHash<QString, QString> m_details;
     double m_progress = 0;

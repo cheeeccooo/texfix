@@ -45,11 +45,13 @@ QString diff(const Project &project, const QString &file)
 
 QString show(const Project &project, const QString &hash) { return run(project, {"show", "--stat", "--patch", "--format=%h  %ad  %s%n", "--date=format:%d/%m/%Y %H:%M", hash}).text; }
 
-QString commit(const Project &project, const QString &message)
+QString commit(const Project &project, const QString &message, const QStringList &files)
 {
     if (message.trimmed().isEmpty())
         return QStringLiteral("Scrivi che cosa hai cambiato.");
-    if (!run(project, {"add", "--all"}).ok)
+    if (!files.isEmpty())
+        run(project, {"reset", "--quiet"});         // solo i file scelti: niente altro resta pronto per il commit
+    if (!run(project, files.isEmpty() ? QStringList{"add", "--all"} : QStringList{"add", "--all", "--"} + files).ok)
         return QStringLiteral("Non riesco a preparare il commit.");
     if (!run(project, {"commit", "--quiet", "-m", message.trimmed()}).ok)
         return QStringLiteral("Il commit non è riuscito (non c'è niente da salvare, o manca nome ed email di git).");

@@ -824,6 +824,12 @@ private slots:
         QCOMPARE(log.size(), 2);
         QCOMPARE(log[0].subject, "Una lezione");
         QVERIFY(git::show(p, log[0].hash).contains("+ciao"));
+        // un commit con un file solo: l'altro resta da salvare
+        files::write(p.path("src/lezione nuova.tex"), "ciao ciao\n");
+        files::write(p.path("main.tex"), files::read(p.path("main.tex")) + "% ancora\n");
+        QCOMPARE(git::commit(p, "Solo il documento", {"main.tex"}), QString());
+        QCOMPARE(git::changes(p).size(), 1);
+        QCOMPARE(git::changes(p)[0].file, "src/lezione nuova.tex");
     }
 
     // Rinomina, duplica: il documento segue la lezione rinominata.

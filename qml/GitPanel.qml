@@ -13,6 +13,8 @@ Rectangle {
     property var history: []
     property bool confirm: false
     property string error
+    property var skipped: ({})                         // i file lasciati fuori dal prossimo commit
+    readonly property var chosen: changes.filter(c => skipped[c.file] !== true).map(c => c.file)
 
     function reload() { changes = Workspace.gitChanges(); history = Workspace.gitLog() }
     onVisibleChanged: if (visible) reload()
@@ -45,14 +47,14 @@ Rectangle {
             Layout.rightMargin: Theme.gap
             TxLabel { Layout.fillWidth: true; text: root.error; color: Theme.warn; font.pixelSize: Theme.smallSize; wrapMode: Text.WordWrap; elide: Text.ElideNone }
             TxButton {
-                text: root.confirm ? "Sì, fai il commit" : "Commit"
+                text: root.confirm ? "Sì, fai il commit" : root.chosen.length < root.changes.length ? "Commit di " + root.chosen.length : "Commit"
                 primary: root.confirm
-                enabled: root.changes.length > 0 && message.text.trim() !== ""
+                enabled: root.chosen.length > 0 && message.text.trim() !== ""
                 onClicked: {
                     if (!root.confirm)
                         return root.confirm = true
                     root.confirm = false
-                    root.error = Workspace.gitCommit(message.text)
+                    root.error = Workspace.gitCommit(message.text, root.chosen.length < root.changes.length ? root.chosen : [])
                     if (root.error === "")
                         message.text = ""
                 }
@@ -80,6 +82,16 @@ Rectangle {
                     anchors.leftMargin: Theme.gap + 4
                     anchors.rightMargin: Theme.gap + 4
                     spacing: 6
+                    // la spunta: questo file entra nel commit
+                    Rectangle {
+                        visible: !row.head && row.modelData.file !== undefined
+                        implicitWidth: 14; implicitHeight: 14; radius: 3
+                        readonly property bool on: visible && root.skipped[row.modelData.file] !== true
+                        color: on ? Theme.accent : "transparent"
+                        border.width: 1
+                        border.color: on ? Theme.accent : Theme.textFaint
+                        Text { anchors.centerIn: parent; visible: parent.on; text: "✓"; color: Theme.onAccent; font.pixelSize: 10; font.weight: Font.Bold }
+                    }
                     TxLabel {
                         Layout.fillWidth: true
                         text: row.head ? row.modelData.head : row.modelData.file !== undefined ? row.modelData.file : row.modelData.subject
@@ -101,7 +113,16 @@ Rectangle {
                     anchors.fill: parent
                     hoverEnabled: true
                     enabled: !row.head
-                    onClicked: root.opened(row.modelData.file !== undefined ? "diff:" + row.modelData.file : "commit:" + row.modelData.hash)
+                    onClicked: mouse => {
+                        if (row.modelData.file !== undefined && mouse.x < Theme.gap + 24) {      // sulla spunta
+                            const all = Object.assign({}, root.skipped)
+                            all[row.modelData.file] = all[row.modelData.file] !== true
+                            root.skipped = all
+                            root.confirm = false
+                            return
+                        }
+                        root.opened(row.modelData.file !== undefined ? "diff:" + row.modelData.file : "commit:" + row.modelData.hash)
+                    }
                 }
             }
         }

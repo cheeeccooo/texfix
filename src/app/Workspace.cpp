@@ -761,7 +761,11 @@ void Workspace::startJob(const QString &title, std::function<std::function<void(
             m_jobThread->wait();
             m_jobThread->deleteLater();
             m_jobThread = nullptr;
+            const bool stopped = m_jobControl && m_jobControl->stopped();
             m_jobControl.reset();
+            m_recent.prepend(QVariantMap{{"title", m_jobTitle}, {"when", QTime::currentTime().toString("HH:mm")}, {"stopped", stopped}});
+            while (m_recent.size() > 12)
+                m_recent.removeLast();
             finish();
             emit jobChanged();
         });
@@ -1343,9 +1347,9 @@ QString Workspace::gitDiff(const QString &what) const
     return what.startsWith("commit:") ? git::show(m_project, what.mid(7)) : git::diff(m_project, what.mid(5));
 }
 
-QString Workspace::gitCommit(const QString &message)
+QString Workspace::gitCommit(const QString &message, const QStringList &files)
 {
-    const QString error = git::commit(m_project, message);
+    const QString error = git::commit(m_project, message, files);
     refreshTree();
     emit treeChanged();
     if (error.isEmpty())

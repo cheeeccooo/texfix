@@ -195,6 +195,9 @@ Item {
                 root.leftTab = 1
             } else if (name === "rinomina") {
                 Workspace.say(Workspace.renameFile(argument.split(" ")[0], argument.split(" ")[1]))
+            } else if (name === "attivita") {
+                root.bottomOpen = true
+                bottom.tab = 2
             } else if (name === "console") {
                 root.bottomOpen = true
                 bottom.tab = 1
