@@ -5,6 +5,7 @@
 #include "core/Convert.h"
 #include "core/NewLesson.h"
 #include "core/Plans.h"
+#include "core/Profiles.h"
 #include "core/Prompts.h"
 #include "core/Reorganize.h"
 #include "core/Review.h"
@@ -900,6 +901,45 @@ private slots:
         QVERIFY(files::read(p.path("main.tex")).startsWith("\\documentclass[11pt,a4paper,twocolumn]{article}"));
         QCOMPARE(styleswitch::apply(p, {}).error, QString());
         QVERIFY(files::read(p.path("main.tex")).startsWith("\\documentclass[11pt,a4paper]{article}"));
+    }
+
+    // I profili di partenza: le scelte di un progetto salvate, e un progetto nuovo che parte da lì.
+    void startingProfiles()
+    {
+        QTemporaryDir dir, outside, home;
+        profiles::setHome(home.path());
+        const Project first(dir.filePath("primo"));
+        QCOMPARE(Project::create(first.root()), QString());
+        files::write(outside.filePath("styles.sty"), "\\ProvidesPackage{styles}\n");
+        styleswitch::import(first, outside.filePath("styles.sty"));
+        QCOMPARE(styleswitch::apply(first, "styles").error, QString());
+        Settings s = Settings::load(first);
+        s.setValue("qualita", "massima");
+        s.rules = {"I vettori con la freccia."};
+        s.setDone("src/src1.tex", true);
+        s.save(first);
+
+        QVERIFY(profiles::list().isEmpty());
+        QVERIFY(!profiles::save(first, " ").isEmpty());
+        QCOMPARE(profiles::save(first, "Come la vecchia Texfix"), QString());
+        QCOMPARE(profiles::list(), QStringList{"Come la vecchia Texfix"});
+
+        const Project second(dir.filePath("secondo"));
+        QCOMPARE(Project::create(second.root()), QString());
+        QCOMPARE(profiles::apply(second, "Come la vecchia Texfix"), QString());
+        const Settings got = Settings::load(second);
+        QCOMPARE(got.quality, "massima");
+        QCOMPARE(got.rules, QStringList{"I vettori con la freccia."});
+        QCOMPARE(got.style, "styles");
+        QVERIFY(got.done.isEmpty());                                                   // le lezioni fatte non sono una scelta da riusare
+        QVERIFY(QFileInfo::exists(second.path("styles.sty")));
+        QVERIFY(QFileInfo::exists(second.path("styles.stile.json")));
+        QVERIFY(files::read(second.path("texfix.sty")).contains("\\RequirePackage{styles}"));
+        QVERIFY(files::read(second.path("main.tex")).contains("twocolumn"));
+        QVERIFY(!profiles::apply(second, "non esiste").isEmpty());
+        profiles::remove("Come la vecchia Texfix");
+        QVERIFY(profiles::list().isEmpty());
+        profiles::setHome({});
     }
 
     // La cronologia: lavori e modifiche a mano si annullano e si ripetono; un passo nuovo toglie il «ripeti».

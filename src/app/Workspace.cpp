@@ -8,6 +8,7 @@
 #include "core/NewLesson.h"
 #include "core/Pages.h"
 #include "core/Plans.h"
+#include "core/Profiles.h"
 #include "core/Reorganize.h"
 #include "core/Review.h"
 #include "core/Rules.h"
@@ -131,13 +132,30 @@ void Workspace::prepareFolder(const QString &path)
         say(QStringLiteral("Cartella preparata: ciò che c'era è in «Da consultare» (%1).").arg(plural(moved.size(), "elemento", "elementi")));
 }
 
-QString Workspace::newProject(const QString &path)
+QString Workspace::newProject(const QString &path, const QString &profile)
 {
     if (const QString error = Project::create(path); !error.isEmpty())
         return error;
+    QString problem;
+    if (!profile.isEmpty())
+        problem = profiles::apply(Project(path), profile);
     open(path);
+    if (!problem.isEmpty())
+        say(problem);
     return {};
 }
+
+QStringList Workspace::profiles() const { return profiles::list(); }
+
+QString Workspace::saveProfile(const QString &name)
+{
+    const QString error = profiles::save(m_project, name);
+    if (error.isEmpty())
+        say(QStringLiteral("Profilo «%1» salvato: un progetto nuovo può partire da qui.").arg(name.trimmed()));
+    return error;
+}
+
+void Workspace::removeProfile(const QString &name) { profiles::remove(name); }
 
 void Workspace::open(const QString &path)
 {

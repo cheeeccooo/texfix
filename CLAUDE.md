@@ -57,6 +57,7 @@ Due parti, un processo solo.
 | `core/Git` | il version control dell'utente: modifiche, differenze, commit di tutto, cronologia (chiama `git`) |
 | `core/Reorganize` | Riorganizza: le sezioni del corso (fra un `\subsection` e il successivo), gli argomenti proposti dal modello, la scrittura di un file per argomento e il ritorno a un file per lezione, tutti e due del programma; resta uguale il contenuto riga per riga, o non si tocca niente |
 | `core/TexSource` | le fonti `.tex` di altri autori: le lezioni per data (`\section{Lezione del …}`), le macro dell'autore, il testo per il modello; una lezione si indica con `file.tex@AAAA-MM-GG` |
+| `core/Profiles` | i profili di partenza: stile (il `.sty` e la descrizione), impostazioni e regole del progetto salvati con un nome fra i dati del programma (`profili/<nome>/`); un progetto nuovo può partire da lì |
 | `app/Chat` | la chat: il CLI `claude` chiuso nel progetto (file sì, shell no, nessuna impostazione dell'utente), messaggi in streaming, strumenti eseguiti dal motore in un thread; `Texfix --strumenti <nome>` è il passacarte fra il CLI e il programma, su un canale locale; storico in `salvataggi/chat/` |
 | `app/Workspace` | il progetto aperto per la finestra (singleton QML): lezioni con lo stato, avvisi, PDF, compilazione |
 | `app/Theme` | l'unico posto con colori e misure (singleton QML); chiaro e scuro col sistema, `TEXFIX_TEMA=chiaro\|scuro` |
@@ -89,7 +90,8 @@ Un dato, una fonte: numero, data e titolo di una lezione si leggono dal suo `.te
 ## Regole per chi sviluppa
 
 - `build/texfix_tests` deve passare per intero. Le prove lavorano in cartelle temporanee, senza modello.
-- Mai provare su un documento vero. Le prove dell'interfaccia usano `TEXFIX_PREFERENZE=<file>` (preferenze separate).
+- Mai provare su un documento vero. Le prove dell'interfaccia usano `TEXFIX_PREFERENZE=<file>` (preferenze separate) e
+  `TEXFIX_DATI=<cartella>` (profili e regole delle Preferenze separati da quelli veri).
 - Interfaccia, commenti e documenti in italiano, senza gergo (SPEC §1: mai seed, hbox, overfull, profilo, ramo, root,
   GUI, report, sessione, id). I nomi nel codice in inglese.
 - In QML: colori e misure solo da `Theme`; un testo ha sempre una larghezza (`TxLabel`); ciò che scorre è fermo ai bordi
@@ -108,7 +110,7 @@ rileggere gli editor senza modifiche in sospeso; una rilettura svuota la pila de
 
 `--gesti`, separati da «;»: `apri FILE [RIGA]`, `compila`, `tutto`, `salta` (⌘J), `sorgente PAGINA X Y`, `divisore 0|1|2`,
 `avvisi`, `progetto chiuso`, `annulla`, `ripeti`, `passo TITOLO`, `scrivi FILE TESTO`, `fatta FILE`, `impostazioni`,
-`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `converti` (tutta la coda), `converti finestra`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `lezione N DATA FILE…` (crea una lezione), `nuova-lezione` (apre la finestra), `materiale FILE…` (fa il piano dello smistamento), `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`, `rinomina FILE NOME`, `console`, `argomenti` (propone la scaletta), `applica-argomenti`, `per-data`. Ogni gesto parte quando niente lavora; poi la foto.
+`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `converti` (tutta la coda), `converti finestra`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `lezione N DATA FILE…` (crea una lezione), `nuova-lezione` (apre la finestra), `materiale FILE…` (fa il piano dello smistamento), `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`, `rinomina FILE NOME`, `console`, `argomenti` (propone la scaletta), `applica-argomenti`, `per-data`, `salva-profilo NOME`, `nuovo CARTELLA [PROFILO]`. Ogni gesto parte quando niente lavora; poi la foto.
 
 ## Regole e stile (SPEC §4)
 
@@ -132,8 +134,7 @@ colonne). Importare uno `styles.sty` non fa domande. Uno stile può volere opzio
 `twocolumn`): al cambio di stile `main.tex` le prende o le perde; su due colonne l'impaginazione misura per colonna.
 
 Di §4 manca: i ruoli proposti dal modello (oggi dal nome), le domande per gli ambienti senza corrispondente al cambio
-di stile (oggi restano com'erano e lo si dice), le macro al cambio di stile, la libreria di stili, i profili di
-partenza, `styles` ripulito (nel suo repository: serve il sì dell'utente), il progetto di prova definitivo, l'agente che modifica lo stile.
+di stile (oggi restano com'erano e lo si dice), le macro al cambio di stile, la libreria di stili da cui scegliere, `styles` ripulito (nel suo repository: serve il sì dell'utente), il progetto di prova definitivo, l'agente che modifica lo stile.
 
 Di §3.6 c'è: Converti per scansioni, PDF, immagini e documenti di testo, con stima, esito corto, «Ferma» e «Riprendi»
 (il lavoro gira in un thread del programma: `Workspace::convert`). Le figure si ridisegnano o si ritagliano dentro Converti, insieme (§3.8); «Rivedi figure» (`qml/FiguresView.qml`,

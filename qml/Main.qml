@@ -30,6 +30,14 @@ ApplicationWindow {
             rolesSheet.ask(result.name, result.environments)
     }
 
+    function createProject(path, profile) {
+        const error = Workspace.newProject(path, profile)
+        if (error !== "") {
+            notice.text = error + " Per un progetto nuovo serve una cartella vuota; una cartella con dei file si apre con «Apri cartella»."
+            notice.open()
+        }
+    }
+
     function askConvert() {
         if (Workspace.jobRunning)
             return Workspace.say("C'è già un lavoro in corso.")
@@ -161,11 +169,11 @@ ApplicationWindow {
         title: "Nuovo progetto: scegli o crea una cartella vuota"
         acceptLabel: "Crea qui"
         onAccepted: {
-            const error = Workspace.newProject(Workspace.localPath(selectedFolder))
-            if (error !== "") {
-                notice.text = error + " Per un progetto nuovo serve una cartella vuota; una cartella con dei file si apre con «Apri cartella»."
-                notice.open()
-            }
+            const path = Workspace.localPath(selectedFolder)
+            if (Workspace.profiles().length > 0)
+                profileSheet.ask(path)
+            else
+                window.createProject(path, "")
         }
     }
 
@@ -192,6 +200,7 @@ ApplicationWindow {
     OutcomeSheet { id: outcomeSheet }
     NewLessonSheet { id: newLessonSheet }
     RenameSheet { id: renameSheet }
+    ProfileSheet { id: profileSheet; onChosen: (path, profile) => window.createProject(path, profile) }
     OutlineSheet { id: outlineSheet }
     Connections { target: Workspace; function onOutlineReady(topics) { outlineSheet.show(topics) } }
     FileDialog {
@@ -220,7 +229,11 @@ ApplicationWindow {
     Connections {
         target: Workspace
         function onGesture(name, argument) {
-            if (name === "argomenti") {
+            if (name === "nuovo") {
+                window.createProject(argument.split(" ")[0], argument.split(" ").slice(1).join(" "))
+            } else if (name === "salva-profilo") {
+                Workspace.say(Workspace.saveProfile(argument))
+            } else if (name === "argomenti") {
                 Workspace.proposeTopics()
             } else if (name === "applica-argomenti") {
                 Workspace.say(Workspace.applyTopics(outlineSheet.topics))

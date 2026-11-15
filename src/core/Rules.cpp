@@ -28,7 +28,10 @@ QString g_home;
 
 QString home()
 {
-    return g_home.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/regole" : g_home;
+    if (!g_home.isEmpty())
+        return g_home;
+    const QString data = qEnvironmentVariable("TEXFIX_DATI");          // per le prove dell'interfaccia: dati a parte
+    return (data.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) : data) + "/regole";
 }
 QString customPath(const QString &id) { return home() + '/' + id + ".md"; }
 }

@@ -9,6 +9,7 @@ TxSheet {
     title: "Impostazioni del progetto"
     wantedWidth: 560
     signal importAsked()
+    property string profileNote
 
     readonly property var entries: [
         { key: "scrittura", label: "Come si scrive", hint: "Da studiare: prosa che spiega, correzioni dichiarate, aggiunte marcate. Fedele: uno a uno, niente di aggiunto." },
@@ -62,6 +63,49 @@ TxSheet {
     TxLabel {
         Layout.fillWidth: true
         text: "Cambiare stile riscrive tutte le lezioni per il nuovo stile. Si annulla con ⌘Z."
+        color: Theme.textMuted
+        font.pixelSize: Theme.smallSize
+        wrapMode: Text.WordWrap
+        elide: Text.ElideNone
+    }
+    Item { implicitHeight: 4 }
+    TxLabel { Layout.fillWidth: true; text: "Profilo di partenza"; font.weight: Font.Medium }
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.gap
+        Rectangle {
+            Layout.fillWidth: true
+            implicitHeight: Theme.rowHeight + 4
+            radius: Theme.radius
+            color: Theme.surface
+            border.width: 1
+            border.color: profileName.activeFocus ? Theme.accent : Theme.border
+            TextInput {
+                id: profileName
+                anchors.fill: parent
+                anchors.leftMargin: Theme.gap
+                anchors.rightMargin: Theme.gap
+                verticalAlignment: TextInput.AlignVCenter
+                color: Theme.text
+                font.pixelSize: Theme.textSize
+                selectByMouse: true
+                clip: true
+                onTextEdited: root.profileNote = ""
+                TxLabel { anchors.fill: parent; visible: parent.text === ""; text: "Il nome del profilo"; color: Theme.textFaint }
+            }
+        }
+        TxButton {
+            text: "Salva come profilo"
+            enabled: profileName.text.trim() !== ""
+            onClicked: {
+                const error = Workspace.saveProfile(profileName.text)
+                root.profileNote = error !== "" ? error : "Salvato. Un progetto nuovo può partire da «" + profileName.text.trim() + "»."
+            }
+        }
+    }
+    TxLabel {
+        Layout.fillWidth: true
+        text: root.profileNote !== "" ? root.profileNote : "Salva lo stile, queste impostazioni e le regole del progetto, per riusarli in un progetto nuovo."
         color: Theme.textMuted
         font.pixelSize: Theme.smallSize
         wrapMode: Text.WordWrap

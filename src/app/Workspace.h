@@ -104,7 +104,12 @@ public:
     // prepareFolder); altrimenti il perché non si apre.
     Q_INVOKABLE QString openFolder(const QString &path);
     Q_INVOKABLE void prepareFolder(const QString &path);
-    Q_INVOKABLE QString newProject(const QString &path);
+    // Un progetto nuovo, anche da un profilo di partenza (vuoto: nessuno). I profili: i nomi; saveProfile salva le scelte
+    // del progetto aperto (vuoto se è andata).
+    Q_INVOKABLE QString newProject(const QString &path, const QString &profile = {});
+    Q_INVOKABLE QStringList profiles() const;
+    Q_INVOKABLE QString saveProfile(const QString &name);
+    Q_INVOKABLE void removeProfile(const QString &name);
     Q_INVOKABLE void closeProject();
     Q_INVOKABLE static QString localPath(const QUrl &url);
 
