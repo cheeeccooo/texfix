@@ -8,8 +8,9 @@
 // L'impaginazione: trova ciò che si impagina male e lo sistema con mosse misurate, con qualunque stile. La misura
 // viene dalla compilazione della lezione (dove cade ogni blocco nel PDF), non da comandi dello stile.
 //
-// Oggi vede un'unità (riquadro, enunciato, figura) spezzata fra due pagine e la sistema con un a capo pagina prima del
-// suo blocco, se il vuoto che lascia è piccolo; altrimenti la mossa resta proposta, da rivedere.
+// Vede un'unità (riquadro, enunciato, figura) spezzata fra due pagine, un titolo rimasto in fondo senza il suo testo e un
+// grande vuoto prima di un'unità che non ci stava. Le prime due si sistemano con un a capo pagina (o spezzando il riquadro
+// in un punto scelto) se il vuoto che resta è piccolo; altrimenti la mossa resta proposta. Il vuoto si segnala.
 // Un registro solo, salvataggi/impaginazione.json: si impagina solo ciò che è nuovo o cambiato, le decisioni restano.
 namespace tx::layout {
 
@@ -20,7 +21,7 @@ struct Move {
     QString lesson, block;                 // «src/src3.tex», «L3.7»
     QString what;                          // per l'utente: che cosa c'era e che cosa si è fatto o si propone
     double hole = 0;                       // il vuoto lasciato (o che lascerebbe) in fondo alla pagina
-    QString state;                         // fatta | proposta | accettata | lasciata
+    QString state;                         // fatta | proposta | segnalata (nessuna mossa sicura) | accettata | lasciata | a_mano | agente | risolta| proposta | accettata | lasciata
     int line = 0;                          // la riga del blocco nella lezione; 0 se non c'è più
     QString sign = SIGN;                   // la riga scritta nella lezione: un a capo prima del blocco, o uno spezzamento dentro
     QString after;                         // per uno spezzamento dentro: la riga dopo cui sta
@@ -45,6 +46,7 @@ bool needed(const Project &project, const QString &file);
 QList<Move> moves(const Project &project, const QString &file);
 int toReview(const Project &project, const QString &file);
 // accettata: la mossa proposta si applica, o quella fatta si conferma. lasciata: l'a capo pagina si toglie.
+// a_mano, agente (se ne occupa l'utente o l'agente: resta da rivedere), risolta: cambia solo il registro.
 QString decide(const Project &project, const QString &file, const QString &block, const QString &state);
 
 }

@@ -63,7 +63,8 @@ Rectangle {
         Rectangle {
             id: box
             property var row: ({})
-            readonly property bool applied: row.state === "fatta" || row.state === "accettata"
+            readonly property bool open: ["fatta", "proposta", "segnalata", "a_mano", "agente"].includes(row.state)
+            readonly property bool noMove: ["segnalata", "a_mano", "agente", "risolta"].includes(row.state)   // nessuna mossa del programma
             implicitHeight: column.implicitHeight + 2 * Theme.gap + 4
             radius: Theme.radius
             color: Theme.surface
@@ -80,13 +81,30 @@ Rectangle {
                     spacing: Theme.gap
                     TxLabel {
                         Layout.fillWidth: true
-                        text: box.row.state === "fatta" ? "fatta da sola: da rivedere" : box.row.state === "proposta" ? "proposta: da decidere"
-                              : box.row.state === "accettata" ? "✓ Accettata" : "✓ Lasciata com'era"
-                        color: box.row.state === "fatta" || box.row.state === "proposta" ? Theme.warn : Theme.textFaint
+                        text: ({ fatta: "fatta da sola: da rivedere", proposta: "proposta: da decidere", segnalata: "da decidere", a_mano: "la sistemi tu",
+                                 agente: "affidata all'agente", accettata: "✓ Accettata", risolta: "✓ Risolta" })[box.row.state] || "✓ Lasciata com'era"
+                        color: box.open ? Theme.warn : Theme.textFaint
                         font.pixelSize: Theme.smallSize
                     }
                     TxButton { visible: box.row.line > 0; text: "Apri alla riga"; flat: true; onClicked: root.lineAsked(box.row.lesson, box.row.line) }
                     TxButton {
+                        visible: box.open
+                        text: "A mano"
+                        hint: "Apre la lezione al blocco: la sistemi tu, compili e torni qui"
+                        onClicked: { Workspace.decideMove(box.row.lesson, box.row.block, "a_mano"); root.lineAsked(box.row.lesson, box.row.line) }
+                    }
+                    TxButton {
+                        visible: box.open && box.row.state !== "agente"
+                        text: "All'agente"
+                        onClicked: { Workspace.decideMove(box.row.lesson, box.row.block, "agente") }
+                    }
+                    TxButton {
+                        visible: box.row.state === "a_mano" || box.row.state === "agente"
+                        text: "Risolta"
+                        onClicked: Workspace.decideMove(box.row.lesson, box.row.block, "risolta")
+                    }
+                    TxButton {
+                        visible: !box.noMove
                         text: box.row.state === "accettata" ? "✓ Accetta" : box.row.state === "proposta" ? "A pagina nuova" : "Accetta"
                         primary: box.row.state === "accettata"
                         onClicked: Workspace.decideMove(box.row.lesson, box.row.block, "accettata")

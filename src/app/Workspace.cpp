@@ -1098,8 +1098,17 @@ void Workspace::decideMove(const QString &lesson, const QString &block, const QS
     if (busy())
         return say(QStringLiteral("Aspetta la fine del lavoro."));
     checkpoint(QStringLiteral("Modifiche a mano"));
-    decided(lesson, state == "accettata" ? QStringLiteral("Mossa accettata") : QStringLiteral("Mossa lasciata com'era"),
+    QString what;
+    for (const layout::Move &m : layout::moves(m_project, lesson))
+        if (m.block == block)
+            what = m.what;
+    decided(lesson, state == "accettata" ? QStringLiteral("Mossa accettata") : state == "lasciata" ? QStringLiteral("Mossa lasciata com'era")
+                    : state == "risolta" ? QStringLiteral("Impaginazione risolta") : QStringLiteral("Impaginazione: scelta cambiata"),
             layout::decide(m_project, lesson, block, state));
+    if (state == "agente")                             // se ne occupa l'agente, nella chat
+        emit agentAsked(QStringLiteral("Nella lezione %1, al blocco %2, c'è un problema di impaginazione: %3\nSistemalo toccando il meno possibile "
+                                       "(accorciare, spostare, cambiare la misura di una figura, spezzare in un punto migliore), poi compila la lezione "
+                                       "e controlla com'è venuta. Non cambiare il contenuto.").arg(lesson, block, what));
 }
 
 void Workspace::setAgentRunning(bool running)

@@ -467,6 +467,44 @@ private slots:
         QCOMPARE(model.calls().size(), 2);
     }
 
+    // L'impaginazione oltre i riquadri spezzati: una figura che non ci stava ed è passata oltre lascia un grande vuoto.
+    // Non c'è una mossa sicura: si segnala, e si decide a mano o con l'agente.
+    void layoutHole()
+    {
+        if (!hasLatexmk())
+            QSKIP("latexmk non c'è");
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        const Style style = Style::classic();
+        QString tex = "\\section{S}\n";
+        for (int i = 0; i < 22; ++i)
+            tex += QStringLiteral("Riga %1 di testo.\n\n").arg(i + 1);
+        tex += "\\begin{center}\n\\rule{2cm}{13cm}\n\\end{center}\nFine.\n";
+        files::write(p.path("src/src1.tex"), blocks::mark(tex, 1, {style.boxes(), {"center", "figure"}}));
+        const QString text = files::read(p.path("src/src1.tex"));
+        const layout::Result r = layout::lesson(p, style, "src/src1.tex");
+        QCOMPARE(r.failure, QString());
+        QCOMPARE(r.found, 1);
+        QCOMPARE(r.done, 0);
+        QCOMPARE(files::read(p.path("src/src1.tex")), text);                           // niente è stato toccato
+        const QList<layout::Move> moves = layout::moves(p, "src/src1.tex");
+        QCOMPARE(moves.size(), 1);
+        QCOMPARE(moves[0].state, "segnalata");
+        QVERIFY2(moves[0].what.startsWith("La figura non ci stava"), qPrintable(moves[0].what));
+        QVERIFY(moves[0].hole > layout::HOLE_OK);
+        QCOMPARE(layout::toReview(p, "src/src1.tex"), 1);
+        QCOMPARE(layout::decide(p, "src/src1.tex", moves[0].block, "a_mano"), QString());
+        QCOMPARE(layout::toReview(p, "src/src1.tex"), 1);                              // la sistema l'utente: resta da rivedere
+        QCOMPARE(layout::decide(p, "src/src1.tex", moves[0].block, "risolta"), QString());
+        QCOMPARE(layout::toReview(p, "src/src1.tex"), 0);
+        QCOMPARE(layout::lesson(p, style, "src/src1.tex").found, 0);                   // la decisione resta
+        QCOMPARE(layout::moves(p, "src/src1.tex").size(), 1);
+    }
+
     // L'impaginazione: un teorema a cavallo di due pagine va a pagina nuova se il vuoto è piccolo, altrimenti la mossa
     // resta proposta; le decisioni si cambiano e restano; ciò che non è cambiato non si rifà.
     void layoutLesson()

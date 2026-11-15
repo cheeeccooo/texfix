@@ -42,7 +42,7 @@ int groupStart(const QStringList &lines, const blocks::Block &block)
     int at = (block.marker ? block.marker : block.line) - 1;           // indice da 0
     while (at > 0) {
         const QString above = lines[at - 1].trimmed();
-        if (above.isEmpty() || above.startsWith("\\subsection") || above.startsWith("\\paragraph") || above.startsWith("\\label"))
+        if (above.isEmpty() || above.startsWith("\\subsection") || above.startsWith("\\subsubsection") || above.startsWith("\\paragraph") || above.startsWith("\\label"))
             --at;
         else
             break;
@@ -184,7 +184,7 @@ int toReview(const Project &project, const QString &file)
 {
     int n = 0;
     for (const Move &m : moves(project, file))
-        n += m.state == "proposta" || m.state == "fatta";
+        n += m.state == "proposta" || m.state == "fatta" || m.state == "segnalata" || m.state == "a_mano" || m.state == "agente";
     return n;
 }
 
@@ -274,10 +274,10 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
     QList<Move> kept;
     QStringList left;
     for (const Move &m : moves(project, file)) {
-        if (m.state == "accettata" || m.state == "lasciata" || m.state == "fatta")
-            kept << m;
-        if (m.state == "lasciata")
-            left << m.block;
+        if (m.state != "proposta" && m.state != "segnalata")
+            kept << m;                             // le decisioni prese restano; ciò che era solo proposto si rimisura
+        if (m.state == "lasciata" || m.state == "a_mano" || m.state == "agente" || m.state == "risolta")
+            left << m.block;                       // decise in altro modo: non si riprovano
     }
     QList<Move> fresh;
     QStringList tried = left;
@@ -350,6 +350,109 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
             result.proposed += whole;
         }
     }
+    // poi ciò che non è un'unità spezzata: un titolo rimasto in fondo senza il suo testo, un grande vuoto prima di un'unità
+    QStringList settled = tried;
+    for (const Move &m : kept + fresh)
+        settled << m.block;
+    static const QRegularExpression heading(R"(^\s*\\(?:sub)*section\*?[\[{])");
+    for (int round = 0; round < 12; ++round) {
+        if (control)
+            control->check();
+        const QString before = files::read(path);
+        QStringList lines = before.split('\n');
+        const QList<blocks::Block> parsed = blocks::parse(before, unitsOf(style));
+        const Geometry g = geometryOf(project, style, file);
+        int title = -1, content = -1;                  // da 0
+        const blocks::Block *owner = nullptr;
+        Where top;
+        for (int i = 0; i < lines.size() && title < 0; ++i) {
+            if (!heading.match(uncommented(lines[i]).toString()).hasMatch())
+                continue;
+            int j = i + 1;                             // la prima riga di testo sotto il titolo
+            for (; j < lines.size(); ++j) {
+                const QString t = lines[j].trimmed();
+                if (!(t.isEmpty() || t.startsWith('%') || t.startsWith("\\label") || t.startsWith("\\lezione") || heading.match(t).hasMatch()))
+                    break;
+            }
+            const blocks::Block *next = nullptr;
+            for (const blocks::Block &b : parsed)
+                if (!next && b.line >= i + 1)
+                    next = &b;
+            if (j >= lines.size() || !next || next->id.isEmpty() || settled.contains(next->id))
+                continue;
+            const Where wt = whereIs(project, g, file, i + 1);
+            Where wc;
+            for (int k = j; k < j + 3 && k < lines.size() && !wc.ok; ++k)
+                wc = whereIs(project, g, file, k + 1);
+            if (wt.ok && wc.ok && wc.slot > wt.slot) {
+                title = i;
+                content = j;
+                owner = next;
+                top = wt;
+            }
+        }
+        if (title < 0)
+            break;
+        ++result.found;
+        const QString id = owner->id;
+        settled << id;
+        const double hole = 1.0 - top.bottom;
+        const int percent = qRound(hole * 100);
+        const QString where = style.twoColumns() ? QStringLiteral("alla colonna") : QStringLiteral("alla pagina");
+        lines.insert(groupStart(lines, *owner), QString::fromUtf8(SIGN));
+        files::write(path, lines.join('\n'));
+        bool together = false;
+        try {
+            if (!Compiler::compileSync(project, file, control).hasErrors()) {
+                const Geometry after = geometryOf(project, style, file);
+                const Where wt = whereIs(project, after, file, title + 2);
+                Where wc;
+                for (int k = content + 1; k < content + 4 && k < lines.size() && !wc.ok; ++k)
+                    wc = whereIs(project, after, file, k + 1);
+                together = wt.ok && wc.ok && wt.slot == wc.slot;
+            }
+        } catch (...) {
+            files::write(path, before);
+            throw;
+        }
+        if (together && hole <= HOLE_OK) {
+            fresh << Move{file, id, QStringLiteral("Un titolo restava in fondo senza il suo testo: ora passa %1 dopo con lui (vuoto lasciato: %2%).").arg(where).arg(percent), hole, "fatta", 0};
+            ++result.done;
+        } else {
+            files::write(path, before);
+            fresh << Move{file, id,
+                          together ? QStringLiteral("Un titolo resta in fondo senza il suo testo. Portarlo %1 dopo lascerebbe vuoto il %2%.").arg(where).arg(percent)
+                                   : QStringLiteral("Un titolo resta in fondo senza il suo testo e un a capo non basta: va sistemato a mano."),
+                          hole, together ? "proposta" : "segnalata", 0};
+            result.proposed += 1;
+        }
+    }
+    {
+        // un grande vuoto: un'unità che non ci stava è passata oltre da sola. Non c'è una mossa sicura: si segnala.
+        Compiler::compileSync(project, file, control);
+        const QString text = files::read(path);
+        const QList<blocks::Block> parsed = blocks::parse(text, unitsOf(style));
+        const Geometry g = geometryOf(project, style, file);
+        for (qsizetype i = 1; i < parsed.size(); ++i) {
+            const blocks::Block &b = parsed[i];
+            if (b.kind == "testo" || b.id.isEmpty() || settled.contains(b.id))
+                continue;
+            const Where start = whereIs(project, g, file, b.line);
+            Where end;
+            for (int line = parsed[i - 1].endLine; line >= parsed[i - 1].line && !end.ok; --line)
+                end = whereIs(project, g, file, line);
+            if (!start.ok || !end.ok || start.slot <= end.slot || 1.0 - end.bottom <= HOLE_OK)
+                continue;
+            Placed p;
+            p.kind = b.kind;
+            p.title = b.title;
+            ++result.found;
+            ++result.proposed;
+            fresh << Move{file, b.id, QStringLiteral("%1 non ci stava ed è passato oltre: prima resta vuoto il %2% %3. Si può accorciare o spostare a mano, o affidare all'agente.")
+                                          .arg(nameOf(p, style)).arg(qRound((1.0 - end.bottom) * 100)).arg(style.twoColumns() ? QStringLiteral("della colonna") : QStringLiteral("della pagina")),
+                          1.0 - end.bottom, "segnalata", 0};
+        }
+    }
     QJsonArray list;
     for (const Move &m : kept + fresh)
         list.append(toJson(m));
@@ -368,6 +471,15 @@ QString decide(const Project &project, const QString &file, const QString &block
         QJsonObject move = list[i].toObject();
         if (move.value("blocco").toString() != block)
             continue;
+        if (state != "accettata" && state != "lasciata") {         // a_mano, agente, risolta: cambia solo ciò che si ricorda
+            move["stato"] = state;
+            list[i] = move;
+            entry["mosse"] = list;
+            entry["impronta"] = contentHash(files::read(project.path(file)));
+            all[file] = entry;
+            saveRegistry(project, all);
+            return {};
+        }
         const QString path = project.path(file);
         QStringList lines = files::read(path).split('\n');
         static const QRegularExpression marker(R"(^\s*%\s*@(L\d+\.\d+))");
@@ -384,7 +496,7 @@ QString decide(const Project &project, const QString &file, const QString &block
         while (end < lines.size() && !marker.match(lines[end]).hasMatch())
             ++end;
         int sign = -1;
-        for (int k = above ? qMax(0, at - 6) : at; k < (above ? at : end) && sign < 0; ++k)
+        for (int k = above ? qMax(0, at - 10) : at; k < (above ? at : end) && sign < 0; ++k)
             if (lines[k].trimmed() == written.trimmed())
                 sign = k;
         if (state == "accettata" && sign < 0) {
