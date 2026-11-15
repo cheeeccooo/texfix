@@ -7,6 +7,8 @@ Questo file descrive il codice com'è: si aggiorna insieme al codice.
 ## Comandi
 
 ```sh
+tools/nuova-prova.sh [cartella] [profilo]   # ricrea il progetto di prova (../prova-texfix-nuovo) con lo stile styles;
+                                           # con «profilo» salva il primo profilo di partenza fra i dati veri
 ./build.sh                    # configura (la prima volta) e compila in build/, al massimo 4 processi
 ./build.sh prove              # compila e lancia le prove del motore (build/texfix_tests)
 ./build.sh avvia [cartella]   # compila e apre il programma
@@ -130,11 +132,14 @@ editoriali nelle Preferenze, lo stile facoltativo con importazione, domande sui 
 
 La libreria degli stili che Texfix conosce già sta in `stili/` (dentro il programma, `:/stili/`): oggi `styles`,
 descritto in `stili/styles.stile.json` (ruoli, colori, macro, rimandi come tag, `tikzgraph`, il fulcro, le due
-colonne). Importare uno `styles.sty` non fa domande. Uno stile può volere opzioni della classe (`opzioni_classe`:
+colonne). Importare uno `styles.sty` non fa domande. In `stili/styles.sty` c'è lo `styles` ripulito (v4, dal branch `texfix-nuovo`
+di `~/Table/styles`; lo aggiorna il suo `rilascia.sh`): nelle Impostazioni del progetto «Usa «styles»» lo porta nel
+progetto (`styleswitch::importFromLibrary`). Ciò che era di Texfix dentro `styles` ora è in `texfix.sty`: aggiunte e
+correzioni dichiarate, segnaposto delle figure, `\hfuzz` per le righe fuori misura. Uno stile può volere opzioni della classe (`opzioni_classe`:
 `twocolumn`): al cambio di stile `main.tex` le prende o le perde; su due colonne l'impaginazione misura per colonna.
 
 Di §4 manca: i ruoli proposti dal modello (oggi dal nome), le domande per gli ambienti senza corrispondente al cambio
-di stile (oggi restano com'erano e lo si dice), le macro al cambio di stile, la libreria di stili da cui scegliere, `styles` ripulito (nel suo repository: serve il sì dell'utente), il progetto di prova definitivo, l'agente che modifica lo stile.
+di stile (oggi restano com'erano e lo si dice), le macro al cambio di stile, la libreria di stili da cui scegliere, le prove di conversione con il profilo «Come la vecchia Texfix» a confronto con la vecchia app, l'agente che modifica lo stile.
 
 Di §3.6 c'è: Converti per scansioni, PDF, immagini e documenti di testo, con stima, esito corto, «Ferma» e «Riprendi»
 (il lavoro gira in un thread del programma: `Workspace::convert`). Le figure si ridisegnano o si ritagliano dentro Converti, insieme (§3.8); «Rivedi figure» (`qml/FiguresView.qml`,

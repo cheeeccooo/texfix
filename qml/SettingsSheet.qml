@@ -58,6 +58,15 @@ TxSheet {
             color: Theme.textMuted
         }
         TxButton { visible: Workspace.styleName !== ""; text: "Torna a nessuno stile"; onClicked: Workspace.applyStyle("") }
+        Repeater {                                     // gli stili della libreria, pronti
+            model: Workspace.styleLibrary()
+            TxButton {
+                required property string modelData
+                visible: Workspace.styleName !== modelData
+                text: "Usa «" + modelData + "»"
+                onClicked: { root.close(); Workspace.useLibraryStyle(modelData) }
+            }
+        }
         TxButton { text: "Importa uno stile…"; onClicked: root.importAsked() }
     }
     TxLabel {

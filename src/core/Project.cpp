@@ -66,9 +66,13 @@ const char *const PACKAGE_TAIL = R"(
 % (dove sta il testo nella pagina, scritto nel log: serve a misurare i vuoti)
 \AtBeginDocument{\typeout{TEXFIX pagina: alto \the\dimexpr 1in+\voffset+\topmargin+\headheight+\headsep\relax, testo \the\textheight}}
 
-% Aggiunte e correzioni dichiarate da chi ha scritto gli appunti (se lo stile non ha le sue)
-\@ifundefined{addedtext}{\newenvironment{addedtext}{\par\begingroup\small\noindent\textbf{[+]}\ \ignorespaces}{\par\endgroup}}{}
-\@ifundefined{correction}{\newenvironment{correction}{\par\begingroup\small\noindent\textbf{[!]}\ \ignorespaces}{\par\endgroup}}{}
+% Le righe fuori misura: ogni sforamento oltre mezzo punto è segnalato nel log
+\hfuzz=0.5pt
+
+% Aggiunte e correzioni dichiarate da chi ha scritto gli appunti: testo più chiaro, con una sigla davanti
+\newcommand\texfix@mark[1]{{\fboxsep=1.5pt\fboxrule=0.4pt\fcolorbox{black!45}{white}{\tiny\bfseries\color{black!60}#1}}\hspace{0.45em}\ignorespaces}
+\@ifundefined{addedtext}{\newenvironment{addedtext}{\par\begingroup\color{black!62}\noindent\texfix@mark{+}}{\par\endgroup}}{}
+\@ifundefined{correction}{\newenvironment{correction}{\par\begingroup\color{black!62}\noindent\texfix@mark{CORREZIONE}}{\par\endgroup}}{}
 
 % Il segnaposto di una figura ancora da inserire: \imgslot[larghezza]{nome}{altezza su larghezza}{descrizione}
 \providecommand{\imgslot}[4][0.8\linewidth]{\fbox{\parbox[c][#3\dimexpr#1\relax][c]{\dimexpr#1-2\fboxsep-2\fboxrule\relax}{%

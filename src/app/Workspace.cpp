@@ -1437,3 +1437,15 @@ void Workspace::decideDoubts(const QString &lesson, const QStringList &ids)
         });
     });
 }
+
+QStringList Workspace::styleLibrary() const { return styleswitch::library(); }
+
+void Workspace::useLibraryStyle(const QString &name)
+{
+    if (!hasProject())
+        return;
+    const styleswitch::Imported in = styleswitch::importFromLibrary(m_project, name);
+    if (!in.error.isEmpty())
+        return say(in.error);
+    applyStyle(name);
+}

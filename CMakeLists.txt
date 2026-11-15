@@ -40,7 +40,7 @@ qt_add_library(texfix_core STATIC
     src/core/Profiles.cpp
 )
 # Le regole editoriali predefinite entrano nel motore come :/regole/…
-file(GLOB_RECURSE RULE_FILES CONFIGURE_DEPENDS RELATIVE ${CMAKE_SOURCE_DIR} regole/*.md stili/*.json)
+file(GLOB_RECURSE RULE_FILES CONFIGURE_DEPENDS RELATIVE ${CMAKE_SOURCE_DIR} regole/*.md stili/*.json stili/*.sty)
 qt_add_resources(texfix_core "regole" PREFIX "/" FILES ${RULE_FILES})
 target_include_directories(texfix_core PUBLIC src)
 target_link_libraries(texfix_core PUBLIC Qt6::Core Qt6::Gui)

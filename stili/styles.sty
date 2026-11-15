@@ -1,0 +1,490 @@
+% styles.sty v4 — stile per appunti matematici: box colorate numerate, tag di riferimento,
+% grafici. Un solo file. Uso: \usepackage[palette=classic]{styles}
+%
+% Opzioni:  palette   = classic | legacy | ink | pop | linea     (cambiabile anche con \StylesPalette{..})
+%           numbering = subsection | section                       (Definition 1.2.3 oppure 1.3)
+%           leading   = <numero>                                   (interlinea unica, dentro e fuori dalle box)
+%           mathbreak = true | false                               (le formule inline possono andare a capo dopo = < >)
+%           lang      = it | en                                    (nomi delle box: Definizione/Definition, ...)
+%           font      = raleway | plexserif                               (carattere del testo)
+% Le parole non vengono MAI spezzate, in nessuna configurazione.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{styles}[2026/11/15 v4.0 Stile per appunti matematici]
+
+\newcommand\styles@palette{classic}
+\newcommand\styles@within{subsection}
+\newcommand\styles@leading{1.25}
+\newif\ifstyles@mathbreak \styles@mathbreaktrue
+\newcommand\styles@lang{it}
+\newcommand\styles@font{raleway}
+\DeclareKeys[styles]{
+  palette.store   = \styles@palette,
+  numbering.store = \styles@within,
+  leading.store   = \styles@leading,
+  mathbreak.if    = styles@mathbreak,
+  lang.store      = \styles@lang,
+  font.store      = \styles@font,
+}
+\ProcessKeyOptions[styles]
+
+%------------------------------------------------------------------- pacchetti
+\RequirePackage[T1]{fontenc}
+%------------------------------------------------------------------- carattere
+% font=<nome>: il carattere del testo. raleway (predefinito, senza grazie) o plexserif (IBM Plex Serif, con le grazie).
+\newcommand\styles@deffont[2]{\@namedef{styles@font@#1}{#2}}
+% Raleway con le cifre tutte alla stessa altezza (lining). In quella variante il pacchetto non ha il corsivo: lo si
+% prende dalla variante normale, peso per peso (in corsivo le cifre restano quindi quelle a altezze diverse).
+\styles@deffont{raleway}{\RequirePackage[default, lining]{raleway}%
+  {\fontencoding{T1}\fontfamily{Raleway-LF}\selectfont}%        carica le definizioni della variante
+  \@for\styles@tmp:=m,regular,medium,sb,semibold,b,bold,bx,eb,extrabold,l,light,el,extralight,thin,ul,black,ub\do{%
+    \DeclareFontShape{T1}{Raleway-LF}{\styles@tmp}{it}{<->ssub*Raleway-OsF/\styles@tmp/it}{}%
+    \DeclareFontShape{T1}{Raleway-LF}{\styles@tmp}{sl}{<->ssub*Raleway-OsF/\styles@tmp/it}{}}}
+\styles@deffont{plexserif}{\RequirePackage{plex-serif}}
+\@ifundefined{styles@font@\styles@font}%
+  {\PackageWarningNoLine{styles}{font=\styles@font\space sconosciuto: uso raleway}\def\styles@font{raleway}}{}
+\RequirePackage{amsmath}
+\@nameuse{styles@font@\styles@font}
+\@ifpackageloaded{newtxmath}{}{\@ifpackageloaded{newpxmath}{}{\@ifpackageloaded{libertinust1math}{}{%
+  \@ifpackageloaded{stix2}{}{\@ifpackageloaded{kpfonts}{}{\RequirePackage{amssymb}}}}}}
+\RequirePackage{cancel, bm}
+\RequirePackage{caption, subcaption, contour, enumitem, fancyhdr, float, graphicx}
+\RequirePackage{stackengine, titlesec, varwidth, xcolor, etoolbox}
+\RequirePackage[fit]{truncate}
+\RequirePackage[nopatch=footnote, stretch=30, shrink=40]{microtype}   % espansione dei glifi: righe piu' piene
+\RequirePackage{tcolorbox}
+\tcbuselibrary{skins, breakable}
+\RequirePackage{tikz, pgfplots}
+\RequirePackage[a4paper, left=1em, right=1em, top=2cm, bottom=1.5cm]{geometry}
+\RequirePackage[colorlinks=true, linkcolor=blue]{hyperref}
+\RequirePackage{bookmark}
+\pdfstringdefDisableCommands{\let\HyPsd@Warning\@gobble}
+\RequirePackage{cleveref}
+
+%------------------------------------------------------------------- composizione del testo
+% Raleway non ha i simboli OMS (il cerchio di \textcircled, le graffe nel testo): si prendono da
+% Computer Modern, come gia' faceva LaTeX, ma dichiarandolo: niente piu' warning sui font.
+\edef\styles@textfam{\familydefault}
+\DeclareFontFamily{OMS}{\styles@textfam}{}
+\@for\styles@tmp:=regular,m,medium,light,l\do{\@for\styles@tmpb:=n,it,sl,sc\do{%
+  \DeclareFontShape{OMS}{\styles@textfam}{\styles@tmp}{\styles@tmpb}{<->ssub*cmsy/m/n}{}}}
+\@for\styles@tmp:=bold,b,bx,semibold,sb,extrabold,eb\do{\@for\styles@tmpb:=n,it,sl,sc\do{%
+  \DeclareFontShape{OMS}{\styles@textfam}{\styles@tmp}{\styles@tmpb}{<->ssub*cmsy/b/n}{}}}
+\stackMath
+\raggedbottom
+\hyphenpenalty=10000 \exhyphenpenalty=10000        % mai una parola spezzata, nemmeno sui trattini espliciti
+\emergencystretch=3em
+\ifstyles@mathbreak \binoppenalty=10000 \relpenalty=300 \else \binoppenalty=10000 \relpenalty=10000 \fi
+
+% Una sola interlinea e un solo ritmo verticale, dentro e fuori dalle box.
+\linespread{\styles@leading}
+% Compatibilita' con i sorgenti scritti per setspace (che non serve piu')
+\newenvironment{singlespace}{\par\linespread{1}\selectfont\lineskiplimit\z@}{\par}
+\newcommand\setstretch[1]{\linespread{#1}\selectfont}
+\setlength\parindent{0pt}
+\setlength\columnsep{2em}
+\setlength\columnseprule{0.2pt}
+
+%------------------------------------------------------------------- ritmo verticale: i parametri
+% Tutti i valori dello spazio verticale stanno qui, uno per riga. Sono \providecommand: chi li
+% definisce prima di caricare il pacchetto (il banco di prova spacelab) vince su questi.
+%
+% Spazio tra un paragrafo e il successivo.
+\providecommand\styles@parskip{4pt plus 2pt minus 1pt}
+% Spazio aggiunto SOPRA una formula in display (\[ \], align, gather, ...), oltre all'interlinea.
+\providecommand\styles@dispabove{4pt plus 2pt minus 1pt}
+% Spazio aggiunto SOTTO una formula in display, prima del testo che segue.
+\providecommand\styles@dispbelow{4pt plus 2pt minus 1pt}
+% Aria minima garantita tra una riga e la successiva (testo-formula, formula-testo, riga-riga).
+% Finche' il passo dell'interlinea ne lascia almeno tanta non cambia nulla; quando una formula
+% alta (frazione, integrale con estremi, parentesi grandi) la mangerebbe, la riga scende solo di
+% quanto serve a conservarla. Vale per il corpo 11pt e scala con i corpi piu' piccoli.
+% 0pt = comportamento di TeX (le formule alte arrivano a 2pt dal testo); oltre 5pt cominciano
+% a spostarsi anche le righe normali degli align.
+\providecommand\styles@lineair{5pt}
+% Passo in piu' tra le righe di un display a piu' righe (align, gather, aligned, split): e' il
+% \jot di amsmath. Due righe alte consecutive restano staccate di \styles@lineair + questo.
+\providecommand\styles@rowjot{5pt}
+% Aria minima tra le righe di un cases. Le righe normali tengono il loro passo (1.2 interlinee);
+% quelle alte (\dfrac, radici) vengono staccate di questo valore invece di toccarsi.
+\providecommand\styles@rowgap{7pt}
+% Aria minima tra le righe di una matrice (pmatrix, bmatrix, vmatrix, ...). Le righe normali
+% tengono il loro passo (un'interlinea); in una matrice affollata (frazioni, radici, esponenti)
+% le righe vengono staccate di questo valore invece di toccarsi. 0pt = come prima; oltre 4pt
+% cominciano a spostarsi anche le righe normali.
+\providecommand\styles@matgap{7pt}
+% Spazio sopra e sotto una box colorata (definizione, teorema, remark, ...).
+\providecommand\styles@boxskip{8pt plus 3pt minus 3pt}
+% Spazio sopra e sotto una eqbox (la formula incorniciata dentro un'altra box o nel testo).
+\providecommand\styles@eqboxskip{6pt plus 2pt minus 2pt}
+% Margine interno delle box, su tutti e quattro i lati.
+\providecommand\styles@pad{7pt}
+% Distanza in piu' tra la testata di una box (etichetta e titolo) e la prima riga del corpo.
+\providecommand\styles@headgap{5pt}
+
+%------------------------------------------------------------------- ritmo verticale: il meccanismo
+\setlength\parskip{\styles@parskip}
+\jot=\styles@rowjot\relax
+% \normallineskip(limit) sono i valori che LaTeX rimette in ogni parbox/box e che amsmath usa per
+% i suoi display: uguali tra loro, cosi' lo spazio cresce in modo continuo (nessuno scalino).
+\newdimen\styles@nbs
+\newcommand\styles@displayskips{%
+  \ifdim\styles@nbs=\z@ \styles@nbs=\baselineskip \fi
+  \normallineskiplimit=\dimexpr\styles@lineair*\numexpr\baselineskip\relax/\numexpr\styles@nbs\relax\relax
+  \normallineskip=\normallineskiplimit
+  \lineskip=\normallineskip \lineskiplimit=\normallineskiplimit
+  \abovedisplayskip=\styles@dispabove\relax \belowdisplayskip=\styles@dispbelow\relax
+  \abovedisplayshortskip=\abovedisplayskip \belowdisplayshortskip=\belowdisplayskip}
+% Nei display di amsmath ogni riga ha un sostegno alto un'interlinea: lo si accorcia dell'aria
+% minima (7/10 sopra, 3/10 sotto, come il sostegno stesso), cosi' le righe normali restano sul
+% loro passo e solo quelle davvero alte vengono staccate.
+\def\reset@strutbox@{\global\setbox\strutbox@\hbox{\vrule
+  \@height\dimexpr\ht\strutbox-.7\normallineskiplimit\relax
+  \@depth\dimexpr\dp\strutbox-.3\normallineskiplimit\relax \@width\z@}}
+\apptocmd\normalsize{\styles@displayskips}{}{}
+\apptocmd\small{\styles@displayskips}{}{}
+\apptocmd\footnotesize{\styles@displayskips}{}{}
+\AtBeginDocument{\normalsize}
+% Righe di cases e matrici: #1 = aria minima. Il passo resta quello del sostegno di riga; il
+% sostegno viene accorciato in altezza di #1, cosi' una riga alta spinge via quella sopra solo di
+% quanto serve e le righe normali non si muovono. Sopra la prima riga l'altezza tolta viene
+% restituita (il \kern e la \prevdepth finta): la matrice e la sua parentesi restano alte come
+% prima. Gli array annidati tornano al comportamento normale.
+\let\styles@ialign\ialign
+\def\styles@st{1}
+\newcommand\styles@airyrows[1]{\protected\def\ialign{\let\ialign\styles@ialign
+  \baselineskip=\dimexpr\ht\@arstrutbox+\dp\@arstrutbox\relax
+  \lineskip=#1\relax \lineskiplimit=\lineskip
+  \setbox\@arstrutbox\hbox{\vrule \@height\dimexpr\ht\@arstrutbox-\lineskip\relax
+    \@depth\dp\@arstrutbox \@width\z@}%
+  \gdef\styles@st{0}%
+  \everycr{\noalign{\ifnum\styles@st=\z@ \gdef\styles@st{1}%
+    \kern-\lineskip \hbox{}\prevdepth=\dimexpr\dp\@arstrutbox-\lineskip\relax \fi}}%
+  \tabskip\z@skip\halign}}
+\pretocmd\env@cases{\styles@airyrows{\styles@rowgap}}{}{\PackageWarning{styles}{cases non modificato}}
+\pretocmd\env@matrix{\styles@airyrows{\styles@matgap}}{}{\PackageWarning{styles}{matrici non modificate}}
+\setlength\intextsep{10pt} \setlength\floatsep{10pt} \setlength\textfloatsep{10pt}
+\setlength\abovecaptionskip{2pt} \setlength\belowcaptionskip{0pt}
+\setlist{topsep=4pt, itemsep=2pt, partopsep=0pt, parsep=2pt}
+\DeclareMathSizes{10}{12}{8}{6}
+\captionsetup{font=footnotesize, hypcap=false}
+
+%------------------------------------------------------------------- macro matematiche
+\newcommand\R{\mathbb{R}} \newcommand\N{\mathbb{N}} \newcommand\Q{\mathbb{Q}}
+\newcommand\norm[1]{\left\lVert #1 \right\rVert}
+\newcommand\rot{\operatorname{rot}} \newcommand\diver{\operatorname{div}} \newcommand\Erf{\operatorname{Erf}}
+% \vv{...}: grassetto dritto per le lettere latine, corsivo (\bm) per le macro (greche)
+\def\styles@firsttok#1#2\@nil{\noexpand#1}
+\providecommand\vv{}\renewcommand\vv[1]{\ifcat\styles@firsttok#1\@nil\relax\bm{#1}\else\mathbf{#1}\fi}
+\contourlength{1pt}
+\newcommand\colortxt[3][black]{\contour{#1}{\textcolor{#2}{#3}}}
+\newcommand\colormath[3][black]{\contour{#1}{\textcolor{#2}{\ensuremath{#3}}}}
+
+%------------------------------------------------------------------- pagina, titoli, indice
+\pagestyle{fancy}
+\setlength\headheight{14pt}
+\fancyhf{}
+% titoli troppo lunghi per la testata: abbreviati con i puntini, cosi' non finiscono sotto il numero di pagina
+\newcommand\styles@headmark[1]{\truncate{0.44\headwidth}{\nouppercase{#1}}}
+\fancyhead[L]{\styles@headmark{\leftmark}} \fancyhead[C]{\thepage} \fancyhead[R]{\styles@headmark{\rightmark}}
+\fancyfoot[C]{\footnotesize\textit{C'est la vie, ça va passer}}
+\renewcommand\headrulewidth{0.5pt} \renewcommand\footrulewidth{0.5pt}
+\renewcommand\sectionmark[1]{\markboth{\thesection\ #1}{}}
+\renewcommand\subsectionmark[1]{\markright{\thesubsection\ #1}}
+\titleformat{\section}{\normalfont\Large\bfseries\raggedright}{\thesection}{1em}{}      % i titoli non si giustificano
+\titleformat{\subsection}{\normalfont\large\bfseries\raggedright}{\thesubsection}{1em}{}
+\titlespacing*{\section}{0pt}{10pt plus 3pt minus 3pt}{4pt plus 2pt}
+\titlespacing*{\subsection}{0pt}{8pt plus 3pt minus 2pt}{3pt plus 2pt}
+% Il punto dei numeri composti (1.2.3): con Raleway è quello del peso grassetto, più visibile del suo punto
+% sottile. Vale per sezioni, box, equazioni, figure e per i rimandi che li citano; il testo non è toccato.
+\DeclareRobustCommand\styles@dot{\ifdefstring{\styles@font}{raleway}{{\fontseries{b}\selectfont.}}{.}}
+\pdfstringdefDisableCommands{\def\styles@dot{.}}
+\renewcommand\thesection{\arabic{section}}
+\renewcommand\thesubsection{\arabic{section}\styles@dot\arabic{subsection}}
+\renewcommand\thesubsubsection{\thesubsection\styles@dot\arabic{subsubsection}}
+\numberwithin{equation}{section} \numberwithin{figure}{section}
+\renewcommand\theequation{\thesection\styles@dot\arabic{equation}}
+\renewcommand\thefigure{\thesection\styles@dot\arabic{figure}}
+\setcounter{tocdepth}{2}
+\hypersetup{bookmarksdepth=4}
+\renewcommand\contentsname{Indice}
+\renewcommand\@pnumwidth{2.2em}
+% numeri lunghi nell'indice (13.10, 13.10.12): se non stanno nella loro casella la allargano, con lo stesso stacco
+\AtBeginDocument{\renewcommand\numberline[1]{\setbox\z@\hbox{#1\hskip0.6em}%
+  \ifdim\wd\z@>\@tempdima \box\z@ \else \hb@xt@\@tempdima{#1\hfil}\fi}}
+\renewcommand\@tocrmarg{3.4em plus1fil}
+\let\styles@toc\tableofcontents          % indice: link neri, graziato, interlinea singola
+\renewcommand\tableofcontents{\begingroup
+  \hypersetup{linkcolor=black}\renewcommand\familydefault{cmr}\renewcommand\rmdefault{cmr}%
+  \renewcommand\mddefault{m}\renewcommand\bfdefault{bx}\renewcommand\seriesdefault{m}\renewcommand\shapedefault{n}%
+  \linespread{1}\normalfont \lineskiplimit\z@ \styles@toc \endgroup}
+
+%------------------------------------------------------------------- palette
+% Ogni tipo di box ha UN colore base; fondo, cornice ed etichetta ne sono tre gradazioni.
+% \styles@shades{fondo%}{cornice%}{etichetta%}{colore del testo sulle etichette}
+\newcommand\styles@roots{axiom,def,lem,prop,thm,proof,rem,ex}
+\newcommand\styles@rule{2pt}
+\newcommand\styles@shades[4]{%
+  \@for\styles@r:=\styles@roots\do{%
+    \colorlet{\styles@r color}{\styles@r base!#1!white}%
+    \colorlet{\styles@r colordark}{\styles@r base!#2!white}%
+    \colorlet{\styles@r colordarkest}{\styles@r base!#3!white}%
+    \colorlet{\styles@r pillfill}{\styles@r colordarkest}%
+    \ifstrequal{#4}{base}{\colorlet{\styles@r labeltext}{\styles@r base!80!black}\colorlet{\styles@r pillfill}{white}}%
+      {\colorlet{\styles@r labeltext}{#4}}}}
+\newcommand\styles@bases[8]{%
+  \definecolor{axiombase}{RGB}{#1}\definecolor{defbase}{RGB}{#2}\definecolor{lembase}{RGB}{#3}%
+  \definecolor{propbase}{RGB}{#4}\definecolor{thmbase}{RGB}{#5}\definecolor{proofbase}{RGB}{#6}%
+  \definecolor{rembase}{RGB}{#7}\definecolor{exbase}{RGB}{#8}}
+% classic (predefinita): i colori storici spostati di poco verso ink. Dentro un po' più chiaro, bordo un po' più
+% scuro, etichette appena più sature con il testo nero in semi-grassetto.
+\@namedef{styles@palette@classic}{%
+  \definecolor{axiomcolor}{RGB}{245,239,254}\definecolor{axiomcolordark}{RGB}{198,178,234}\definecolor{axiomcolordarkest}{RGB}{190,169,231}%
+  \definecolor{defcolor}{RGB}{239,254,240}\definecolor{defcolordark}{RGB}{168,224,186}\definecolor{defcolordarkest}{RGB}{164,225,174}%
+  \definecolor{lemcolor}{RGB}{243,245,254}\definecolor{lemcolordark}{RGB}{183,194,227}\definecolor{lemcolordarkest}{RGB}{177,193,224}%
+  \definecolor{propcolor}{RGB}{239,254,254}\definecolor{propcolordark}{RGB}{166,218,227}\definecolor{propcolordarkest}{RGB}{164,220,224}%
+  \definecolor{thmcolor}{RGB}{255,246,228}\definecolor{thmcolordark}{RGB}{246,202,151}\definecolor{thmcolordarkest}{RGB}{242,192,145}%
+  \definecolor{proofcolor}{RGB}{255,239,240}\definecolor{proofcolordark}{RGB}{243,174,180}\definecolor{proofcolordarkest}{RGB}{240,167,171}%
+  \definecolor{remcolor}{RGB}{254,254,228}\definecolor{remcolordark}{RGB}{231,220,130}\definecolor{remcolordarkest}{RGB}{241,225,137}%
+  \definecolor{excolor}{RGB}{245,245,246}\definecolor{excolordark}{RGB}{188,190,193}\definecolor{excolordarkest}{RGB}{189,190,191}%
+  \def\styles@rule{2pt}\def\styles@labelfont{\fontseries{sb}\selectfont}\def\styles@tagfont{\fontseries{medium}\selectfont}\def\styles@tagmix{72}%
+  \@for\styles@r:=\styles@roots\do{\colorlet{\styles@r pillfill}{\styles@r colordarkest}\colorlet{\styles@r labeltext}{black}}}
+% legacy: i colori storici del pacchetto (la classic fino alla versione 2), valore per valore
+\@namedef{styles@palette@legacy}{%
+  \definecolor{axiomcolor}{RGB}{240,230,255}\definecolor{axiomcolordark}{RGB}{220,200,245}\definecolor{axiomcolordarkest}{RGB}{200,180,235}%
+  \definecolor{defcolor}{RGB}{230,255,230}\definecolor{defcolordark}{RGB}{200,245,200}\definecolor{defcolordarkest}{RGB}{180,235,180}%
+  \definecolor{lemcolor}{RGB}{235,240,255}\definecolor{lemcolordark}{RGB}{210,220,240}\definecolor{lemcolordarkest}{RGB}{190,205,230}%
+  \definecolor{propcolor}{RGB}{230,255,255}\definecolor{propcolordark}{RGB}{200,240,240}\definecolor{propcolordarkest}{RGB}{180,230,230}%
+  \definecolor{thmcolor}{RGB}{255,240,210}\definecolor{thmcolordark}{RGB}{255,220,180}\definecolor{thmcolordarkest}{RGB}{245,200,160}%
+  \definecolor{proofcolor}{RGB}{255,230,230}\definecolor{proofcolordark}{RGB}{255,200,200}\definecolor{proofcolordarkest}{RGB}{245,180,180}%
+  \definecolor{remcolor}{RGB}{255,255,210}\definecolor{remcolordark}{RGB}{250,240,150}\definecolor{remcolordarkest}{RGB}{250,235,150}%
+  \definecolor{excolor}{RGB}{240,240,240}\definecolor{excolordark}{RGB}{210,210,210}\definecolor{excolordarkest}{RGB}{200,200,200}%
+  \def\styles@rule{2pt}\def\styles@tagfont{\bfseries}\def\styles@tagmix{72}\def\styles@tagink{black!78}%
+  \@for\styles@r:=\styles@roots\do{\colorlet{\styles@r pillfill}{\styles@r colordarkest}\colorlet{\styles@r labeltext}{black}}}
+% pop: il massimo del colore. Cornici ed etichette piene e sature, fondo tinto, testo bianco sulle etichette
+\@namedef{styles@palette@pop}{\def\styles@rule{2.4pt}%
+  \styles@bases{138,43,255}{0,178,89}{30,100,255}{0,172,214}{255,98,0}{240,30,80}{228,160,0}{72,84,104}%
+  \styles@shades{16}{100}{100}{white}}
+% linea: il minimo del colore. Fondo bianco, cornice sottile, etichette solo contornate
+\@namedef{styles@palette@linea}{\def\styles@rule{0.9pt}%
+  \styles@bases{110,70,200}{20,140,90}{50,90,190}{0,130,160}{210,110,0}{200,40,70}{150,125,0}{70,80,95}%
+  \styles@shades{0}{85}{85}{base}}
+% ink: fondo quasi bianco, cornici ed etichette piene con testo bianco
+\@namedef{styles@palette@ink}{\def\styles@rule{2pt}%
+  \styles@bases{98,70,190}{22,140,110}{60,84,170}{14,130,170}{214,120,10}{200,50,80}{160,140,10}{84,96,110}%
+  \styles@shades{7}{70}{88}{white}}
+\newcommand\StylesPalette[1]{\@ifundefined{styles@palette@#1}%
+  {\PackageError{styles}{Palette `#1' sconosciuta}{Disponibili: classic, legacy, ink, pop, linea.}}%
+  {\def\styles@labelfont{\bfseries}\def\styles@tagfont{\bfseries}\def\styles@tagmix{100}\def\styles@tagink{}%
+   \@nameuse{styles@palette@#1}%
+   \@for\styles@r:=\styles@roots\do{\colorlet{\styles@r bar}{\styles@r colordarkest!72!black}%
+     \colorlet{\styles@r tagfill}{\styles@r pillfill!\styles@tagmix!white}%
+     \ifdefempty{\styles@tagink}{\colorlet{\styles@r tagtext}{\styles@r labeltext}}{\colorlet{\styles@r tagtext}{\styles@tagink}}}}}
+\StylesPalette{\styles@palette}
+
+%------------------------------------------------------------------- box
+
+\tcbset{
+  styles box/.style 2 args={enhanced jigsaw, breakable, parbox=false,
+    colback=#1color, colframe=#1colordark, boxrule=\styles@rule, arc=3pt, outer arc=5pt,
+    left=\styles@pad, right=\styles@pad, top=\styles@pad, bottom=\styles@pad, boxsep=0pt,
+    before skip=\styles@boxskip, after skip=\styles@boxskip,
+    after upper={\styles@trim},
+    code={\renewcommand\thempfootnote{\arabic{mpfootnote}}}},
+  styles pill/.style={enhanced jigsaw, tcbox width=auto, boxrule=1pt, arc=4pt, outer arc=5pt,
+    left=5pt, right=5pt, top=2.5pt, bottom=2.5pt, boxsep=0pt, on line, nobeforeafter},
+}
+% Fine box: lo spazio finale di un display, di un elenco o di una box annidata si toglie, cosi' il
+% margine inferiore e' identico a quello superiore.
+\newcommand\styles@trim{\par\unpenalty\unskip\unpenalty\unskip\unpenalty\unskip}
+\newsavebox\styles@namebox
+% Aria in piu' fra testata e corpo: abbastanza perche' anche una prima riga alta (esponenti, tag)
+% resti alla stessa distanza delle altre.
+
+% Ogni etichetta riserva la stessa altezza e profondita', qualunque lettera contenga (g, p, À...):
+% cosi' tutte le etichette sono alte uguali e la distanza dal corpo non dipende dal titolo.
+\newcommand\styles@pillstrut{\vphantom{Àgp}}
+\newcommand\styles@name[2]{\tcbox[styles pill, colback=#1pillfill, colframe=#1colordarkest]%
+  {\color{#1labeltext}\styles@labelfont\styles@pillstrut #2}}
+% Testata di una box: [Nome N] [titolo]. Il titolo va a capo da solo nello spazio che resta.
+% Il corpo parte sotto a distanza costante: quella fra due righe piu' \styles@headgap. \prevdepth finge
+% che la testata sia profonda quanto un'etichetta di una riga, anche se il titolo e' su piu' righe.
+% #1 = radice del colore, #2 = nome, #3 = titolo (anche vuoto)
+\newcommand\styles@head[3]{%
+  \par\noindent
+  \sbox\styles@namebox{\styles@name{#1}{#2}}%
+  \usebox\styles@namebox
+  \ifblank{#3}{}{\hspace{0.5em}%
+    \tcbox[styles pill, colback=white, colframe=#1colordarkest]{%
+      \begin{varwidth}[t]{\dimexpr\linewidth-\wd\styles@namebox-0.5em-12pt\relax}\centering\itshape\styles@pillstrut #3\styles@pillstrut\end{varwidth}}}%
+  \par\nobreak\prevdepth=\dimexpr\dp\styles@namebox-\styles@headgap\relax \vskip-\parskip \@afterheading}
+% Etichetta in linea con il testo (remark senza titolo, proof)
+\newcommand\styles@inline[2]{\par\noindent\styles@name{#1}{#2}\hspace{0.8em}\ignorespaces}
+
+% Contatori: uno per tipo, azzerato a ogni \subsection (o \section)
+\newcommand\styles@counter[1]{\newcounter{#1}[\styles@within]%
+  \expandafter\renewcommand\csname the#1\endcsname{\csname the\styles@within\endcsname\styles@dot\arabic{#1}}}
+\@for\styles@r:=axiom,definition,lemma,proposition,theorem,example,exercise\do{\expandafter\styles@counter\expandafter{\styles@r}}
+\newcommand\SubsectionCountersOn{}                 % compatibilita' con i main.tex esistenti
+\newcommand\SubsectionCountersOff{\@for\styles@r:=axiom,definition,lemma,proposition,theorem,example,exercise\do{%
+  \expandafter\counterwithout\expandafter{\styles@r}{subsection}\expandafter\counterwithin\expandafter{\styles@r}{section}%
+  \expandafter\edef\csname the\styles@r\endcsname{\noexpand\thesection\noexpand\styles@dot\noexpand\arabic{\styles@r}}}}
+
+% I nomi delle box, per lingua: \styles@N@<chiave> il nome intero, \styles@S@<chiave> la sigla di indice e tag
+\newcommand\styles@defname[5]{%
+  \ifdefstring{\styles@lang}{en}{\@namedef{styles@N@#1}{#2}\@namedef{styles@S@#1}{#3}}%
+    {\@namedef{styles@N@#1}{#4}\@namedef{styles@S@#1}{#5}}}
+\styles@defname{axiom}{Axiom}{Axiom}{Assioma}{Ass}
+\styles@defname{def}{Definition}{Def}{Definizione}{Def}
+\styles@defname{lem}{Lemma}{Lem}{Lemma}{Lem}
+\styles@defname{prop}{Proposition}{Prop}{Proposizione}{Prop}
+\styles@defname{thm}{Theorem}{Thm}{Teorema}{Teo}
+\styles@defname{cor}{Corollary}{Cor}{Corollario}{Cor}
+\styles@defname{ex}{Example}{Ex}{Esempio}{Es}
+\styles@defname{exr}{Exercise}{Exer}{Esercizio}{Eser}
+\styles@defname{rem}{Remark}{Rem}{Osservazione}{Oss}
+\styles@defname{proof}{Proof}{Proof}{Dimostrazione}{Dim}
+\ifdefstring{\styles@lang}{en}{}{%
+  \AtBeginDocument{\renewcommand\figurename{Figura}\renewcommand\contentsname{Indice}%
+    \crefname{figure}{figura}{figure}\Crefname{figure}{Figura}{Figure}%
+    \crefname{equation}{}{}\Crefname{equation}{}{}}}
+
+% \NewNoteBox{ambiente}{radice colore}{contatore}{Nome}{sigla per indice e tag}
+\newcommand\NewNoteBox[5]{%
+  \newtcolorbox{#1}[1][]{styles box={#2}{#4 \csname the#3\endcsname},
+    before upper={\refstepcounter{#3}%
+      \addcontentsline{toc}{subsubsection}{#5 \protect\numberline{\csname the#3\endcsname}##1}%
+      \styles@head{#2}{#4 \csname the#3\endcsname}{##1}}}}
+\NewNoteBox{axiombox}{axiom}{axiom}{\@nameuse{styles@N@axiom}}{\@nameuse{styles@S@axiom}}
+\NewNoteBox{definitionbox}{def}{definition}{\@nameuse{styles@N@def}}{\@nameuse{styles@S@def}}
+\NewNoteBox{lemmabox}{lem}{lemma}{\@nameuse{styles@N@lem}}{\@nameuse{styles@S@lem}}
+\NewNoteBox{propositionbox}{prop}{proposition}{\@nameuse{styles@N@prop}}{\@nameuse{styles@S@prop}}
+\NewNoteBox{theorembox}{thm}{theorem}{\@nameuse{styles@N@thm}}{\@nameuse{styles@S@thm}}
+\NewNoteBox{corollarybox}{thm}{theorem}{\@nameuse{styles@N@cor}}{\@nameuse{styles@S@cor}}
+% Esercizio svolto: una box intera, grigia come gli esempi (di cui prende il posto di prima).
+\NewNoteBox{exercisebox}{ex}{exercise}{\@nameuse{styles@N@exr}}{\@nameuse{styles@S@exr}}
+
+% Osservazioni ed esempi brevi: una barra scura a sinistra, fondo tenue, nessuna cornice. Cominciano con
+% un'etichetta minima (bianca, poco arrotondata, in corsivo) in linea con il testo; il titolo, se c'è, la segue.
+%   \begin{remarkbox} ... , \begin{remarkbox}[Titolo] ... , \begin{examplebox}[Titolo] ...
+\tcbset{styles bar/.style 2 args={styles box={#1}{#2}, sharp corners, boxrule=0pt, frame hidden,
+    borderline west={3pt}{0pt}{#1bar}, left=\dimexpr\styles@pad+3pt\relax}}
+% #2 = nome (in corsivo), #3 = numero (dritto: le cifre regolari esistono solo nel tondo; vuoto se non c'è), #4 = titolo
+\newcommand\styles@barlabel[4]{\par\noindent
+  \tcbox[styles pill, arc=1.5pt, outer arc=1.5pt, boxrule=0.5pt, left=4pt, right=4pt, top=2pt, bottom=2pt,
+    colback=white, colframe=#1bar]{\styles@pillstrut\textit{#2}\ifblank{#3}{}{\ #3}}%
+  \ifblank{#4}{}{\hspace{0.5em}{\styles@labelfont #4.}}\hspace{0.7em}\ignorespaces}
+\newtcolorbox{remarkbox}[1][]{styles bar={rem}{\styles@N@rem},
+  before upper={\styles@barlabel{rem}{\styles@N@rem}{}{#1}}}
+\newtcolorbox{examplebox}[1][]{styles bar={ex}{\styles@N@ex\ \theexample},
+  before upper={\refstepcounter{example}%
+    \addcontentsline{toc}{subsubsection}{\styles@S@ex\ \protect\numberline{\theexample}#1}%
+    \styles@barlabel{ex}{\styles@N@ex}{\theexample}{#1}}}
+
+% Achtung: un'avvertenza, con tre gradi di priorità. \begin{achtungbox} (= !), [!!], [!!!] (o [1], [2], [3]).
+% Spigoli vivi, etichetta con i punti esclamativi; dal giallo chiaro all'arancione al rosso acceso.
+\definecolor{achAcolor}{RGB}{255,251,222}  \definecolor{achAcolordark}{RGB}{250,226,120}  \definecolor{achAcolordarkest}{RGB}{244,208,63}
+\definecolor{achBcolor}{RGB}{255,239,217}  \definecolor{achBcolordark}{RGB}{247,160,64}   \definecolor{achBcolordarkest}{RGB}{240,128,20}
+\definecolor{achCcolor}{RGB}{255,226,222}  \definecolor{achCcolordark}{RGB}{232,54,44}    \definecolor{achCcolordarkest}{RGB}{214,24,24}
+\colorlet{achAlabeltext}{black} \colorlet{achBlabeltext}{white} \colorlet{achClabeltext}{white}
+\newcommand\styles@achlevel[1]{%
+  \def\styles@ach{A}\def\styles@achmark{!}%
+  \ifboolexpr{test{\ifstrequal{#1}{!!}} or test{\ifstrequal{#1}{2}}}{\def\styles@ach{B}\def\styles@achmark{!!}}{}%
+  \ifboolexpr{test{\ifstrequal{#1}{!!!}} or test{\ifstrequal{#1}{3}}}{\def\styles@ach{C}\def\styles@achmark{!!!}}{}}
+\newcommand\styles@achlabel{\par\noindent
+  \tcbox[styles pill, sharp corners, colback=ach\styles@ach colordarkest, colframe=ach\styles@ach colordarkest]%
+    {\color{ach\styles@ach labeltext}\bfseries\styles@pillstrut\,\styles@achmark\,}\hspace{0.8em}\ignorespaces}
+\newtcolorbox{achtungbox}[1][!]{code={\styles@achlevel{#1}}, styles box={ach\styles@ach}{Achtung}, sharp corners,
+  before upper={\styles@achlabel}}
+
+%------------------------------------------------------------------- tag di riferimento
+% \tagref{thm:gauss} -> tag colorato "THM 1.2.3", cliccabile. Il tipo viene dal prefisso dell'etichetta.
+\newcommand\styles@deftag[3]{\@namedef{styles@tag@#1}{{#2}{#3}}}     % prefisso -> {radice colore}{sigla}
+\styles@deftag{thm}{thm}{\styles@S@thm}   \styles@deftag{cor}{thm}{\styles@S@cor}   \styles@deftag{prop}{prop}{\styles@S@prop}
+\styles@deftag{lem}{lem}{\styles@S@lem}   \styles@deftag{def}{def}{\styles@S@def}   \styles@deftag{ax}{axiom}{\styles@S@axiom}
+\styles@deftag{ex}{ex}{\styles@S@ex}      \styles@deftag{exr}{ex}{\styles@S@exr}      \styles@deftag{rem}{rem}{\styles@S@rem}
+\def\styles@prefix#1:#2\@nil{#1}
+% Il fondo del tag è quello dell'etichetta, schiarito di quanto dice la palette (\styles@tagmix: 100 = uguale);
+% anche il peso (\styles@tagfont) e il colore del testo (\styles@tagink; vuoto = quello delle etichette) li decide la palette.
+\tikzset{styles tag/.style={draw=#1colordarkest, fill=#1tagfill, text=#1tagtext, rounded corners=3pt,
+  line width=0.6pt, inner xsep=4pt, inner ysep=2.5pt, font=\scriptsize\styles@tagfont\linespread{1}\selectfont\lineskiplimit\z@}}
+% #1 = radice colore, #2 = testo: il nodo del tag (dentro una tikzpicture)
+\newcommand\styles@tagtext[1]{%
+  \edef\styles@p{\expandafter\styles@prefix\detokenize{#1}:\@nil}%
+  \@ifundefined{styles@tag@\styles@p}{\def\styles@troot{ex}\def\styles@tname{}}%
+    {\edef\styles@troot{\expandafter\expandafter\expandafter\@firstoftwo\csname styles@tag@\styles@p\endcsname}%
+     \edef\styles@tname{\expandafter\expandafter\expandafter\@secondoftwo\csname styles@tag@\styles@p\endcsname}}}
+\NewDocumentCommand\tagref{m}{\styles@tagtext{#1}%
+  \hyperref[#1]{\tikz[baseline=(t.base)]\node(t)[styles tag=\styles@troot]{\MakeUppercase{\styles@tname}\ \ref*{#1}};}}
+
+% Equazioni e figure hanno lo stesso tipo di tag, in grigio (non appartengono a nessuna famiglia di box):
+%   - dove stanno: il numero dell'equazione a destra è un tag «1.2»; sotto la figura la didascalia apre con «FIG 1.2»;
+%   - dove sono citate: \eqref{eq:...} (o \tagref{eq:...}) dà «EQ 1.2», \tagref{fig:...} dà «FIG 1.2», cliccabili.
+\colorlet{eqtagcolordarkest}{black!40}  \colorlet{eqtagpillfill}{white}     \colorlet{eqtaglabeltext}{black!75}  \colorlet{eqtagtagfill}{white} \colorlet{eqtagtagtext}{black!75}
+\colorlet{figtagcolordarkest}{black!40} \colorlet{figtagpillfill}{black!9}  \colorlet{figtaglabeltext}{black!75} \colorlet{figtagtagfill}{black!9} \colorlet{figtagtagtext}{black!75}
+\styles@deftag{eq}{eqtag}{Eq}   \styles@deftag{fig}{figtag}{Fig}
+\newcommand\styles@pilltag[2]{\tikz[baseline=(t.base)]\node(t)[styles tag=#1]{#2};}
+\renewcommand\tagform@[1]{\maketag@@@{\styles@pilltag{eqtag}{\ignorespaces#1\unskip}}}
+\renewcommand\eqref[1]{\tagref{#1}}
+\DeclareCaptionLabelFormat{stylestag}{\styles@pilltag{figtag}{FIG\ #2}}
+\captionsetup[figure]{labelformat=stylestag, labelsep=space, justification=centering}
+
+% Proof: \begin{proofbox}[thm:gauss] -> tag nell'angolo in alto a destra, tagliato a meta' dalla linea della cornice.
+% Senza argomento: nessun tag.
+\newcommand\styles@prooftag[1]{\ifblank{#1}{}{\styles@tagtext{#1}%
+  \node[styles tag=\styles@troot, anchor=east] at ([xshift=-8pt, yshift=-0.5*\styles@rule]frame.north east)
+    {\hyperref[#1]{\color{\styles@troot tagtext}\MakeUppercase{\styles@tname}\ \ref*{#1}}};}}
+\newcommand\styles@qed{{\unskip\nobreak\hfil\penalty50\hskip1em\null\nobreak\hfil
+  \ensuremath{\Box}\parfillskip=0pt \finalhyphendemerits=0 \par}}
+\newtcolorbox{proofbox}[1][]{styles box={proof}{\styles@N@proof},
+  before upper={\styles@inline{proof}{\styles@N@proof}},
+  after upper={\styles@qed},
+  finish unbroken and first={\styles@prooftag{#1}}}
+
+% Box generiche: \begin{genericbox}[fondo]{cornice} ... , \begin{eqbox}[fondo]{cornice} per una formula in evidenza
+\newtcolorbox{genericbox}[2][white]{styles box={ex}{genericbox}, colback=#1, colframe=#2, boxrule=1pt,
+  arc=4pt, outer arc=5pt}
+% Nella eqbox la formula e' centrata con lo stesso margine sopra e sotto: i display diventano
+% math centrata senza gli spazi propri del display.
+\newcommand\styles@eqdisplays{%
+  \expandafter\def\csname[\endcsname{\par\begingroup\centering\math\displaystyle}%
+  \expandafter\def\csname]\endcsname{\endmath\par\endgroup}%
+  \expandafter\def\csname align*\endcsname{\par\begingroup\centering\math\displaystyle\aligned}%
+  \expandafter\def\csname endalign*\endcsname{\endaligned\endmath\par\endgroup}%
+  \expandafter\def\csname gather*\endcsname{\par\begingroup\centering\math\displaystyle\gathered}%
+  \expandafter\def\csname endgather*\endcsname{\endgathered\endmath\par\endgroup}}
+\newtcolorbox{eqbox}[2][white]{styles box={ex}{eqbox}, colback=#1, colframe=#2, boxrule=1pt, arc=4pt, outer arc=5pt,
+  before skip=\styles@eqboxskip, after skip=\styles@eqboxskip,
+  before upper={\setlength\parskip{0pt}\styles@eqdisplays}}
+
+%------------------------------------------------------------------- grafici
+\pgfplotsset{compat=newest}
+\usetikzlibrary{arrows.meta, calc, angles, quotes, intersections}
+\definecolor{graphblue}{RGB}{25,50,140}     \definecolor{graphcyan}{RGB}{60,170,220}
+\definecolor{graphmagenta}{RGB}{200,40,160} \definecolor{graphgreen}{RGB}{20,140,60}
+\tikzset{
+  graphaxis/.style={-{Stealth[length=2mm]}, line width=0.5pt, draw=black!75},
+  graphcurve/.style={line width=1pt, draw=graphblue},
+  graphdashed/.style={densely dashed, line width=0.5pt, draw=black!60},
+  graphlabel/.style={font=\footnotesize}}
+\pgfplotsset{
+  graph2d/.style={axis lines=middle, axis line style={graphaxis}, ticklabel style={font=\scriptsize},
+    label style={font=\footnotesize}, xlabel style={anchor=west}, ylabel style={anchor=south},
+    width=0.85\linewidth, height=0.55\linewidth, every axis plot/.append style={line width=1pt}},
+  graph3d/.style={graph2d, axis lines=center, view={115}{22}, width=0.9\linewidth, height=0.65\linewidth}}
+% Un grafico: \begin{tikzgraph} ... \end{tikzgraph}. Con una didascalia: sulla riga dopo \end{tikzgraph},
+%   \figcaption[fig:etichetta]{Didascalia.}
+% La figura viene numerata («Figura 3»), la didascalia resta attaccata al grafico (mai in un'altra colonna) e
+% l'etichetta serve a \ref. Vale anche dentro una box. Una \figcaption che non segue un tikzgraph (la figura è
+% stata tolta) non stampa niente.
+\newenvironment{tikzgraph}
+  {\par\medskip\noindent\begin{minipage}{\linewidth}\centering}
+  {\end{minipage}}
+% Dopo il gancio, \end esegue ancora «\if@ignore\@ignorefalse\ignorespaces\fi»: lo si lascia passare e solo
+% dopo si guarda che cosa segue l'ambiente.
+\def\styles@afterfig#1\fi{#1\fi\@ifnextchar\figcaption{\styles@figcap}{\par\medskip}}
+\AddToHook{env/tikzgraph/after}{\styles@afterfig}
+\NewDocumentCommand\styles@figcap{m o +m}{% #1 = \figcaption
+  \par\nobreak\vskip-\parskip\noindent
+  \begin{minipage}{\linewidth}\captionof{figure}{#3}\IfValueT{#2}{\label{#2}}\end{minipage}\par\medskip}
+\NewDocumentCommand\figcaption{o +m}{\ignorespaces}
+\endinput

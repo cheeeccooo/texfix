@@ -3,6 +3,7 @@
 #include "core/Files.h"
 #include "core/Settings.h"
 
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
@@ -80,7 +81,24 @@ Outcome apply(const Project &project, const QString &name, const QHash<QString, 
 
     static const QRegularExpression environment(R"(\\(begin|end)(\s*)\{([A-Za-z]+\*?)\})");
     for (const Lesson &lesson : project.lessons()) {
-        const QString text = files::read(project.path(lesson.file));
+        QString text = files::read(project.path(lesson.file));
+        const QString original = text;
+        // le figure passano nell'ambiente delle figure del nuovo stile: quelle con il loro segno «% img»
+        if (from.figureWrapper() != to.figureWrapper()) {
+            QStringList lines = text.split('\n');
+            const QString begin = "\\begin{" + from.figureWrapper() + "}", end = "\\end{" + from.figureWrapper() + "}";
+            bool inside = false;
+            for (QString &line : lines) {
+                if (!inside && line.contains(begin) && line.contains("% img")) {
+                    line.replace(begin, "\\begin{" + to.figureWrapper() + "}");
+                    inside = true;
+                } else if (inside && line.trimmed() == end) {
+                    line.replace(end, "\\end{" + to.figureWrapper() + "}");
+                    inside = false;
+                }
+            }
+            text = lines.join('\n');
+        }
         QString result;
         qsizetype last = 0;
         for (auto it = environment.globalMatch(text); it.hasNext();) {
@@ -98,7 +116,7 @@ Outcome apply(const Project &project, const QString &name, const QHash<QString, 
         if (from.references != to.references)           // i rimandi nella forma del nuovo stile
             result.replace(from.references == "tag" ? QLatin1String("\\tagref{") : QLatin1String("\\cref{"),
                            to.references == "tag" ? QLatin1String("\\tagref{") : QLatin1String("\\cref{"));
-        if (result != text && files::write(project.path(lesson.file), result))
+        if (result != original && files::write(project.path(lesson.file), result))
             ++out.lessons;
     }
 
@@ -123,6 +141,33 @@ Outcome apply(const Project &project, const QString &name, const QHash<QString, 
     if (!settings.save(project))
         return {QStringLiteral("Non riesco a salvare le impostazioni del progetto."), out.lessons, out.unmatched};
     project.complete();                                // texfix.sty carica il nuovo stile
+    return out;
+}
+
+}
+
+namespace tx::styleswitch {
+
+QStringList library()
+{
+    QStringList out;
+    for (const QString &file : QDir(":/stili").entryList({"*.sty"}, QDir::Files, QDir::Name))
+        out << QFileInfo(file).completeBaseName();
+    return out;
+}
+
+Imported importFromLibrary(const Project &project, const QString &name)
+{
+    Imported out;
+    QFile sty(QStringLiteral(":/stili/%1.sty").arg(name));
+    bool ok = false;
+    out.style = Style::load(":/stili/" + Style::descriptionFile(name), &ok);
+    if (!ok || !sty.open(QIODevice::ReadOnly))
+        return {QStringLiteral("Lo stile «%1» non è nella libreria.").arg(name), {}, false};
+    out.described = true;
+    out.style.name = name;
+    if (!files::writeBytes(project.path(name + ".sty"), sty.readAll()) || !out.style.save(project.path(Style::descriptionFile(name))))
+        out.error = QStringLiteral("Non riesco a portare lo stile nel progetto.");
     return out;
 }
 

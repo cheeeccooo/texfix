@@ -18,6 +18,9 @@ struct Imported {
 // Copia il .sty nella radice del progetto (così compila anche senza Texfix) e ne salva la descrizione accanto.
 // Non cambia ancora lo stile del progetto: lo fa `apply`.
 Imported import(const Project &project, const QString &styPath);
+// La libreria: gli stili che Texfix ha con sé (oggi `styles`), pronti e già descritti.
+QStringList library();
+Imported importFromLibrary(const Project &project, const QString &name);
 
 struct Outcome {
     QString error;

@@ -249,6 +249,8 @@ ApplicationWindow {
                 settingsSheet.open()
             else if (name === "stile")
                 window.importStyle(argument)
+            else if (name === "libreria")
+                Workspace.useLibraryStyle(argument)
             else if (name === "usa-stile")
                 Workspace.applyStyle(argument)
             else if (name === "preferenze") {

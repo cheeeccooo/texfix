@@ -244,6 +244,8 @@ public:
     // role, color) da confermare se non era già descritto (described). applyStyle passa a quello stile (vuoto:
     // nessuno) riscrivendo le lezioni secondo i ruoli: un passo solo della cronologia.
     Q_INVOKABLE QVariantMap importStyle(const QString &styPath);
+    Q_INVOKABLE QStringList styleLibrary() const;                          // gli stili che Texfix ha con sé
+    Q_INVOKABLE void useLibraryStyle(const QString &name);                 // lo porta nel progetto e lo applica
     Q_INVOKABLE QVariantList styleRoles() const;                           // value, label
     Q_INVOKABLE void setStyleRoles(const QString &name, const QVariantMap &roles);   // ambiente → ruolo
     Q_INVOKABLE void applyStyle(const QString &name);

@@ -899,6 +899,25 @@ private slots:
 
         QCOMPARE(styleswitch::apply(p, "styles").error, QString());
         QVERIFY(files::read(p.path("main.tex")).startsWith("\\documentclass[11pt,a4paper,twocolumn]{article}"));
+
+        // dalla libreria: lo styles vero, ripulito; con lui compila una lezione che usa ciò che ora è di Texfix
+        QCOMPARE(styleswitch::library(), QStringList{"styles"});
+        QCOMPARE(styleswitch::importFromLibrary(p, "styles").error, QString());
+        const QString sty = files::read(p.path("styles.sty"));
+        QVERIFY(sty.contains("v4.0") && !sty.contains("imgslot") && !sty.contains("addedtext") && !sty.contains("AllowBoxBreak"));
+        if (hasLatexmk()) {
+            QString main = files::read(p.path("main.tex"));
+            files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+            files::write(p.path("src/src1.tex"), "\\section{S}\n\\lezione{1}{01/10/2026}\n\\begin{definitionbox}[Norma]\n    Vale:\n    \\begin{eqbox}{defcolordarkest}\n        \\[ \\norm{\\vv{u}}_2 \\]\n    \\end{eqbox}\n\\end{definitionbox}\n"
+                                                 "\\begin{addedtext}\n    Una nota.\n\\end{addedtext}\n\\begin{correction}\n    Un errore.\n\\end{correction}\n"
+                                                 "\\begin{tikzgraph} % img src1-01\n    \\imgslot[0.6\\linewidth]{src1-01}{0.6}{un grafico}\n\\end{tikzgraph}\n\\begin{achtungbox}[!!]\n    Attenzione.\n\\end{achtungbox}\n");
+            Compiler compiler;
+            compiler.setProject(p);
+            const BuildResult r = build(compiler, {});
+            QVERIFY2(!r.hasErrors(), qPrintable(r.issues.isEmpty() ? r.failure : r.issues.first().text));
+            files::write(p.path("main.tex"), main.replace("\\input{src/src1.tex}\n", ""));
+            QFile::remove(p.path("src/src1.tex"));
+        }
         QCOMPARE(styleswitch::apply(p, {}).error, QString());
         QVERIFY(files::read(p.path("main.tex")).startsWith("\\documentclass[11pt,a4paper]{article}"));
     }
