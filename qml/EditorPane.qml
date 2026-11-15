@@ -13,6 +13,7 @@ Rectangle {
     readonly property int currentLine: current >= 0 && editors.itemAt(current) ? editors.itemAt(current).currentLine : 0
     signal jumpAsked(string file, int line)
     signal chatAsked()
+    signal manualAsked(string lesson, string block, int line, string what)
 
     // Che cosa si apre in una scheda: text, pdf, image; il resto (vuoto) lo apre un altro programma.
     function kindOf(file) {
@@ -224,6 +225,7 @@ Rectangle {
                         ignoreUnknownSignals: true
                         function onCloseAsked() { root.closeTab(page.index) }
                         function onChatAsked() { root.chatAsked() }
+                        function onManualAsked(lesson, block, line, what) { root.manualAsked(lesson, block, line, what) }
                         function onLineAsked(file, line) { root.openFile(file, line) }
                     }
                     Connections {

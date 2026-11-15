@@ -41,6 +41,30 @@ Item {
     }
     function save() { editor.saveAll() }
     // ▶ File: la lezione aperta da sola; un altro file, o nessuno, il documento.
+    // Risolvere a mano un problema di impaginazione: la lezione al blocco, accanto alla sua prova compilata (la prima si
+    // compila da sola; ⌘B le successive; ⌘-clic sulla pagina porta alla riga, ⌘J al punto del PDF). Progetto e chat si
+    // chiudono, e tornano alla fine se c'erano.
+    property var manual: null                          // lesson, block, what, leftOpen, chatOpen
+    function startManual(lesson, block, line, what) {
+        manual = { lesson: lesson, block: block, what: what, leftOpen: leftOpen, chatOpen: chatOpen }
+        leftOpen = false
+        chatOpen = false
+        split = 1
+        openFile(lesson, Math.max(1, line))
+        compileFile()
+    }
+    function endManual(solved) {
+        if (!manual)
+            return
+        const m = manual
+        manual = null
+        editor.saveAll()
+        if (solved)
+            Workspace.decideMove(m.lesson, m.block, "risolta")
+        leftOpen = m.leftOpen
+        chatOpen = m.chatOpen
+        openFile("rivedi:impaginazione")
+    }
     function compileFile() {
         if (Workspace.compiling)
             return Workspace.say("Sta già compilando.")
@@ -231,6 +255,14 @@ Item {
                 chat.showHistory()
             } else if (name === "chat") {
                 root.chatOpen = true
+            } else if (name === "a-mano") {
+                const moves = Workspace.layoutItems().filter(i => i.type === "move")
+                if (moves.length > 0) {
+                    Workspace.decideMove(moves[0].lesson, moves[0].block, "a_mano")
+                    root.startManual(moves[0].lesson, moves[0].block, moves[0].line, moves[0].what)
+                }
+            } else if (name === "risolta") {
+                root.endManual(true)
             } else if (name === "avvia-piano") {
                 if (Workspace.jobs.length > 0) {
                     root.chatOpen = true
@@ -294,6 +326,30 @@ Item {
                 TxButton { visible: !root.chatOpen; text: "Agente"; hint: "Apri la chat con l'agente"; onClicked: root.chatOpen = true }
             }
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.border }
+        }
+
+        // la striscia della modifica a mano: che cosa c'è da sistemare, e come si esce
+        Rectangle {
+            Layout.fillWidth: true
+            visible: root.manual !== null
+            implicitHeight: visible ? manualRow.implicitHeight + 2 * Theme.gap : 0
+            color: Theme.selected
+            RowLayout {
+                id: manualRow
+                anchors.fill: parent
+                anchors.margins: Theme.gap
+                spacing: Theme.gap
+                TxLabel {
+                    Layout.fillWidth: true
+                    text: root.manual ? "Impaginazione a mano · " + root.manual.what : ""
+                    wrapMode: Text.WordWrap
+                    elide: Text.ElideNone
+                    maximumLineCount: 3
+                }
+                TxButton { text: "Prova"; hint: "Compila la lezione e mostra com'è venuta (⌘B)"; enabled: !Workspace.compiling; onClicked: root.compileFile() }
+                TxButton { text: "Torna alla revisione"; onClicked: root.endManual(false) }
+                TxButton { text: "Risolta"; primary: true; onClicked: root.endManual(true) }
+            }
         }
 
         SplitView {
@@ -371,6 +427,7 @@ Item {
                         SplitView.minimumWidth: 0
                         onJumpAsked: (file, line) => root.jumpToPdf(file, line)
                         onChatAsked: root.chatOpen = true
+                        onManualAsked: (lesson, block, line, what) => root.startManual(lesson, block, line, what)
                     }
                     PdfPane {
                         id: pdf

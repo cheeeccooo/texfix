@@ -9,6 +9,7 @@ Rectangle {
     id: root
     property var items: []
     signal lineAsked(string file, int line)
+    signal manualAsked(string lesson, string block, int line, string what)   // risolvere a mano: la lezione al blocco, con le prove
     color: Theme.window
 
     function reload() { items = Workspace.layoutItems() }
@@ -91,7 +92,7 @@ Rectangle {
                         visible: box.open
                         text: "A mano"
                         hint: "Apre la lezione al blocco: la sistemi tu, compili e torni qui"
-                        onClicked: { Workspace.decideMove(box.row.lesson, box.row.block, "a_mano"); root.lineAsked(box.row.lesson, box.row.line) }
+                        onClicked: { Workspace.decideMove(box.row.lesson, box.row.block, "a_mano"); root.manualAsked(box.row.lesson, box.row.block, box.row.line, box.row.what) }
                     }
                     TxButton {
                         visible: box.open && box.row.state !== "agente"
