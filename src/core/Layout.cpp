@@ -381,6 +381,46 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
                 fresh << Move{file, problem->block, QStringLiteral("%1 è più lungo di %2: resta spezzato.").arg(name, style.twoColumns() ? QStringLiteral("una colonna") : QStringLiteral("una pagina")), hole, "lasciata", 0};
             continue;
         }
+        // prima lo spazio: se dall'altra parte finiscono solo poche righe, la pagina si allunga di quel poco e l'unità resta
+        // intera senza lasciare vuoti (su una colonna sola: su due l'altra colonna si allungherebbe con lei)
+        if (!style.twoColumns()) {
+            const QString start = files::read(path);
+            QStringList lines = start.split('\n');
+            const blocks::Block *block = nullptr;
+            const QList<blocks::Block> parsed = blocks::parse(start, unitsOf(style));
+            for (const blocks::Block &b : parsed)
+                if (b.id == problem->block)
+                    block = &b;
+            Where tail;
+            if (block) {
+                const Geometry g = geometryOf(project, style, file);
+                for (int line = block->endLine - 1; line >= block->line && !tail.ok; --line)
+                    tail = whereIs(project, g, file, line);
+            }
+            if (block && tail.ok && tail.bottom <= 0.07) {
+                const QString sign = QStringLiteral("\\enlargethispage{3\\baselineskip} % impaginazione");
+                lines.insert(groupStart(lines, *block), sign);
+                files::write(path, lines.join('\n'));
+                bool whole = false;
+                try {
+                    QString failure;
+                    for (const Placed &p : measure(project, style, file, control, &failure))
+                        if (p.block == problem->block)
+                            whole = !p.split();
+                } catch (...) {
+                    files::write(path, start);
+                    throw;
+                }
+                if (whole) {
+                    Move move{file, problem->block, QStringLiteral("%1 finiva con poche righe sulla pagina dopo: la pagina è stata allungata di quel poco, e ora sta intero.").arg(name), 0, "fatta", 0};
+                    move.sign = sign;
+                    fresh << move;
+                    ++result.done;
+                    continue;
+                }
+                files::write(path, start);
+            }
+        }
         // la mossa: a capo pagina prima del blocco; resta se, ricompilata, il blocco è intero
         const QString before = files::read(path);
         QStringList lines = before.split('\n');
@@ -624,7 +664,7 @@ QString decide(const Project &project, const QString &file, const QString &block
             return QStringLiteral("Il blocco non è più nella lezione.");
         // la riga di questa mossa, se c'è: un a capo sopra il blocco (prima dei titoli che lo aprono), o uno spezzamento dentro
         const QString written = move.value("segno").toString(QString::fromUtf8(SIGN));
-        const bool above = written.trimmed().startsWith("\\newpage");
+        const bool above = written.trimmed().startsWith("\\newpage") || written.trimmed().startsWith("\\enlargethispage");
         const bool wraps = written.contains("\\scalebox");          // la misura di una figura: una riga apre, una chiude
         int end = at + 1;                              // dove finisce il blocco: al marcatore dopo
         while (end < lines.size() && !marker.match(lines[end]).hasMatch())
@@ -638,7 +678,7 @@ QString decide(const Project &project, const QString &file, const QString &block
                 blocks::Block b;
                 b.marker = at + 1;
                 b.line = at + 2;
-                lines.insert(groupStart(lines, b), QString::fromUtf8(SIGN));
+                lines.insert(groupStart(lines, b), written);
             } else if (wraps) {
                 int after = -1, until = -1;            // dalla riga dopo cui apriva a quella dopo cui chiudeva
                 for (int k = at; k < end && after < 0; ++k)

@@ -746,6 +746,47 @@ private slots:
         QCOMPARE(files::read(p.path("src/src1.tex")), after);
     }
 
+    // Lo spazio: un teorema che finisce con una riga sola sulla pagina dopo resta intero allungando la pagina di poco.
+    void layoutEnlarge()
+    {
+        if (!hasLatexmk())
+            QSKIP("latexmk non c'è");
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        const Style style = Style::classic();
+        bool seen = false;
+        for (int pad = 0; pad <= 240 && !seen; pad += 6) {
+            QString tex = QStringLiteral("\\section{S}\n\\vspace*{%1pt}\n\n").arg(pad);
+            for (int i = 0; i < 30; ++i)
+                tex += QStringLiteral("Riga %1 di testo.\n\n").arg(i + 1);
+            tex += "\\begin{theorem}[Corto]\n";
+            for (int i = 0; i < 4; ++i)
+                tex += QStringLiteral("    Riga %1 del teorema.\n\n").arg(i + 1);
+            tex += "\\end{theorem}\nFine.\n";
+            files::write(p.path("src/src1.tex"), blocks::mark(tex, 1, {style.boxes(), {"center", "figure"}}));
+            const QString before = files::read(p.path("src/src1.tex"));
+            QFile::remove(p.path("salvataggi/impaginazione.json"));
+            layout::lesson(p, style, "src/src1.tex");
+            const QList<layout::Move> moves = layout::moves(p, "src/src1.tex");
+            if (moves.size() != 1 || !moves[0].sign.contains("enlargethispage"))
+                continue;
+            seen = true;
+            QCOMPARE(moves[0].state, "fatta");
+            QVERIFY(files::read(p.path("src/src1.tex")).contains("\\enlargethispage{3\\baselineskip} % impaginazione\n% @L1."));
+            for (const layout::Placed &placed : layout::measure(p, style, "src/src1.tex"))
+                QVERIFY(placed.kind != "theorem" || !placed.split());
+            QCOMPARE(layout::decide(p, "src/src1.tex", moves[0].block, "lasciata"), QString());
+            QCOMPARE(files::read(p.path("src/src1.tex")), before);
+            QCOMPARE(layout::decide(p, "src/src1.tex", moves[0].block, "accettata"), QString());
+            QVERIFY(files::read(p.path("src/src1.tex")).contains("\\enlargethispage"));
+        }
+        QVERIFY2(seen, "nessun caso con poche righe dall'altra parte");
+    }
+
     // L'impaginazione oltre i riquadri spezzati: una figura che non ci stava ed è passata oltre lascia un grande vuoto.
     // Non c'è una mossa sicura: si segnala, e si decide a mano o con l'agente.
     void layoutHole()
@@ -817,10 +858,10 @@ private slots:
         };
         // si cerca dove il teorema cade a cavallo con poco vuoto sopra, e dove con molto
         int near = 0, far = 0;
-        for (int filler = 20; filler <= 46 && !(near && far); filler += 2) {
+        for (int filler = 20; filler <= 46 && !(near && far); ++filler) {
             write(filler);
             const layout::Placed t = theorem();
-            if (t.split() && 1 - t.top <= layout::HOLE_OK && !near)
+            if (t.split() && 1 - t.top <= 0.08 && !near)             // poco vuoto sopra, e più di qualche riga dall'altra parte
                 near = filler;
         }
         QVERIFY2(near, "nessun caso a cavallo trovato");
