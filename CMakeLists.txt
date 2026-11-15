@@ -88,6 +88,7 @@ qt_add_qml_module(texfix
         qml/RenameSheet.qml
         qml/OutlineSheet.qml
         qml/ProfileSheet.qml
+        qml/MarkdownView.qml
     SOURCES
         src/app/Theme.h src/app/Theme.cpp
         src/app/Workspace.h src/app/Workspace.cpp

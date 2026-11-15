@@ -169,6 +169,10 @@ void Workspace::open(const QString &path)
     m_project.complete();                              // un progetto a cui manca qualcosa si completa da sé
     m_compiler.setProject(m_project);
     m_history = std::make_unique<History>(m_project.root());
+    // com'era alla chiusura: se da allora i file sono cambiati, il primo passo lo dice
+    const QString closed = files::read(m_project.path("build/stato-alla-chiusura")).trimmed();
+    if (!closed.isEmpty() && closed != m_history->digest())
+        m_history->renameFirst(QStringLiteral("Modifiche fuori da Texfix"));
     loadSettings();
 
     const QJsonObject saved = QJsonDocument::fromJson(files::read(m_project.path(STATES)).toUtf8()).object();
@@ -194,6 +198,8 @@ void Workspace::closeProject()
         QCoreApplication::sendPostedEvents(this);      // la fine del lavoro, prima di smontare il progetto
     }
     m_compiler.stop();
+    if (m_history)
+        files::write(m_project.path("build/stato-alla-chiusura"), m_history->digest());
     m_history.reset();                                 // la cronologia vale finché il progetto è aperto
     if (!m_watcher.files().isEmpty())
         m_watcher.removePaths(m_watcher.files());
@@ -290,9 +296,15 @@ void Workspace::refreshTree()
     QVariantList jobs;
     for (const plans::Info &info : plans::open(m_project))
         jobs << QVariantMap{{"id", info.id}, {"title", info.title}, {"state", info.state}};
+    QVariantList outcomes;                             // «AAAA-MM-GG HH.MM — titolo.md»: il titolo a sinistra, quando a destra
+    for (const QString &name : QDir(m_project.path("salvataggi/esiti")).entryList({"*.md"}, QDir::Files, QDir::Name | QDir::Reversed)) {
+        const QString stem = QFileInfo(name).completeBaseName();
+        outcomes << QVariantMap{{"file", "salvataggi/esiti/" + name}, {"name", stem.section(" — ", 1)}, {"detail", stem.section(" — ", 0, 0)}};
+    }
     const QVariantList queue = listing("fonti/coda"), documents = listing("docs"), images = listing("imgs");
-    if (gitChanged || jobs != m_jobs || lessons != m_lessons || others != m_documentFiles || queue != m_queue || documents != m_documents || images != m_images) {
+    if (gitChanged || outcomes != m_outcomes || jobs != m_jobs || lessons != m_lessons || others != m_documentFiles || queue != m_queue || documents != m_documents || images != m_images) {
         m_jobs = jobs;
+        m_outcomes = outcomes;
         m_lessons = lessons;
         m_documentFiles = others;
         m_queue = queue;

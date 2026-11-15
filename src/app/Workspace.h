@@ -35,6 +35,7 @@ class Workspace : public QObject {
     Q_PROPERTY(QVariantList queue READ queue NOTIFY treeChanged)
     Q_PROPERTY(QVariantList documents READ documents NOTIFY treeChanged)
     Q_PROPERTY(QVariantList images READ images NOTIFY treeChanged)
+    Q_PROPERTY(QVariantList outcomes READ outcomes NOTIFY treeChanged)    // gli esiti archiviati: file, name (il titolo), detail (quando)
     Q_PROPERTY(bool compiling READ compiling NOTIFY compilingChanged)
     Q_PROPERTY(double progress READ progress NOTIFY progressChanged)
     Q_PROPERTY(QString progressLabel READ progressLabel NOTIFY progressChanged)
@@ -73,6 +74,7 @@ public:
     QVariantList queue() const { return m_queue; }
     QVariantList documents() const { return m_documents; }
     QVariantList images() const { return m_images; }
+    QVariantList outcomes() const { return m_outcomes; }
     bool compiling() const { return m_compiler.isRunning(); }
     double progress() const { return m_progress; }
     QString progressLabel() const { return m_progressLabel; }
@@ -341,7 +343,7 @@ private:
     void computeTags();                          // procedure dell'agente che aspettano il loro turno
     QFileSystemWatcher m_watcher;
     QTimer m_refresh;                                  // più cambiamenti vicini, un aggiornamento solo
-    QVariantList m_jobs, m_lessons, m_documentFiles, m_queue, m_documents, m_images, m_issues;
+    QVariantList m_outcomes, m_jobs, m_lessons, m_documentFiles, m_queue, m_documents, m_images, m_issues;
     QHash<QString, QString> m_states;                  // lezione → stato dell'ultima compilazione
     QHash<QString, QString> m_details;
     double m_progress = 0;

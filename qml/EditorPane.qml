@@ -16,7 +16,7 @@ Rectangle {
 
     // Che cosa si apre in una scheda: text, pdf, image; il resto (vuoto) lo apre un altro programma.
     function kindOf(file) {
-        if (file.startsWith("rivedi:") || file.startsWith("piano:") || file.startsWith("diff:") || file.startsWith("commit:"))
+        if (file.startsWith("salvataggi/esiti/") || file.startsWith("rivedi:") || file.startsWith("piano:") || file.startsWith("diff:") || file.startsWith("commit:"))
             return "review"
         const name = file.substring(file.lastIndexOf("/") + 1).toLowerCase()
         const ext = name.includes(".") ? name.substring(name.lastIndexOf(".") + 1) : ""
@@ -185,7 +185,9 @@ Rectangle {
                     readonly property int currentLine: kind === "text" && item ? item.currentLine : 0
 
                     Component.onCompleted: {
-                        if (file.startsWith("diff:") || file.startsWith("commit:"))
+                        if (file.startsWith("salvataggi/esiti/"))
+                            setSource("MarkdownView.qml", { file: file })
+                        else if (file.startsWith("diff:") || file.startsWith("commit:"))
                             setSource("DiffView.qml", { what: file })
                         else if (file.startsWith("piano:"))
                             setSource("PlanView.qml", { planId: file.substring(6) })

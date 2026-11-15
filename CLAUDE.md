@@ -113,7 +113,7 @@ rileggere gli editor senza modifiche in sospeso; una rilettura svuota la pila de
 
 `--gesti`, separati da «;»: `apri FILE [RIGA]`, `compila`, `tutto`, `salta` (⌘J), `sorgente PAGINA X Y`, `divisore 0|1|2`,
 `avvisi`, `progetto chiuso`, `annulla`, `ripeti`, `passo TITOLO`, `scrivi FILE TESTO`, `fatta FILE`, `impostazioni`,
-`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `converti` (tutta la coda), `converti finestra`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `lezione N DATA FILE…` (crea una lezione), `nuova-lezione` (apre la finestra), `materiale FILE…` (fa il piano dello smistamento), `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`, `rinomina FILE NOME`, `console`, `argomenti` (propone la scaletta), `applica-argomenti`, `per-data`, `salva-profilo NOME`, `nuovo CARTELLA [PROFILO]`, `correggo LEZIONE DUBBIO`, `decidi LEZIONE [DUBBIO…]` (costa), `tag [no]` (mostra o nasconde i tag di provenienza), `libreria STILE`. Ogni gesto parte quando niente lavora; poi la foto.
+`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `converti` (tutta la coda), `converti finestra`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `lezione N DATA FILE…` (crea una lezione), `nuova-lezione` (apre la finestra), `materiale FILE…` (fa il piano dello smistamento), `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`, `rinomina FILE NOME`, `console`, `argomenti` (propone la scaletta), `applica-argomenti`, `per-data`, `salva-profilo NOME`, `nuovo CARTELLA [PROFILO]`, `correggo LEZIONE DUBBIO`, `decidi LEZIONE [DUBBIO…]` (costa), `tag [no]` (mostra o nasconde i tag di provenienza), `libreria STILE`, `avvia-piano`, `archivia`. Ogni gesto parte quando niente lavora; poi la foto.
 
 ## Regole e stile (SPEC §4)
 
@@ -128,7 +128,7 @@ rileggere gli editor senza modifiche in sospeso; una rilettura svuota la pila de
 ## Stato
 
 Fatto: §3.1; §3.2 tranne «Risolvi tutto» e il menu contestuale dei file; di §3.3 le lezioni con il pallino e i gruppi;
-§3.14 (manca «Modifiche fuori da Texfix»); §3.15 (impostazioni, regole del progetto, «Fatta»); di §4 le regole
+§3.14 (il primo passo è «Modifiche fuori da Texfix» se i file sono cambiati dalla chiusura: `build/stato-alla-chiusura`); §3.15 (impostazioni, regole del progetto, «Fatta»); di §4 le regole
 editoriali nelle Preferenze, lo stile facoltativo con importazione, domande sui ruoli e cambio di stile per ruoli.
 
 La libreria degli stili che Texfix conosce già sta in `stili/` (dentro il programma, `:/stili/`): oggi `styles`,
@@ -171,8 +171,9 @@ Chiedi conferma (`manual`), Autonomo (`bypassPermissions`); nei primi due ciò c
 come scheda «Consenti · Nega» (`--permission-prompt-tool mcp__texfix__conferma`, `Chat::answer`).
 Di §3.12 c'è: il piano come documento fra le schede (`qml/PlanView.qml`), «Avvia» o «Rivedi piano», «Butta il piano»
 con conferma, l'esito, «Chiudi e archivia», il gruppo «Lavori» nell'albero.
-Manca: allegati e screenshot, ⌘L, lo storico con elimina, le procedure dei tasti (fusione delle fonti, integrazione,
-«Decidi tu», Riorganizza) con la loro chat, il gruppo «Esiti».
+Il gruppo «Esiti» nell'albero apre gli esiti archiviati impaginati (`qml/MarkdownView.qml`). «Avvia» è spento finché una
+domanda del piano non ha risposta. Manca: allegati e screenshot, ⌘L, lo storico con elimina, una chat con il suo nome
+per ogni procedura.
 
 Di §3.4 c'è: «＋ Nuova lezione» (`qml/NewLessonSheet.qml`): numero e data proposti, «Prendi dal file», l'avviso se le
 fonti dicono altro (un secondo clic tiene i valori), una fonte → Converti con numero e data scelti (e un dubbio sulla

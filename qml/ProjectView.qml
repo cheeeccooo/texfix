@@ -187,6 +187,14 @@ Item {
                 Workspace.decideDoubts(argument.split(" ")[0], argument.split(" ").slice(1))
             } else if (name === "tag") {
                 Workspace.showTags = argument !== "no"
+            } else if (name === "avvia-piano") {
+                if (Workspace.jobs.length > 0) {
+                    root.chatOpen = true
+                    Chat.send(Workspace.planMessage(Workspace.jobs[0].id, "avvia"))
+                }
+            } else if (name === "archivia") {
+                if (Workspace.jobs.length > 0)
+                    Workspace.archivePlan(Workspace.jobs[0].id)
             } else if (name === "avvisi") {
                 root.bottomOpen = true
             } else if (name === "progetto") {

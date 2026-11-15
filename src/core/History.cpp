@@ -222,3 +222,24 @@ QString History::redoTitle()
 }
 
 }
+
+namespace tx {
+
+QString History::digest()
+{
+    const State state = scan();
+    QStringList keys = state.keys();
+    keys.sort();
+    QCryptographicHash hash(QCryptographicHash::Sha1);
+    for (const QString &key : std::as_const(keys))
+        hash.addData((key + '=' + state.value(key) + '\n').toUtf8());
+    return QString::fromLatin1(hash.result().toHex());
+}
+
+void History::renameFirst(const QString &title)
+{
+    if (!m_steps.isEmpty())
+        m_steps.first().title = title;
+}
+
+}

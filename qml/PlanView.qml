@@ -174,7 +174,10 @@ Rectangle {
                     visible: root.editable
                     text: root.instructions ? "Rivedi piano" : "Avvia"
                     primary: true
-                    enabled: !Workspace.busy
+                    // un piano con una domanda senza risposta non parte: l'agente si fermerebbe a chiederla
+                    readonly property bool answered: (root.plan.domande || []).every(q => (q.risposta || "") !== "")
+                    enabled: !Workspace.busy && (root.instructions || answered)
+                    hint: enabled || Workspace.busy ? "" : "Rispondi prima alle domande del piano"
                     onClicked: {
                         if (root.plan.tipo === "materiale") {     // un piano di Texfix, non dell'agente
                             if (root.instructions)

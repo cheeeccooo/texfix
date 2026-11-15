@@ -39,6 +39,8 @@ public:
     Outcome goTo(int index);
 
     QList<Step> steps() const;
+    QString digest();                                  // un'impronta dello stato dei file seguiti adesso
+    void renameFirst(const QString &title);            // il primo passo: «Com'era all'apertura» o «Modifiche fuori da Texfix»
     int cursor() const { return m_cursor; }
     // I titoli per il menu: vuoto se non c'è niente da annullare o da ripetere.
     QString undoTitle();

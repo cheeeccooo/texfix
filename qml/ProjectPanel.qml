@@ -188,6 +188,17 @@ Rectangle {
             FileGroup { title: "Da convertire"; files: Workspace.queue; visible: files.length > 0 }
             FileGroup { title: "Documento"; files: Workspace.documentFiles }
             FileGroup { title: "Da consultare"; files: Workspace.documents; visible: files.length > 0 }
+            // gli esiti dei piani eseguiti: il titolo a sinistra, quando a destra; si aprono impaginati
+            GroupTitle { text: "Esiti"; visible: Workspace.outcomes.length > 0 }
+            Repeater {
+                model: Workspace.outcomes
+                TreeRow {
+                    required property var modelData
+                    file: modelData.file
+                    name: modelData.name
+                    detail: modelData.detail
+                }
+            }
             FileGroup { title: "Immagini"; files: Workspace.images; open: false; visible: files.length > 0 }
         }
     }
