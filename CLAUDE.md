@@ -159,7 +159,7 @@ cambiato. A mano: «Carica una versione nuova…» nel menu di una fonte usata.
 dei `.tex` (`figures::authored`): con «Tieni» il codice dell'autore resta, asciugato (via commenti e righe vuote) solo se la resa è identica, e
 un disegno più largo della colonna si restringe; con «Ridisegna» il disegnatore lo rifà guardando la resa del codice. Le lezioni di un `.tex` che il corso ha
 già: una riga le conta e «Fai il piano» le affida all'agente. Se c'è un piano di materiale da approvare, Converti apre
-quello. Non provato con il modello: «Ridisegna» per i `.tex`.
+quello. «Ridisegna» per i `.tex` è provato con il modello.
 
 **§3.7 Rivedi dubbi e correzioni.** Scegli, «Correggo io», «Decidi tu», «Fai decidere al modello tutti i dubbi» (anche
 dal menu della lezione), «Ricorda come regola del progetto», riepilogo, «Riapri», «Annulla la modifica», «Riapri
@@ -173,10 +173,10 @@ costa circa 2 ms nel motore).
 (l'agente rilegge le fonti e propone un piano).
 
 **§3.9 Impaginazione.** Un'unità spezzata fra due pagine (a pagina nuova, o spezzata fra due paragrafi); un titolo
-rimasto in fondo senza il suo testo (a pagina nuova con lui); un grande vuoto prima di un'unità che non ci stava (si
-segnala: non c'è una mossa sicura); una formula rimasta in fondo senza la frase che la commenta e un elenco che lascia
+rimasto in fondo senza il suo testo (a pagina nuova con lui); un grande vuoto prima di un'unità che non ci stava (una figura si
+rimpicciolisce quanto basta, `\scalebox{…}{% impaginazione` … `}% impaginazione` attorno al disegno; il resto si segnala); una formula rimasta in fondo senza la frase che la commenta e un elenco che lascia
 una voce sola dall'altra parte (si segnalano). Ogni mossa si accetta, si lascia com'era, si sistema a mano (apre la lezione al
-blocco; poi «Risolta») o si manda all'agente. Righe sole in cima o in fondo le evita `texfix.sty`. Manca: le mosse su spazio e misura delle figure, le prove affiancate
+blocco; poi «Risolta») o si manda all'agente. Righe sole in cima o in fondo le evita `texfix.sty`. Manca: la mossa sullo spazio verticale, le prove affiancate
 per la modifica a mano (oggi si usano editor e PDF di sempre).
 
 **§3.10 Errori e righe.** Gli errori al modello. Le righe: prima una formula in display troppo larga spezzata a ogni
@@ -209,8 +209,9 @@ A confronto con la vecchia app sulle stesse pagine (`../prova-texfix`, src4.pdf 
 riquadri, stesso numero di definizioni e di figure; la nuova dà titoli alle sezioni, mette in un riquadro
 un'osservazione che la vecchia lasciava in prosa, e non va a capo nel sorgente. Simili, non uguali.
 
-**§5 Prove.** `./build.sh prove` (43 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
-spesso, contro `tests/misure.txt`; `--scrivi` li riscrive). I riferimenti (golden) della vecchia app non sono portati.
+**§5 Prove.** `./build.sh prove` (45 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
+spesso, contro `tests/misure.txt`; `--scrivi` li riscrive). Dei riferimenti della vecchia app sono portate le formule in display vere (`tests/dati/display.json`), per la mossa
+sulle formule; il resto dipende da prompt e stile, che qui sono cambiati per scelta.
 
 Attenzione in QML: una proprietà non può chiamarsi `on…` con la maiuscola dopo (`onStyles`): viene presa per un
 gestore di segnale e vale sempre falso.
