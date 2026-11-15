@@ -63,6 +63,7 @@ Style Style::load(const QString &path, bool *ok)
     s.figureEnvironment = root.value("ambiente_figura").toString();
     s.captionCommand = root.value("didascalia").toString();
     s.conventions = root.value("convenzioni").toString();
+    s.classOptions = root.value("opzioni_classe").toString();
     return s;
 }
 
@@ -80,7 +81,8 @@ bool Style::save(const QString &path) const
                            {"rimandi", references},
                            {"ambiente_figura", figureEnvironment},
                            {"didascalia", captionCommand},
-                           {"convenzioni", conventions}};
+                           {"convenzioni", conventions},
+                           {"opzioni_classe", classOptions}};
     return files::write(path, QString::fromUtf8(QJsonDocument(root).toJson()));
 }
 

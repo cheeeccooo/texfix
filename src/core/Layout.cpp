@@ -77,7 +77,10 @@ QList<Placed> measure(const Project &project, const Style &style, const QString 
     if (!built.failure.isEmpty() || built.hasErrors())
         return out;
     static const QRegularExpression size(R"(Page size:\s+([\d.]+) x ([\d.]+))");
-    const double pageHeight = qMax(1.0, size.match(tools::run("pdfinfo", {built.pdf}, project.root()).text).captured(2).toDouble());
+    const auto sizeMatch = size.match(tools::run("pdfinfo", {built.pdf}, project.root()).text);
+    const double pageHeight = qMax(1.0, sizeMatch.captured(2).toDouble()), pageWidth = qMax(1.0, sizeMatch.captured(1).toDouble());
+    // su due colonne ciò che conta è la colonna: la prima e la seconda di ogni pagina, in fila
+    auto slot = [&](const synctex::Spot &s) { return style.twoColumns() ? s.page * 2 + (s.x > pageWidth / 2 ? 1 : 0) : s.page; };
     const QStringList lines = files::read(project.path(lesson)).split('\n');
 
     // dove cade una riga del sorgente; se quella non lascia segno nel PDF, una vicina
@@ -105,7 +108,7 @@ QList<Placed> measure(const Project &project, const Style &style, const QString 
             continue;
         textTop = qMin(textTop, first.y);
         textBottom = qMax(textBottom, last.y + last.height);
-        raw << Raw{Placed{block.id, block.kind, block.title, block.line, first.page, last.page, 0}, first.y};
+        raw << Raw{Placed{block.id, block.kind, block.title, block.line, slot(first), slot(last), 0}, first.y};
     }
     // dove sta il testo nella pagina lo dice il documento stesso, nel log (texfix.sty); senza, ciò che si è visto
     static const QRegularExpression geometry(R"(TEXFIX pagina: alto (-?[\d.]+)pt, testo ([\d.]+)pt)");
@@ -182,9 +185,12 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
         tried << problem->block;
         const double hole = 1.0 - problem->top;
         const QString name = nameOf(*problem, style);
+        const QString two = style.twoColumns() ? QStringLiteral("due colonne") : QStringLiteral("due pagine");
+        const QString fresh1 = style.twoColumns() ? QStringLiteral("a colonna nuova") : QStringLiteral("a pagina nuova");
+        const QString whole1 = style.twoColumns() ? QStringLiteral("della colonna") : QStringLiteral("della pagina");
         const int percent = qRound(hole * 100);
         if (problem->lastPage - problem->firstPage > 1 || problem->top < 0.02) {       // più alto di una pagina: si spezza comunque
-            fresh << Move{file, problem->block, QStringLiteral("%1 è più lungo di una pagina: resta spezzato.").arg(name), hole, "lasciata", 0};
+            fresh << Move{file, problem->block, QStringLiteral("%1 è più lungo di %2: resta spezzato.").arg(name, style.twoColumns() ? QStringLiteral("una colonna") : QStringLiteral("una pagina")), hole, "lasciata", 0};
             continue;
         }
         // la mossa: a capo pagina prima del blocco; resta se, ricompilata, il blocco è intero
@@ -208,13 +214,13 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
             throw;
         }
         if (whole && hole <= HOLE_OK) {
-            fresh << Move{file, problem->block, QStringLiteral("%1 cadeva a cavallo di due pagine: ora comincia a pagina nuova (vuoto lasciato: %2%).").arg(name).arg(percent), hole, "fatta", 0};
+            fresh << Move{file, problem->block, QStringLiteral("%1 cadeva a cavallo di %3: ora comincia %4 (vuoto lasciato: %2%).").arg(name).arg(percent).arg(two, fresh1), hole, "fatta", 0};
             ++result.done;
         } else {
             files::write(path, before);
             fresh << Move{file, problem->block,
-                          whole ? QStringLiteral("%1 cade a cavallo di due pagine. Portarlo a pagina nuova lascerebbe vuoto il %2% della pagina.").arg(name).arg(percent)
-                                : QStringLiteral("%1 cade a cavallo di due pagine e un a capo pagina non basta: va sistemato a mano.").arg(name),
+                          whole ? QStringLiteral("%1 cade a cavallo di %3. Portarlo %4 lascerebbe vuoto il %2% %5.").arg(name).arg(percent).arg(two, fresh1, whole1)
+                                : QStringLiteral("%1 cade a cavallo di %2 e un a capo non basta: va sistemato a mano.").arg(name, two),
                           hole, whole ? "proposta" : "lasciata", 0};
             result.proposed += whole;
         }

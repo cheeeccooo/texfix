@@ -40,6 +40,8 @@ Imported import(const Project &project, const QString &styPath)
     const QString described = source.absolutePath() + '/' + Style::descriptionFile(name);
     bool ok = false;
     out.style = Style::load(described, &ok);
+    if (!ok)                                           // gli stili che Texfix conosce già (la sua libreria)
+        out.style = Style::load(":/stili/" + Style::descriptionFile(name), &ok);
     out.described = ok;
     if (!ok)
         out.style = Style::scan(name, files::read(styPath));
@@ -100,6 +102,22 @@ Outcome apply(const Project &project, const QString &name, const QHash<QString, 
             ++out.lessons;
     }
 
+    // le opzioni della classe che lo stile vuole (due colonne…): via quelle dello stile di prima, dentro quelle del nuovo
+    {
+        QString main = files::read(project.path(Project::MAIN));
+        static const QRegularExpression documentClass(R"(\\documentclass(?:\[([^\]]*)\])?\{)");
+        if (const auto m = documentClass.match(main); m.hasMatch() && from.classOptions != to.classOptions) {
+            QStringList options;
+            for (const QString &o : m.captured(1).split(',', Qt::SkipEmptyParts))
+                if (!from.classOptions.split(',').contains(o.trimmed()))
+                    options << o.trimmed();
+            for (const QString &o : to.classOptions.split(',', Qt::SkipEmptyParts))
+                if (!options.contains(o.trimmed()))
+                    options << o.trimmed();
+            main.replace(m.capturedStart(), m.capturedLength(), options.isEmpty() ? QStringLiteral("\\documentclass{") : QStringLiteral("\\documentclass[%1]{").arg(options.join(',')));
+            files::write(project.path(Project::MAIN), main);
+        }
+    }
     Settings settings = Settings::load(project);
     settings.style = name;
     if (!settings.save(project))

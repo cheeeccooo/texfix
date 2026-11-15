@@ -126,9 +126,14 @@ Fatto: §3.1; §3.2 tranne «Risolvi tutto» e il menu contestuale dei file; di 
 §3.14 (manca «Modifiche fuori da Texfix»); §3.15 (impostazioni, regole del progetto, «Fatta»); di §4 le regole
 editoriali nelle Preferenze, lo stile facoltativo con importazione, domande sui ruoli e cambio di stile per ruoli.
 
+La libreria degli stili che Texfix conosce già sta in `stili/` (dentro il programma, `:/stili/`): oggi `styles`,
+descritto in `stili/styles.stile.json` (ruoli, colori, macro, rimandi come tag, `tikzgraph`, il fulcro, le due
+colonne). Importare uno `styles.sty` non fa domande. Uno stile può volere opzioni della classe (`opzioni_classe`:
+`twocolumn`): al cambio di stile `main.tex` le prende o le perde; su due colonne l'impaginazione misura per colonna.
+
 Di §4 manca: i ruoli proposti dal modello (oggi dal nome), le domande per gli ambienti senza corrispondente al cambio
 di stile (oggi restano com'erano e lo si dice), le macro al cambio di stile, la libreria di stili, i profili di
-partenza, `styles` ripulito e descritto (nel suo repository), l'agente che modifica lo stile.
+partenza, `styles` ripulito (nel suo repository: serve il sì dell'utente), il progetto di prova definitivo, l'agente che modifica lo stile.
 
 Di §3.6 c'è: Converti per scansioni, PDF, immagini e documenti di testo, con stima, esito corto, «Ferma» e «Riprendi»
 (il lavoro gira in un thread del programma: `Workspace::convert`). Le figure si ridisegnano o si ritagliano dentro Converti, insieme (§3.8); «Rivedi figure» (`qml/FiguresView.qml`,

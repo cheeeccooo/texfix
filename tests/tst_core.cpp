@@ -876,6 +876,32 @@ private slots:
         QVERIFY(Convert::queue(p).isEmpty());
     }
 
+    // La libreria: `styles` è già descritto, quindi si importa senza domande; le due colonne seguono lo stile.
+    void bundledStyle()
+    {
+        QTemporaryDir dir, outside;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        files::write(outside.filePath("styles.sty"), "\\ProvidesPackage{styles}\n");
+        const styleswitch::Imported in = styleswitch::import(p, outside.filePath("styles.sty"));
+        QCOMPARE(in.error, QString());
+        QVERIFY(in.described);
+        QCOMPARE(in.style.environmentFor("attenzione"), "achtungbox");
+        QCOMPARE(in.style.environment("theorembox")->color, "#f2c091");
+        QCOMPARE(in.style.references, "tag");
+        QCOMPARE(in.style.figureWrapper(), "tikzgraph");
+        QVERIFY(in.style.twoColumns());
+        QVERIFY(in.style.undecided().isEmpty());
+        QVERIFY(!in.style.boxes().contains("eqbox"));                                   // il fulcro non è un'unità a sé
+        QVERIFY(in.style.forPrompt().contains("**Il fulcro.**"));
+
+        QCOMPARE(styleswitch::apply(p, "styles").error, QString());
+        QVERIFY(files::read(p.path("main.tex")).startsWith("\\documentclass[11pt,a4paper,twocolumn]{article}"));
+        QCOMPARE(styleswitch::apply(p, {}).error, QString());
+        QVERIFY(files::read(p.path("main.tex")).startsWith("\\documentclass[11pt,a4paper]{article}"));
+    }
+
     // La cronologia: lavori e modifiche a mano si annullano e si ripetono; un passo nuovo toglie il «ripeti».
     void history()
     {

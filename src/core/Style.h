@@ -31,6 +31,8 @@ struct Style {
     QString figureEnvironment;             // l'ambiente in cui sta una figura; vuoto: figure con \centering
     QString captionCommand;                // il comando della didascalia; vuoto: \caption
     QString conventions;                   // ciò che lo stile chiede oltre il catalogo, in markdown
+    QString classOptions;                  // le opzioni di \documentclass che lo stile vuole, separate da virgole (twocolumn)
+    bool twoColumns() const { return classOptions.contains("twocolumn"); }
 
     bool operator==(const Style &) const = default;
 
