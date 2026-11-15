@@ -138,6 +138,13 @@ Rectangle {
             TxLabel { Layout.fillWidth: true; Layout.topMargin: Theme.gap; text: row.title || ""; font.weight: Font.DemiBold }
             TxLabel { visible: row.done === true; text: "fatta"; color: Theme.good; font.pixelSize: Theme.smallSize }
             TxButton {
+                visible: root.summary
+                text: "Riapri tutta"
+                flat: true
+                hint: "Tutto ciò che era deciso in questa lezione torna da decidere"
+                onClicked: Workspace.reopenLesson(row.lesson, root.section)
+            }
+            TxButton {
                 visible: root.section === "dubbi" && row.open > 0
                 text: "Fai decidere al modello tutti i dubbi"
                 enabled: !Workspace.busy

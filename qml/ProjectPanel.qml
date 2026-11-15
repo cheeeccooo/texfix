@@ -143,6 +143,7 @@ Rectangle {
         MenuSeparator { visible: fileMenu.lesson; height: visible ? implicitHeight : 0 }
         MenuItem { text: "Carica una versione nuova…"; visible: fileMenu.file.startsWith("fonti/usate/"); height: visible ? implicitHeight : 0; onTriggered: root.newVersionAsked(fileMenu.file) }
         MenuItem { text: "Aggiungi fonti a questa lezione…"; visible: fileMenu.lesson; height: visible ? implicitHeight : 0; onTriggered: root.sourcesAsked(fileMenu.file) }
+        MenuItem { text: "Fai decidere al modello tutti i dubbi"; visible: fileMenu.lesson; height: visible ? implicitHeight : 0; onTriggered: Workspace.decideDoubts(fileMenu.file, []) }
         MenuItem { text: fileMenu.done ? "Non è più fatta" : "Segna come fatta"; visible: fileMenu.lesson; height: visible ? implicitHeight : 0; onTriggered: Workspace.setDone(fileMenu.file, !fileMenu.done) }
     }
 

@@ -1888,3 +1888,26 @@ void Workspace::integrateTex(const QString &file)
                         .arg(file, dates.join(", ")),
                     QStringLiteral("Materiale da %1").arg(QFileInfo(file).fileName()));
 }
+
+void Workspace::reopenLesson(const QString &lesson, const QString &section)
+{
+    if (!hasProject())
+        return;
+    if (busy())
+        return say(QStringLiteral("Aspetta la fine del lavoro."));
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    QString error;
+    if (section == "dubbi") {
+        for (const review::Doubt &d : review::doubts(m_project, lesson))
+            if (!d.open && error.isEmpty())
+                error = review::reopen(m_project, lesson, d.id, false);
+    } else {
+        for (const review::Declared &d : review::declared(m_project, lesson)) {
+            if (d.state == "tenuta")
+                review::keep(m_project, lesson, d.hash, false);
+            else if (d.state == "tolta" && error.isEmpty())
+                error = review::restore(m_project, lesson, d.hash);
+        }
+    }
+    decided(lesson, QStringLiteral("Lezione riaperta"), error);      // riaprire toglie «fatta» alla lezione
+}

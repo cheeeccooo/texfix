@@ -155,6 +155,8 @@ public:
     Q_INVOKABLE void keepAllDeclared(const QString &lesson);
     Q_INVOKABLE void dropDeclared(const QString &lesson, const QString &hash);
     Q_INVOKABLE void restoreDeclared(const QString &lesson, const QString &hash);
+    // «Riapri tutta»: tutto ciò che in una lezione era deciso (section: dubbi | correzioni) torna da decidere.
+    Q_INVOKABLE void reopenLesson(const QString &lesson, const QString &section);
 
     // Rivedi figure: tutte le figure del progetto, lezione per lezione (type lesson | figure). redoFigure la ridisegna
     // (how: ridisegna) o la ritaglia dalla fonte (ritaglia): un lavoro, un passo della cronologia.

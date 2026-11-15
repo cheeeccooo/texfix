@@ -11,6 +11,7 @@ tools/nuova-prova.sh [cartella] [profilo]   # ricrea il progetto di prova (../pr
                                            # con «profilo» salva il primo profilo di partenza fra i dati veri
 ./build.sh                    # configura (la prima volta) e compila in build/, al massimo 4 processi
 ./build.sh prove              # compila e lancia le prove del motore (build/texfix_tests)
+./build.sh misure [--scrivi]  # misura i tempi di ciò che l'interfaccia rifà spesso (build/texfix_bench)
 ./build.sh avvia [cartella]   # compila e apre il programma
 build/Texfix.app/Contents/MacOS/Texfix <cartella> --foto f.png [--gesti "apri src/src1.tex 12; compila"] [--dimensione 1000x620]
 ```
@@ -48,6 +49,7 @@ Due parti, un processo solo.
 | `core/Blocks` | i marcatori dei blocchi `% @L6.3 · fonte p.2`: leggere, aggiungere quelli che mancano |
 | `core/Prompts` | i prompt, in tre parti: strutturale (qui), `rules::forPrompt`, `Style::forPrompt` |
 | `core/Convert` | Converti: scaletta, blocchi trascritti e verificati insieme, assemblaggio, lezione nel main, fonte in `fonti/usate/lezione N/`, dubbi in `salvataggi/dubbi/<nome>.json`; cache in `build/lavori/converti/` |
+| `core/Snippets` | la resa compilata di piccoli pezzi (domande, letture, aggiunte) per i pannelli Rivedi: immagini trasparenti in `build/resa/` |
 | `core/Review` | ciò che resta da decidere: i dubbi (`salvataggi/dubbi/`: scegli una lettura, riapri, annulla la modifica) e le aggiunte e correzioni dichiarate (`salvataggi/correzioni.json`: tieni, togli, rimetti); i conti per lezione |
 | `core/Figures` | il registro delle figure (`salvataggi/figure.json`); il segno `% img <lezione>-NN` nella lezione; «Ridisegna» (TikZ: disegno, prova con `pdflatex`, revisione sulla resa) e «Ritaglia dalla fonte» (`imgs/<nome>.png`); i pacchetti chiesti dai disegni vanno in `progetto.json` e da lì in `texfix.sty` |
 | `core/Fix` | errori e righe fuori misura di una lezione: gli errori al modello (sostituzioni esatte), le righe prima spezzando il paragrafo a una fine di frase poi con varianti del modello; ogni mossa resta solo se, compilata (`Compiler::compileSync`), migliora |
@@ -113,7 +115,7 @@ rileggere gli editor senza modifiche in sospeso; una rilettura svuota la pila de
 
 `--gesti`, separati da «;»: `apri FILE [RIGA]`, `compila`, `tutto`, `salta` (⌘J), `sorgente PAGINA X Y`, `divisore 0|1|2`,
 `avvisi`, `progetto chiuso`, `annulla`, `ripeti`, `passo TITOLO`, `scrivi FILE TESTO`, `fatta FILE`, `impostazioni`,
-`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `converti` (tutta la coda), `converti finestra`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `lezione N DATA FILE…` (crea una lezione), `nuova-lezione` (apre la finestra), `materiale FILE…` (fa il piano dello smistamento), `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`, `rinomina FILE NOME`, `console`, `argomenti` (propone la scaletta), `applica-argomenti`, `per-data`, `salva-profilo NOME`, `nuovo CARTELLA [PROFILO]`, `correggo LEZIONE DUBBIO`, `decidi LEZIONE [DUBBIO…]` (costa), `tag [no]` (mostra o nasconde i tag di provenienza), `libreria STILE`, `avvia-piano`, `archivia`. Ogni gesto parte quando niente lavora; poi la foto.
+`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `converti` (tutta la coda), `converti finestra`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `lezione N DATA FILE…` (crea una lezione), `nuova-lezione` (apre la finestra), `materiale FILE…` (fa il piano dello smistamento), `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`, `rinomina FILE NOME`, `console`, `argomenti` (propone la scaletta), `applica-argomenti`, `per-data`, `salva-profilo NOME`, `nuovo CARTELLA [PROFILO]`, `correggo LEZIONE DUBBIO`, `decidi LEZIONE [DUBBIO…]` (costa), `tag [no]` (mostra o nasconde i tag di provenienza), `libreria STILE`, `avvia-piano`, `archivia`, `ramo LEZIONE` (apre la lezione nell'albero), `pannello PANNELLO LEZIONE`, `cita` (⌘L), `allega FILE`, `foto editor|pdf|finestra`, `invia`, `storico`, `chat`, `attivita`, `versione si|no`, `fonti-lezione FILE…`. Ogni gesto parte quando niente lavora; poi la foto.
 
 ## Regole e stile (SPEC §4)
 
@@ -123,85 +125,92 @@ rileggere gli editor senza modifiche in sospeso; una rilettura svuota la pila de
 - **Stile**: `Workspace::style()` è la descrizione dello stile del progetto. Da lì vengono i colori di begin ed end
   nell'editor (`Theme::readable` li rende leggibili sullo sfondo) e, con `Style::forPrompt`, le convenzioni per i
   prompt. Cambiare stile (`styleswitch::apply`) è un passo solo della cronologia.
-- I prompt si comporranno da tre parti: strutturale (nel codice), `rules::forPrompt`, `Style::forPrompt`.
+- I prompt si compongono da tre parti: strutturale (nel codice), `rules::forPrompt`, `Style::forPrompt`.
 
 ## Stato
 
-Fatto: §3.1; §3.2 tranne «Risolvi tutto» e il menu contestuale dei file; di §3.3 le lezioni con il pallino e i gruppi;
-§3.14 (il primo passo è «Modifiche fuori da Texfix» se i file sono cambiati dalla chiusura: `build/stato-alla-chiusura`); §3.15 (impostazioni, regole del progetto, «Fatta»); di §4 le regole
-editoriali nelle Preferenze, lo stile facoltativo con importazione, domande sui ruoli e cambio di stile per ruoli.
+Che cosa c'è, sezione per sezione di `SPEC.md`, e che cosa manca. «Provato» vuol dire: con le prove del motore, o con
+gesti e foto, o con il modello vero su un progetto di prova. Niente è stato provato con mouse e tastiera veri.
 
-La libreria degli stili che Texfix conosce già sta in `stili/` (dentro il programma, `:/stili/`): oggi `styles`,
-descritto in `stili/styles.stile.json` (ruoli, colori, macro, rimandi come tag, `tikzgraph`, il fulcro, le due
-colonne). Importare uno `styles.sty` non fa domande. In `stili/styles.sty` c'è lo `styles` ripulito (v4, dal branch `texfix-nuovo`
-di `~/Table/styles`; lo aggiorna il suo `rilascia.sh`): nelle Impostazioni del progetto «Usa «styles»» lo porta nel
-progetto (`styleswitch::importFromLibrary`). Ciò che era di Texfix dentro `styles` ora è in `texfix.sty`: aggiunte e
-correzioni dichiarate, segnaposto delle figure, `\hfuzz` per le righe fuori misura. Uno stile può volere opzioni della classe (`opzioni_classe`:
-`twocolumn`): al cambio di stile `main.tex` le prende o le perde; su due colonne l'impaginazione misura per colonna.
+**§3.1 Progetti, §3.2 Editor, PDF, compilazione, §3.14 Cronologia, §3.15 Impostazioni.** Fatti. Il primo passo della
+cronologia è «Modifiche fuori da Texfix» se i file sono cambiati dalla chiusura (`build/stato-alla-chiusura`).
 
-Di §4 manca: i ruoli proposti dal modello (oggi dal nome), le domande per gli ambienti senza corrispondente al cambio
-di stile (oggi restano com'erano e lo si dice), le macro al cambio di stile, la libreria di stili da cui scegliere, le prove di conversione con il profilo «Come la vecchia Texfix» a confronto con la vecchia app, l'agente che modifica lo stile.
+**§3.3 Albero.** Gruppi: Lavori, Lezioni (o Argomenti), Da convertire (con «Smista in lezioni»), Documento, Fonti senza
+lezione, Da consultare (ci si trascinano file: `Workspace::addDocuments`), Esiti, Immagini (con la lezione che le usa).
+Una lezione si apre con la freccia: dentro le righe Dubbi, Correzioni, Impaginazione, Figure con il conto (un clic
+apre il pannello su quella lezione: `showLesson`) e le sue fonti. Le fonti di una lezione sono quelle che i suoi
+marcatori nominano, più la cartella `fonti/usate/lezione N/`; i nomi si confrontano con `files::bare`, l'unico posto
+con quella regola. Il doppio clic apre con un'altra app ciò che non è testo.
 
-Di §3.6 c'è: Converti per scansioni, PDF, immagini e documenti di testo, con stima, esito corto, «Ferma» e «Riprendi»
-(il lavoro gira in un thread del programma: `Workspace::convert`). Le figure si ridisegnano o si ritagliano dentro Converti, insieme (§3.8); «Rivedi figure» (`qml/FiguresView.qml`,
-`Workspace::redoFigure`) le mostra tutte e le rifà una alla volta. Dopo le figure Converti sistema errori e righe della lezione (`fix::lesson`); «Risolvi tutto» negli Avvisi lo fa
-sulle lezioni non fatte (`Workspace::fixAll`). Un disegno più largo della colonna si restringe con `\resizebox`.
-Le fonti `.tex`: una riga per lezione nella coda (quelle che il corso ha già per data non si elencano), scaletta a
-blocchi di righe, il codice delle figure dell'autore tenuto, marcatori `file.tex r.a-b`, il file archiviato in
-`fonti/usate/più lezioni/` quando tutte le sue lezioni sono scritte. Una fonte senza scaletta prende il titolo da una
-chiamata leggera. Manca: le figure dei `.tex` ridisegnate o asciugate, «Fai il piano» per le lezioni che il corso ha
-già, «Ricontrolla con le fonti», le mosse sui display troppo larghi, l'impaginazione, il titolo per le fonti di testo, il dubbio su numero e data,
-la Console con il registro.
+**§3.4 Nuova lezione.** Numero e data proposti, «Prendi dal file», l'avviso se le fonti dicono altro. Le fonti sono
+miniature (trascinate, dal disco, dalla coda); un clic apre il menu: apri, dai importanza, togli. Una fonte si
+converte. Più scansioni o PDF: una chiamata leggera (`newlesson::overlap`) dice se si sovrappongono; se no si uniscono
+in `fonti/coda/lezione N.pdf` nell'ordine giusto (`unite`: `pdfunite`, `sips` per le immagini) e si convertono, con una
+riga in testa all'esito; se sì, o se sono di tipo diverso, le fonde l'agente con un piano (le fonti importanti decidono
+dove le altre dicono altro). Versioni delle fonti (`versionOf`, `replaceVersion`): un file identico a una fonte usata
+non si aggiunge; uno diverso con lo stesso nome fa chiedere se è la versione nuova (`versionAsked`): la vecchia va in
+`precedenti/` con la data, la nuova prende il suo posto, una copia va in coda e l'agente porta nella lezione ciò che è
+cambiato. A mano: «Carica una versione nuova…» nel menu di una fonte usata.
 
-Di §3.7 c'è: Rivedi dubbi e Rivedi correzioni come schede (`qml/ReviewView.qml`, `Workspace::reviewItems`), con la
-pagina della fonte, il riepilogo, riapri e annulla la modifica, i tasti nella barra solo se serve. «Correggo io» (`review::startCorrection`: ricorda la lezione in `salvataggi/dubbi/prima/`, poi la scheda mostra le
-righe tolte e aggiunte, «Modifica» e «Conferma»), «Decidi tu» e «Fai decidere al modello tutti i dubbi»
-(`review::decide`, una chiamata per dubbio con la pagina o il testo della fonte: la lettura è scritta ma aspetta la
-conferma, con il perché), «Ricorda come regola del progetto» dopo una decisione diversa da ciò che era scritto.
-Manca: la resa compilata dei pezzi e del prima e dopo, la lista che si aggiorna riga per riga.
+**§3.5 Aggiungi materiale.** Il piano dello smistamento, «Avvia», «Rivedi piano», la coda delle procedure dell'agente.
 
-Di §3.9 c'è: l'unità spezzata fra due pagine, «Rivedi impaginazione» (`qml/LayoutView.qml`), l'impaginazione da sola
-dopo Converti, righe sole in cima o in fondo evitate da `texfix.sty`. Manca del §3.9: titoli in fondo
-alla pagina, formule e frasi, figure lontane, grandi vuoti, le altre cuciture (dopo una formula o un elenco chiuso,
-prima di una figura), le altre mosse (spazio, misura delle figure), mandare all'agente, risolvere a mano con le prove.
+**§3.6 Converti.** Scansioni, PDF, immagini, documenti di testo, `.tex` di altri autori. Stima, esito corto con
+«Resoconto completo» (la Console), «Ferma», «Riprendi». Dopo le figure sistema errori e righe, poi impagina. Le figure
+dei `.tex` (`figures::authored`): con «Tieni» il codice dell'autore resta e un disegno più largo della colonna si
+restringe; con «Ridisegna» il disegnatore lo rifà guardando la resa del codice. Le lezioni di un `.tex` che il corso ha
+già: una riga le conta e «Fai il piano» le affida all'agente. Se c'è un piano di materiale da approvare, Converti apre
+quello. Manca: «asciugare» il codice dell'autore a parità di resa. Non provato con il modello: «Ridisegna» per i `.tex`.
 
-Di §3.13 c'è: il pannello chat (`qml/ChatPane.qml`) con streaming, righe degli strumenti, Sonnet o Opus, ⌘↩, «Ferma»,
-l'ultima chat che torna all'apertura; il turno dell'agente è un passo della cronologia. Tre modi, come in Claude Code (`Chat::mode`, per tutti i progetti): Automatico (predefinito, `--permission-mode auto`),
-Chiedi conferma (`manual`), Autonomo (`bypassPermissions`); nei primi due ciò che vuole una conferma arriva alla chat
-come scheda «Consenti · Nega» (`--permission-prompt-tool mcp__texfix__conferma`, `Chat::answer`).
-Di §3.12 c'è: il piano come documento fra le schede (`qml/PlanView.qml`), «Avvia» o «Rivedi piano», «Butta il piano»
-con conferma, l'esito, «Chiudi e archivia», il gruppo «Lavori» nell'albero.
-Il gruppo «Esiti» nell'albero apre gli esiti archiviati impaginati (`qml/MarkdownView.qml`). «Avvia» è spento finché una
-domanda del piano non ha risposta. Manca: allegati e screenshot, ⌘L, lo storico con elimina, una chat con il suo nome
-per ogni procedura.
+**§3.7 Rivedi dubbi e correzioni.** Scegli, «Correggo io», «Decidi tu», «Fai decidere al modello tutti i dubbi» (anche
+dal menu della lezione), «Ricorda come regola del progetto», riepilogo, «Riapri», «Annulla la modifica», «Riapri
+tutta». Domande, letture, aggiunte e il prima e dopo si vedono come nel PDF (`core/Snippets`, `Workspace::snippet`):
+intanto il testo; ciò che non compila resta testo. In Rivedi correzioni ci sono anche errori e righe fuori misura
+dell'ultima compilazione, con «Sistema» (`fixAll(lezione)`). Dopo «Riorganizza per argomenti» i dubbi seguono il loro
+passo nel file che lo contiene. Manca: la lista che si aggiorna riga per riga (oggi si rilegge tutta: una decisione
+costa circa 2 ms nel motore).
 
-Di §3.4 c'è: «＋ Nuova lezione» (`qml/NewLessonSheet.qml`): numero e data proposti, «Prendi dal file», l'avviso se le
-fonti dicono altro (un secondo clic tiene i valori), una fonte → Converti con numero e data scelti (e un dubbio sulla
-riga `\lezione` se la scansione dice altro), più fonti → l'agente le fonde con un piano; «Aggiungi fonti a questa
-lezione…» nel menu della lezione. Di §3.5 c'è: «＋ Aggiungi materiale» e il trascinamento sull'albero portano i file in coda e fanno il piano dello
-smistamento (`Workspace::sortMaterial`); «Avvia» (`startSortPlan`) converte insieme le lezioni nuove fatte di un file
-solo e senza istruzioni, e mette in coda le procedure dell'agente per il resto (`m_agentQueue`, una alla volta, quando
-niente lavora e nessun piano è aperto); «Rivedi piano» rifà solo l'ultima chiamata.
-Manca: le miniature delle fonti, la chiamata leggera che dice se più fonti si sovrappongono (oggi vanno sempre
-all'agente), le versioni delle fonti, «Smista in lezioni» sul gruppo Da convertire.
+**§3.8 Figure.** Registro unico, «Ridisegna», «Ritaglia dalla fonte», Rivedi figure, «Ricontrolla con le fonti»
+(l'agente rilegge le fonti e propone un piano).
 
-§3.16: a sinistra due linguette, Progetto e Version control con il numero delle modifiche (`qml/GitPanel.qml`):
-Inizializza, commit di tutto con conferma, cronologia; un clic apre le differenze in una scheda (`qml/DiffView.qml`).
-Manca: le differenze affiancate (oggi righe rosse e verdi in colonna), scegliere quali file mettere nel commit.
+**§3.9 Impaginazione.** Un'unità spezzata fra due pagine (a pagina nuova, o spezzata fra due paragrafi); un titolo
+rimasto in fondo senza il suo testo (a pagina nuova con lui); un grande vuoto prima di un'unità che non ci stava (si
+segnala: non c'è una mossa sicura). Ogni mossa si accetta, si lascia com'era, si sistema a mano (apre la lezione al
+blocco; poi «Risolta») o si manda all'agente. Righe sole in cima o in fondo le evita `texfix.sty`. Manca: formula
+separata dalla sua frase, voce di elenco rimasta sola, le mosse su spazio e misura delle figure, le prove affiancate
+per la modifica a mano (oggi si usano editor e PDF di sempre).
 
-Menu contestuale dei file (tasto destro nell'albero; `tx::fileops` in `core/Project`): apri, apri e compila, app
-predefinita, Finder, copia percorso o nome, rinomina (il documento segue la lezione, la scheda segue il file), duplica,
-Cestino (⌘Z lo riporta). Nel pannello in basso due linguette: Avvisi e Console (`Workspace::console`, il registro dei
-messaggi e dei lavori).
+**§3.10 Errori e righe.** Gli errori al modello. Le righe: prima una formula in display troppo larga spezzata a ogni
+segno di relazione o a un + (`fix::splitDisplay`), poi il paragrafo spezzato a una fine di frase, poi il modello.
 
-§3.11: Progetto › «Riorganizza per argomenti…» (il modello propone, `qml/OutlineSheet.qml` fa sistemare la scaletta:
-rinomina, ordina, sposta, argomento nuovo) e «Riorganizza per data di lezione» (attivo solo se i file sono per
-argomenti; senza modello). Le lezioni com'erano stanno in `progetto.json` (`argomenti`); in modo argomenti l'albero
-dice «Argomenti».
+**§3.11 Riorganizza, §3.12 Lavori, §3.16 Version control.** Fatti. Version control: differenze affiancate (in colonna
+con poco spazio o a richiesta), scelta dei file del commit con la spunta.
 
-§3.18, tag di provenienza: Vista › «Tag di provenienza» li disegna sul bordo destro delle pagine nella vista del PDF
-(`PdfPane.tags`, `Workspace::computeTags` in un thread dopo ogni compilazione); Vista › «Fonti (legenda)» elenca le
-sigle e ne nasconde una alla volta; un clic su un tag apre la fonte alla sua pagina. Non sono nel PDF su disco.
+**§3.13 Agente e chat.** Streaming, righe degli strumenti che si aprono (che cosa ha chiesto), Sonnet o Opus, tre modi.
+Allegati con miniature (trascinati o scelti; copiati in `salvataggi/chat/allegati/`), foto di un pezzo della finestra,
+⌘L porta la selezione nel messaggio, storico con elimina a due clic, una chat con il suo nome per ogni procedura
+(`Chat::startProcedure`). Se la chat di prima non si riprende, riparte con la conversazione nel messaggio. L'agente è
+chiuso nel progetto in tutti e tre i modi: ogni richiesta di permesso passa da `conferma`, che nega da sé ciò che sta
+fuori dalla cartella (provato con il modello vero); «Autonomo» consente da sé ciò che sta dentro.
 
-Da fare, nell'ordine previsto: il resto dell'impaginazione; i piani dei lavori (§3.12); agente e chat con
-strumenti (§3.13); Riorganizza; Version control; menu contestuale dei file.
+**§3.17 Attività.** Nel pannello in basso, accanto ad Avvisi e Console: una riga per la compilazione, il lavoro, l'agente,
+le procedure in attesa, il lavoro da riprendere, i lavori finiti da poco.
+
+**§3.18 Tag di provenienza.** Li disegna la vista del PDF, dai marcatori dei blocchi; non sono nel PDF su disco (scelta
+da confermare con l'utente: D5 chiedeva di ripensarli).
+
+**§4 Regole e stile.** Regole editoriali nelle Preferenze; stile facoltativo. All'importazione il modello legge il `.sty`
+e propone ruoli, note, macro e convenzioni (`styleswitch::propose`), poi l'utente conferma. Al cambio di stile gli
+ambienti senza corrispondente sono una domanda (`orphans`, `qml/StyleMatchSheet.qml`); le macro dello stile di prima
+cambiano nome se il nuovo ne ha una con lo stesso significato, altrimenti la loro definizione passa in `texfix.sty`
+(`macro_portate` in `progetto.json`). Se il `.sty` del progetto cambia (l'agente, o l'utente che lo salva) la
+descrizione lo segue (`refresh`) e un ambiente nuovo è una domanda. La libreria: gli stili di Texfix (`:/stili/`) e
+quelli dell'utente (Preferenze › Stili; fra i dati del programma, `stili/`). Profili di partenza.
+A confronto con la vecchia app sulle stesse pagine (`../prova-texfix`, src4.pdf e src5.pdf): stesse famiglie di
+riquadri, stesso numero di definizioni e di figure; la nuova dà titoli alle sezioni, mette in un riquadro
+un'osservazione che la vecchia lasciava in prosa, e non va a capo nel sorgente. Simili, non uguali.
+
+**§5 Prove.** `./build.sh prove` (42 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
+spesso, contro `tests/misure.txt`; `--scrivi` li riscrive). I riferimenti (golden) della vecchia app non sono portati.
+
+Attenzione in QML: una proprietà non può chiamarsi `on…` con la maiuscola dopo (`onStyles`): viene presa per un
+gestore di segnale e vale sempre falso.

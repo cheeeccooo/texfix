@@ -18,7 +18,7 @@ TxSheet {
     // dopo le regole, la libreria degli stili
     property var styles: []
     property string styleNote
-    readonly property bool onStyles: section !== null && section.id === "@stili"
+    readonly property bool stylesPage: section !== null && section.id === "@stili"
     function reload() {
         sections = Workspace.ruleSections().concat([{ id: "@stili", title: "Stili", text: "", custom: false }])
         styles = Workspace.libraryStyles()
@@ -32,7 +32,9 @@ TxSheet {
         // le sezioni
         ColumnLayout {
             Layout.alignment: Qt.AlignTop
-                        Layout.maximumWidth: 230
+            Layout.preferredWidth: 210
+            Layout.minimumWidth: 160
+            Layout.maximumWidth: 230
             spacing: 2
             Repeater {
                 model: root.sections
@@ -66,12 +68,12 @@ TxSheet {
                 spacing: Theme.gap
                 TxLabel { Layout.fillWidth: true; text: root.section ? root.section.title : ""; font.weight: Font.DemiBold; font.pixelSize: Theme.textSize + 1 }
                 TxButton {
-                    visible: root.section !== null && root.section.custom && !root.onStyles
+                    visible: root.section !== null && root.section.custom && !root.stylesPage
                     text: "Riporta al predefinito"
                     onClicked: { Workspace.resetRule(root.section.id); root.editing = false; root.reload() }
                 }
                 TxButton {
-                    visible: !root.onStyles
+                    visible: !root.stylesPage
                     text: root.editing ? "Fatto" : "Modifica"
                     primary: root.editing
                     onClicked: {
@@ -87,7 +89,7 @@ TxSheet {
             }
             Text {
                 Layout.fillWidth: true
-                visible: !root.editing && !root.onStyles
+                visible: !root.editing && !root.stylesPage
                 text: root.section ? root.section.text : ""
                 textFormat: Text.MarkdownText
                 wrapMode: Text.WordWrap
@@ -98,7 +100,7 @@ TxSheet {
             // la libreria degli stili: quelli di Texfix e quelli messi qui; un progetto li prende dalle sue Impostazioni
             ColumnLayout {
                 Layout.fillWidth: true
-                visible: root.onStyles
+                visible: root.stylesPage
                 spacing: Theme.gap
                 TxLabel {
                     Layout.fillWidth: true
