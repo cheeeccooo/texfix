@@ -652,8 +652,9 @@ private slots:
         QVERIFY(files::read(p.path("src/src1.tex")).contains("\\begin{align*}\n    S &= a_{1}"));
     }
 
-    // L'impaginazione segnala anche una formula rimasta in fondo senza la frase che la commenta, e un elenco che lascia
-    // una voce sola dall'altra parte: non c'è una mossa sicura, si decide a mano o con l'agente.
+    // L'impaginazione sistema anche una formula rimasta in fondo senza la frase che la commenta (passa oltre con il suo
+    // paragrafo) e un elenco che lascia una voce sola dall'altra parte (la penultima la raggiunge): un a capo che, lasciato
+    // com'era, se ne va senza lasciare traccia.
     void layoutFormulaAndList()
     {
         if (!hasLatexmk())
@@ -671,20 +672,29 @@ private slots:
                 QString tex = "\\section{S}\n";
                 for (int i = 0; i < filler; ++i)
                     tex += QStringLiteral("Riga %1 di testo.\n\n").arg(i + 1);
-                files::write(p.path("src/src1.tex"), blocks::mark(tex + tail, 1, units));
+                const QString marked = blocks::mark(tex + tail, 1, units);
+                files::write(p.path("src/src1.tex"), marked);
                 QFile::remove(p.path("salvataggi/impaginazione.json"));
                 layout::lesson(p, style, "src/src1.tex");
                 for (const layout::Move &m : layout::moves(p, "src/src1.tex"))
-                    if (m.state == "segnalata" && m.what.startsWith(what))
-                        return true;
+                    if (m.state == "fatta" && m.what.startsWith(what)) {
+                        const QString moved = files::read(p.path("src/src1.tex"));
+                        if (moved.count("% impaginazione") != 1 || !layout::decide(p, "src/src1.tex", m.block, "lasciata").isEmpty())
+                            return false;
+                        if (files::read(p.path("src/src1.tex")) != marked)
+                            return false;                          // lasciata com'era: la lezione torna uguale
+                        if (!layout::decide(p, "src/src1.tex", m.block, "accettata").isEmpty())
+                            return false;
+                        return files::read(p.path("src/src1.tex")) == moved;   // e accettata di nuovo torna la mossa
+                    }
             }
             return false;
         };
         QVERIFY(found("Vale la relazione\n\\[\n    a = b\n\\]\ndove $a$ e $b$ sono quelli di prima, e questo commento è lungo abbastanza da occupare più di una riga del "
                       "documento, anzi due righe intere, così che la pagina possa finire subito dopo la formula.\n",
-                      "Una formula resta in fondo"));
+                      "Una formula restava in fondo"));
         QVERIFY(found("\\begin{itemize}\n\\item Prima voce.\n\\item Seconda voce.\n\\item Terza voce.\n\\item Quarta voce.\n\\end{itemize}\nFine.\n",
-                      "Un elenco lascia una voce sola"));
+                      "Un elenco lasciava"));
     }
 
     // Le formule in display degli appunti veri (i casi di riferimento della vecchia app): spezzarne una non ne cambia

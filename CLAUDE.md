@@ -193,8 +193,11 @@ blocco rosso com'era e verde com'è venuto. Una mossa che fa uscire qualcosa dal
 rimasto in fondo senza il suo testo (a pagina nuova con lui); un grande vuoto prima di un'unità che non ci stava (una figura si
 rimpicciolisce quanto basta, `\scalebox{…}{% impaginazione` … `}% impaginazione` attorno al disegno, fino al 55%; se non basta resta
 dov'è con un a capo e il vuoto è voluto; il resto si segnala); ciò che non si spezza (una figura, un riquadro intero) ed è passato oltre
-da solo lasciando poco vuoto (fra il 2% e il 25%) prende un a capo che fissa il punto, di solito «invariata»; una formula rimasta in fondo senza la frase che la commenta e un elenco che lascia
-una voce sola dall'altra parte (si segnalano). Un'unità che finisce con poche righe sulla pagina dopo resta intera allungando la pagina
+da solo lasciando poco vuoto (fra il 2% e il 25%) prende un a capo che fissa il punto, di solito «invariata»; una formula rimasta in fondo senza la frase che la commenta (passa oltre con il paragrafo che la introduce) e un elenco che lascia
+una voce sola dall'altra parte (la penultima raggiunge l'ultima, o l'elenco passa oltre con la sua frase): `breakBefore`, un a capo dentro il blocco
+(`\par\newpage % impaginazione` nel testo, il comando dello stile in un riquadro), se il vuoto è al più il 25%. Qualunque unità passata oltre
+lasciando un grande vuoto prende un a capo e il vuoto è voluto. Resta segnalato solo ciò che nessuna mossa sistema: un riquadro senza una
+cucitura dove spezzarlo, una formula o un elenco che a capo lascerebbero troppo vuoto, un titolo che un a capo non riunisce al suo testo. Un'unità che finisce con poche righe sulla pagina dopo resta intera allungando la pagina
 (`\enlargethispage`, su una colonna sola). Ogni mossa si accetta, si lascia com'era, si sistema a mano o si manda
 all'agente. A mano (`ProjectView.startManual`): Progetto e chat si chiudono, la lezione si apre al blocco accanto alla
 prova, che è della lezione sola (la prima si compila da sola, poi «Prova» o ⌘B). La striscia in alto dice che cosa c'è
@@ -204,7 +207,8 @@ dal cursore alla prova (se la riga non lascia segno, una vicina). «Risolta», �
 chiudere la lezione dall'editor rimettono i pannelli com'erano e ricompilano il documento. Una mossa si decide anche
 mentre un lavoro gira, purché non stia lavorando su quella lezione. Righe sole in cima o in fondo le evita `texfix.sty`. Con poco spazio (finestra sotto i 900 px) la prova va sotto l'editor (`ProjectView.stacked`).
 
-Le misure: un'unità che non si spezza sta dove sta il segno più alto delle sue righe (`tallest`: la prima riga lascia un segno
+Ogni prova lascia il PDF com'era con la prova: chi misura dopo ricompila prima (`breakInside` lo fa da sé, e se l'ultima cucitura non regge
+prova le due prima). Le misure: un'unità che non si spezza sta dove sta il segno più alto delle sue righe (`tallest`: la prima riga lascia un segno
 in fondo alla colonna di prima, lo spazio che la precede); i segni fuori dall'area del testo non contano (`spotOf`: una riga su cui
 la pagina si chiude si prende intestazione e piè di pagina).
 

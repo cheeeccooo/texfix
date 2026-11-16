@@ -7,6 +7,7 @@
 #include "core/Tools.h"
 
 #include <QCryptographicHash>
+#include <functional>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -123,6 +124,20 @@ Where whereIs(const Project &project, const Geometry &g, const QString &lesson, 
     if (!s.ok)
         return {};
     return {true, g.twoColumns ? s.page * 2 + (s.x > g.pageWidth / 2 ? 1 : 0) : s.page, qBound(0.0, (s.y + s.height - g.textTop) / g.textHeight, 1.0)};
+}
+// Dove finisce ciò che una riga lascia nel PDF: il suo segno più avanti (una formula lascia anche, in fondo alla colonna di
+// prima, lo spazio che la precede).
+Where whereEnds(const Project &project, const Geometry &g, const QString &lesson, int line)
+{
+    Where best;
+    for (const synctex::Spot &s : synctex::allToPdf(project.root(), g.pdf, lesson, line)) {
+        if (s.y < g.textTop - 2 || s.y + s.height > g.textTop + g.textHeight + 2)
+            continue;
+        const Where w{true, g.twoColumns ? s.page * 2 + (s.x > g.pageWidth / 2 ? 1 : 0) : s.page, qBound(0.0, (s.y + s.height - g.textTop) / g.textHeight, 1.0)};
+        if (!best.ok || w.slot > best.slot || (w.slot == best.slot && w.bottom > best.bottom))
+            best = w;
+    }
+    return best;
 }
 // Il segno più alto che le righe di un'unità lasciano nel PDF: per ciò che non si spezza è l'unità stessa (il disegno, il
 // riquadro), dovunque siano finiti gli spazi che la precedono.
@@ -260,6 +275,9 @@ bool breakInside(const Project &project, const Style &style, const QString &file
     const Style::Environment *env = style.environment(block.kind);
     if (block.id.isEmpty() || !env || !env->breaks || style.breakCommand.isEmpty() || block.endLine - block.line < 4)
         return false;
+    // il PDF dev'essere quello di queste righe: una prova fatta prima (l'a capo, poi tolto) l'ha lasciato diverso
+    if (Compiler::compileSync(project, file, control).hasErrors())
+        return false;
     const Geometry g = geometryOf(project, style, file);
     const Where start = whereIs(project, g, file, block.line);
     if (!start.ok)
@@ -279,47 +297,56 @@ bool breakInside(const Project &project, const Style &style, const QString &file
             low = middle + 1;
     }
     // le cuciture: righe vuote al primo livello del riquadro, non nel suo primo 7%
-    int seam = 0, depth = 0;
+    QList<int> seams;
+    int depth = 0;
     for (int line = block.line; line < low; ++line) {
         const QString code = uncommented(lines[line - 1]).toString();
         depth += int(code.count(QLatin1String("\\begin{")) - code.count(QLatin1String("\\end{")));
-        if (depth == 1 && lines[line - 1].trimmed().isEmpty() && line - block.line >= qMax(2, int(0.07 * (block.endLine - block.line))))
-            seam = line;
+        if (depth == 1 && lines[line - 1].trimmed().isEmpty() && !lines[line - 2].trimmed().isEmpty()
+            && line - block.line >= qMax(2, int(0.07 * (block.endLine - block.line))))
+            seams << line;
     }
-    if (!seam)
-        return false;
-    int last = seam - 1;                               // l'ultima riga piena prima della cucitura
-    while (last > block.line && lines[last - 1].trimmed().isEmpty())
-        --last;
-    static const QRegularExpression lead(R"(^\s*)");
-    const QString sign = lead.match(lines[last - 1]).captured(0) + style.breakCommand + " % impaginazione";
-    lines.insert(seam, sign);                          // fra due righe vuote
-    lines.insert(seam + 1, QString());
-    files::write(path, lines.join('\n'));
-    bool good = false;
-    double hole = 1;
-    try {
-        if (!Compiler::compileSync(project, file, control).hasErrors()) {
-            const Geometry after = geometryOf(project, style, file);
-            const Where tail = whereIs(project, after, file, last);
-            Where head;
-            for (int line = seam + 3; line <= seam + 6 && line <= lines.size() && !head.ok; ++line)
-                head = whereIs(project, after, file, line);
-            hole = tail.ok ? 1 - tail.bottom : 1;
-            good = tail.ok && head.ok && head.slot > tail.slot && hole <= HOLE_OK;
+    // dall'ultima cucitura all'indietro: se quella non regge (ciò che segue non passa oltre) si prova quella prima
+    const QStringList original = lines;
+    for (int attempt = 0; attempt < 3 && !seams.isEmpty(); ++attempt) {
+        const int seam = seams.takeLast();
+        lines = original;
+        int last = seam - 1;                           // l'ultima riga piena prima della cucitura
+        while (last > block.line && lines[last - 1].trimmed().isEmpty())
+            --last;
+        static const QRegularExpression lead(R"(^\s*)");
+        const QString sign = lead.match(lines[last - 1]).captured(0) + style.breakCommand + " % impaginazione";
+        lines.insert(seam, sign);                      // fra due righe vuote
+        lines.insert(seam + 1, QString());
+        files::write(path, lines.join('\n'));
+        bool good = false;
+        double hole = 1;
+        try {
+            if (!Compiler::compileSync(project, file, control).hasErrors()) {
+                const Geometry after = geometryOf(project, style, file);
+                const Where tail = whereIs(project, after, file, last);
+                Where head;
+                for (int line = seam + 3; line <= seam + 6 && line <= lines.size() && !head.ok; ++line)
+                    head = whereIs(project, after, file, line);
+                hole = tail.ok ? 1 - tail.bottom : 1;
+                good = tail.ok && head.ok && head.slot > tail.slot && hole <= HOLE_OK;
+            }
+        } catch (...) {
+            files::write(path, before);
+            throw;
         }
-    } catch (...) {
-        files::write(path, before);
-        throw;
+        if (!good) {
+            files::write(path, before);
+            if (hole > HOLE_OK && hole < 1)
+                break;                                 // già troppo vuoto: più indietro è peggio
+            continue;
+        }
+        move->hole = hole;
+        move->sign = sign;
+        move->after = lines[last - 1];
+        return true;
     }
-    if (!good) {
-        files::write(path, before);
-        return false;
-    }
-    move->hole = hole;
-    move->sign = sign;
-    move->after = lines[last - 1];
-    return true;
+    return false;
 }
 }
 
@@ -483,6 +510,82 @@ bool shrink(const Project &project, const Style &style, const QString &file, con
     }
     files::write(path, before);
     return false;
+}
+
+// Un a capo dentro un blocco, in un punto scelto: prima del paragrafo che contiene la riga `line` (o, con `exact`, proprio
+// prima di quella riga). Nel testo è un a capo pagina; in un riquadro che si spezza, il comando dello stile su una cucitura
+// al primo livello; se il paragrafo è il primo del blocco, l'a capo va sopra il blocco. Resta se il vuoto che lascia è
+// piccolo e, ricompilata, `holds` dice che il problema non c'è più (riceve le misure nuove e dove sono finite le righe).
+bool breakBefore(const Project &project, const Style &style, const QString &file, const blocks::Block &block, int line, bool exact,
+                 JobControl *control, const std::function<bool(const Geometry &, const std::function<int(int)> &)> &holds, Move *move)
+{
+    const QString path = project.path(file), before = files::read(path);
+    QStringList lines = before.split('\n');
+    const bool box = block.kind != "testo";
+    if (box && exact)
+        return false;
+    int at = line;                                     // la riga (da 1) prima della quale va l'a capo
+    bool above = false;
+    if (!exact) {
+        while (at > block.line && !lines[at - 2].trimmed().isEmpty())
+            --at;
+        above = at <= block.line + (box ? 1 : 0);
+        if (box && !above) {                           // in un riquadro solo al primo livello, e se lo stile sa spezzarlo
+            const Style::Environment *env = style.environment(block.kind);
+            int depth = 0;
+            for (int k = block.line; k < at; ++k) {
+                const QString code = uncommented(lines[k - 1]).toString();
+                depth += int(code.count(QLatin1String("\\begin{")) - code.count(QLatin1String("\\end{")));
+            }
+            if (!env || !env->breaks || style.breakCommand.isEmpty() || depth != 1)
+                above = true;
+        }
+    }
+    int index = at - 1, added = 1;                     // dove si inserisce (da 0), quante righe
+    QString sign = QString::fromUtf8(SIGN), after;
+    if (above) {
+        index = groupStart(lines, block);
+    } else {
+        int last = at - 1;                             // l'ultima riga piena prima
+        while (last > 1 && lines[last - 1].trimmed().isEmpty())
+            --last;
+        static const QRegularExpression lead(R"(^\s*)");
+        sign = lead.match(lines[at - 1]).captured(0) + (box ? style.breakCommand : QStringLiteral("\\par\\newpage")) + " % impaginazione";
+        after = lines[last - 1];
+    }
+    // il vuoto che lascerebbe: da dove finisce ciò che resta di qua
+    const Geometry g = geometryOf(project, style, file);
+    Where tail;
+    for (int k = index; k >= 1 && k > index - 6 && !tail.ok; --k)
+        if (!lines[k - 1].trimmed().isEmpty() && !lines[k - 1].trimmed().startsWith('%'))
+            tail = whereIs(project, g, file, k);
+    const double hole = tail.ok ? 1 - tail.bottom : 1;
+    if (hole > HOLE_OK)
+        return false;
+    const int wideBefore = wideLines(project, file);
+    lines.insert(index, sign);
+    if (!above && !exact) {
+        lines.insert(index + 1, QString());
+        added = 2;
+    }
+    files::write(path, lines.join('\n'));
+    bool good = false;
+    try {
+        if (!Compiler::compileSync(project, file, control).hasErrors())
+            good = wideLines(project, file) <= wideBefore
+                   && holds(geometryOf(project, style, file), [&](int old) { return old > index ? old + added : old; });
+    } catch (...) {
+        files::write(path, before);
+        throw;
+    }
+    if (!good) {
+        files::write(path, before);
+        return false;
+    }
+    move->hole = hole;
+    move->sign = sign;
+    move->after = after;
+    return true;
 }
 }
 
@@ -716,20 +819,36 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
                         return b.id;
                 return {};
             };
-            auto report = [&](int line, const QString &what) {
-                const QString id = owner(line);
-                if (id.isEmpty() || settled.contains(id))
+            bool again = false;                        // una mossa ha cambiato le righe: si rimisura da capo
+            // prova la mossa (un a capo prima del paragrafo di `target`, o proprio prima di quella riga); se non regge segnala
+            auto settle = [&](int line, int target, bool exact, const QString &done, const QString &flagged,
+                              const std::function<bool(const Geometry &, const std::function<int(int)> &)> &holds) {
+                const blocks::Block *block = nullptr;
+                for (const blocks::Block &b : parsed)
+                    if (line >= b.line && line <= b.endLine)
+                        block = &b;
+                if (!block || block->id.isEmpty() || settled.contains(block->id))
                     return;
-                snap(project, style, file, id, "prima");
-                settled << id;
+                snap(project, style, file, block->id, "prima");
+                settled << block->id;
                 ++result.found;
-                ++result.proposed;
-                fresh << Move{file, id, what, 0, "segnalata", 0};
+                Move move{file, block->id, {}, 0, "fatta", 0};
+                if (breakBefore(project, style, file, *block, target, exact, control, holds, &move)) {
+                    move.what = done.arg(qRound(move.hole * 100));
+                    snap(project, style, file, block->id, "dopo");
+                    move.same = sameShots(project, file, block->id);
+                    fresh << move;
+                    ++result.done;
+                } else {
+                    ++result.proposed;
+                    fresh << Move{file, block->id, flagged, 0, "segnalata", 0};
+                }
+                again = true;                          // riuscita o no, si è ricompilato
             };
             static const QRegularExpression displayEnd(R"(^\s*(\\\]|\\end\{(align|equation|gather|multline)\*?\}))");
             static const QRegularExpression listBegin(R"(^\s*\\begin\{(itemize|enumerate)\})"), listEnd(R"(^\s*\\end\{(itemize|enumerate)\})");
             const QString side = style.twoColumns() ? QStringLiteral("colonna") : QStringLiteral("pagina");
-            for (int i = 1; i + 1 < lines.size(); ++i) {
+            for (int i = 1; i + 1 < lines.size() && !again; ++i) {
                 if (control)
                     control->check();
                 if (displayEnd.match(lines[i]).hasMatch()) {
@@ -738,12 +857,21 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
                         continue;                      // dopo la formula comincia altro: non è il suo commento
                     Where formula;
                     for (int k = i; k >= i - 3 && k >= 1 && !formula.ok; --k)
-                        formula = whereIs(project, g, file, k);
+                        formula = whereEnds(project, g, file, k);
                     const Where comment = whereIs(project, g, file, i + 2);
                     if (formula.ok && comment.ok && comment.slot > formula.slot)
-                        report(i + 1, QStringLiteral("Una formula resta in fondo alla %1, separata dalla frase che la commenta. Si può sistemare a mano o affidare all'agente.").arg(side));
+                        settle(i + 1, i + 1, false,
+                               QStringLiteral("Una formula restava in fondo alla %1, separata dalla frase che la commenta: ora passa alla %1 dopo con il paragrafo che la introduce (vuoto lasciato: %2%).").arg(side),
+                               QStringLiteral("Una formula resta in fondo alla %1, separata dalla frase che la commenta. Portarla oltre con il suo paragrafo lascerebbe troppo vuoto: si può sistemare a mano o affidare all'agente.").arg(side),
+                               [&, i](const Geometry &after, const std::function<int(int)> &now) {
+                                   Where f;
+                                   for (int k = i; k >= i - 3 && k >= 1 && !f.ok; --k)
+                                       f = whereEnds(project, after, file, now(k));
+                                   const Where c = whereIs(project, after, file, now(i + 2));
+                                   return f.ok && c.ok && f.slot == c.slot;
+                               });
                 } else if (listBegin.match(lines[i]).hasMatch()) {
-                    QList<int> places;                  // dove cade ogni voce del primo livello
+                    QList<int> places, items;           // dove cade ogni voce del primo livello, e la sua riga (da 1)
                     int depth = 0, j = i;
                     for (; j < lines.size(); ++j) {
                         if (listBegin.match(lines[j]).hasMatch())
@@ -751,14 +879,32 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
                         else if (listEnd.match(lines[j]).hasMatch() && --depth == 0)
                             break;
                         else if (depth == 1 && lines[j].trimmed().startsWith("\\item"))
-                            if (const Where w = whereIs(project, g, file, j + 1); w.ok)
+                            if (const Where w = whereIs(project, g, file, j + 1); w.ok) {
                                 places << w.slot;
+                                items << j + 1;
+                            }
                     }
                     if (places.size() >= 3 && places.first() != places.last()
-                        && (places.count(places.first()) == 1 || places.count(places.last()) == 1))
-                        report(i + 1, QStringLiteral("Un elenco lascia una voce sola dall'altra parte della %1. Si può sistemare a mano o affidare all'agente.").arg(side));
+                        && (places.count(places.first()) == 1 || places.count(places.last()) == 1)) {
+                        // l'ultima da sola di là: la penultima la raggiunge. La prima da sola di qua: l'elenco passa oltre con
+                        // la frase che lo introduce.
+                        const bool lastAlone = places.count(places.last()) == 1;
+                        const int a = lastAlone ? items[items.size() - 2] : items[0], b = lastAlone ? items.last() : items[1];
+                        settle(i + 1, lastAlone ? a : i + 1, lastAlone,
+                               (lastAlone ? QStringLiteral("Un elenco lasciava l'ultima voce da sola nella %1 dopo: ora la penultima passa con lei (vuoto lasciato: %2%).")
+                                          : QStringLiteral("Un elenco lasciava la prima voce da sola in fondo alla %1: ora comincia nella %1 dopo con la frase che lo introduce (vuoto lasciato: %2%).")).arg(side),
+                               QStringLiteral("Un elenco lascia una voce sola dall'altra parte della %1, e un a capo non lo sistema: si può sistemare a mano o affidare all'agente.").arg(side),
+                               [&, a, b](const Geometry &after, const std::function<int(int)> &now) {
+                                   const Where first = whereIs(project, after, file, now(a)), second = whereIs(project, after, file, now(b));
+                                   return first.ok && second.ok && first.slot == second.slot;
+                               });
+                    }
                     i = j;
                 }
+            }
+            if (again) {
+                shrunk = true;
+                continue;
             }
         }
         for (qsizetype i = 1; i < parsed.size(); ++i) {
@@ -835,6 +981,10 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
                     shrunk = true;
                     break;
                 }
+            } else if (pin(QStringLiteral("%1 non ci stava ed è passato oltre: un a capo ora fissa il punto, e il vuoto che lascia (%2% %3) è voluto.")
+                               .arg(nameOf(named, style)).arg(qRound(hole * 100)).arg(side))) {
+                shrunk = true;
+                break;
             }
             Placed p;
             p.kind = b.kind;
@@ -844,10 +994,8 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
             fresh << Move{file, b.id, QStringLiteral("%1 non ci stava ed è passato oltre: prima resta vuoto il %2% %3. Si può accorciare o spostare a mano, o affidare all'agente.")
                                           .arg(nameOf(p, style)).arg(qRound((1.0 - end.bottom) * 100)).arg(style.twoColumns() ? QStringLiteral("della colonna") : QStringLiteral("della pagina")),
                           1.0 - end.bottom, "segnalata", 0};
-            if (b.kind == "figura") {
-                shrunk = true;                         // le prove hanno ricompilato: ciò che segue si rimisura
-                break;
-            }
+            shrunk = true;                             // le prove hanno ricompilato: ciò che segue si rimisura
+            break;
         }
         if (!shrunk)
             break;
@@ -940,8 +1088,12 @@ QString decide(const Project &project, const QString &file, const QString &block
                         after = k;
                 if (after < 0)
                     return QStringLiteral("Non trovo più il punto in cui spezzare: il riquadro è cambiato.");
-                lines.insert(after + 1, QString());
-                lines.insert(after + 2, written);
+                if (after + 1 < lines.size() && !lines[after + 1].trimmed().isEmpty()) {
+                    lines.insert(after + 1, written);  // in mezzo a righe piene (fra due voci di un elenco): la riga sola
+                } else {
+                    lines.insert(after + 1, QString());
+                    lines.insert(after + 2, written);
+                }
             }
         } else if (state == "lasciata" && sign >= 0) {
             lines.removeAt(sign);
