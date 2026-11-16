@@ -11,6 +11,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QImage>
 #include <QImageReader>
 #include <QJsonArray>
@@ -623,7 +624,8 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
     QStringList settled;
     // Ogni mossa sposta ciò che segue: dopo i titoli e i vuoti si riguarda da capo se qualcosa è finito a cavallo, finché
     // un giro non cambia più niente.
-    for (int sweep = 0; sweep < 5; ++sweep) {
+    const int SWEEPS = 8;
+    for (int sweep = 0; sweep < SWEEPS; ++sweep) {
     for (int round = 0; round < 40; ++round) {
         const QList<Placed> placed = measure(project, style, file, control, &result.failure);
         if (!result.failure.isEmpty())
@@ -1021,7 +1023,64 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
         if (!shrunk)
             break;
     }
-    if (files::read(path) == afterUnits)
+    // L'ordine conta: una mossa fatta dopo, ma più in alto nella lezione, ha spostato tutto ciò che segue. Le mosse fatte
+    // prima di lei e che stanno più in basso guardavano una pagina che non c'è più: si tolgono e il giro dopo le rifà.
+    // Una mossa che non cambia la pagina («invariata») non sposta niente.
+    bool dropped = false;
+    if (sweep + 1 < SWEEPS) {
+        QHash<QString, int> lineOf;
+        for (const blocks::Block &b : blocks::parse(files::read(path), unitsOf(style)))
+            lineOf.insert(b.id, b.line);
+        QList<qsizetype> stale;
+        for (qsizetype i = 0; i < fresh.size(); ++i)
+            for (qsizetype j = i + 1; j < fresh.size(); ++j)
+                if (fresh[j].state == "fatta" && !fresh[j].same && lineOf.value(fresh[j].block) < lineOf.value(fresh[i].block)) {
+                    stale << i;
+                    break;
+                }
+        static const QRegularExpression marker(R"(^\s*%\s*@(L\d+\.\d+))");
+        for (qsizetype n = stale.size() - 1; n >= 0; --n) {
+            const Move m = fresh.takeAt(stale[n]);
+            tried.removeAll(m.block);
+            settled.removeAll(m.block);
+            --result.found;
+            if (m.state == "fatta")
+                --result.done;
+            else
+                result.proposed = qMax(0, result.proposed - 1);
+            if (m.state != "fatta" || m.sign.isEmpty())
+                continue;
+            QStringList lines = files::read(path).split('\n');
+            int at = -1;
+            for (int k = 0; k < lines.size() && at < 0; ++k)
+                if (marker.match(lines[k]).captured(1) == m.block)
+                    at = k;
+            if (at < 0)
+                continue;
+            const bool above = m.sign.trimmed().startsWith("\\newpage") || m.sign.trimmed().startsWith("\\enlargethispage");
+            int end = at + 1;
+            while (end < lines.size() && !marker.match(lines[end]).hasMatch())
+                ++end;
+            int sign = -1;
+            for (int k = above ? qMax(0, at - 10) : at; k < (above ? at : end) && sign < 0; ++k)
+                if (lines[k].trimmed() == m.sign.trimmed())
+                    sign = k;
+            if (sign < 0)
+                continue;
+            lines.removeAt(sign);
+            for (int k = sign; m.sign.contains("\\scalebox") && k < end - 1 && k < lines.size(); ++k)
+                if (lines[k].trimmed() == QLatin1String(CLOSE_SIGN)) {
+                    lines.removeAt(k);
+                    break;
+                }
+            if (!above && sign < lines.size() && sign > 0 && lines[sign].trimmed().isEmpty() && lines[sign - 1].trimmed().isEmpty())
+                lines.removeAt(sign);
+            files::write(path, lines.join('\n'));
+            dropped = true;
+        }
+        dropped = dropped || !stale.isEmpty();
+    }
+    if (!dropped && files::read(path) == afterUnits)
         break;
     }
     {   // com'è venuta ogni mossa fatta
