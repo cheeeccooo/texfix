@@ -1701,8 +1701,11 @@ private slots:
         Compiler compiler;
         compiler.setProject(p);
         QSignalSpy done(&compiler, &Compiler::finished);
+        bool runningAtStart = false;                   // chi sente «started» lo vede già al lavoro
+        connect(&compiler, &Compiler::started, &compiler, [&] { runningAtStart = compiler.isRunning(); });
         compiler.compileDocument();
         QTest::qWait(1500);
+        QVERIFY(runningAtStart);
         QVERIFY(compiler.isRunning());
         QElapsedTimer timer;
         timer.start();

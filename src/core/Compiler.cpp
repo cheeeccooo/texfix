@@ -178,9 +178,9 @@ void Compiler::start(const QString &lesson)
         files::write(base() + ".main.tex", main);
     }
     m_expectedPages = texlog::pages(files::read(base() + ".log"));   // quante pagine aveva l'ultima volta
+    launch();                                          // prima il processo: chi sente «started» deve già vederlo al lavoro
     emit started(lesson);
     emit progress(0, QString());
-    launch();
 }
 
 void Compiler::launch()
