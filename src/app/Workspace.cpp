@@ -510,8 +510,15 @@ QVariantMap Workspace::toPdf(const QString &file, int line) const
 {
     // un PDF più vecchio del file porterebbe alla riga sbagliata
     if (m_pdf.isEmpty() || QFileInfo(m_pdf).lastModified() < QFileInfo(m_project.path(file)).lastModified())
-        return {{"ok", false}};
-    const synctex::Spot spot = synctex::toPdf(m_project.root(), m_pdf, file, line);
+        return {{"ok", false}, {"stale", true}};
+    synctex::Spot spot;                                // una riga che non lascia segno (un commento, un comando): una vicina
+    for (const int delta : {0, 1, 2, -1, 3, -2, 4, 5, 6}) {
+        if (line + delta < 1)
+            continue;
+        spot = synctex::toPdf(m_project.root(), m_pdf, file, line + delta);
+        if (spot.ok)
+            break;
+    }
     return {{"ok", spot.ok}, {"page", spot.page}, {"x", spot.x}, {"y", spot.y}, {"height", spot.height}};
 }
 
@@ -1207,15 +1214,22 @@ QVariantList Workspace::layoutItems() const
                            {"title", lesson.number > 0 ? QStringLiteral("Lezione %1 · %2").arg(lesson.number).arg(lesson.title) : lesson.title}};
         if (todo)
             out << QVariantMap{{"type", "todo"}, {"lesson", lesson.file}, {"fresh", moves.isEmpty()}};
-        for (const layout::Move &m : moves)
-            out << QVariantMap{{"type", "move"}, {"lesson", m.lesson}, {"block", m.block}, {"what", m.what}, {"state", m.state},
+        QList<layout::Move> ordered = moves;           // in ordine di documento: l'ordine conta
+        std::stable_sort(ordered.begin(), ordered.end(), [](const layout::Move &a, const layout::Move &b) { return a.line < b.line; });
+        bool openAbove = false;
+        for (const layout::Move &m : ordered) {
+            const bool open = QStringList{"fatta", "proposta", "segnalata", "a_mano", "agente"}.contains(m.state);
+            const bool locked = open && openAbove;      // prima si decidono quelle sopra
+            openAbove = openAbove || open;
+            out << QVariantMap{{"type", "move"}, {"lesson", m.lesson}, {"block", m.block}, {"what", m.what}, {"state", m.state}, {"locked", locked},
                                {"hole", qRound(m.hole * 100)}, {"line", m.line},
                                {"before", shotList(m_project, m, "prima")}, {"after", shotList(m_project, m, "dopo")}};
+        }
     }
     return out;
 }
 
-void Workspace::decideMove(const QString &lesson, const QString &block, const QString &state)
+void Workspace::decideMove(const QString &lesson, const QString &block, const QString &state, bool redo)
 {
     // si decide anche mentre un lavoro gira, purché non stia lavorando proprio su questa lezione
     if (m_agentRunning || (jobRunning() && (m_jobLabel.isEmpty() || m_jobLabel.contains(QFileInfo(lesson).fileName()))))
@@ -1225,9 +1239,35 @@ void Workspace::decideMove(const QString &lesson, const QString &block, const QS
     for (const layout::Move &m : layout::moves(m_project, lesson))
         if (m.block == block)
             what = m.what;
+    const QString textBefore = files::read(m_project.path(lesson));
     decided(lesson, state == "accettata" ? QStringLiteral("Mossa accettata") : state == "lasciata" ? QStringLiteral("Mossa lasciata com'era")
                     : state == "risolta" ? QStringLiteral("Impaginazione risolta") : QStringLiteral("Impaginazione: scelta cambiata"),
             layout::decide(m_project, lesson, block, state));
+    // l'ordine conta: se la lezione è cambiata, le mosse non ancora decise che vengono dopo si ricalcolano
+    if (redo && (state == "risolta" || files::read(m_project.path(lesson)) != textBefore) && layout::dropAfter(m_project, lesson, block) > 0) {
+        refreshTree();
+        emit filesChanged();
+        if (jobRunning()) {
+            say(QStringLiteral("Il seguito della lezione va rimpaginato: «Impagina ciò che è nuovo» quando il lavoro in corso finisce."));
+        } else {
+            startJob(QStringLiteral("Rimpagino il seguito"), [this, lesson, project = m_project, style = m_style](JobControl *control) {
+                control->progress(0.1, QFileInfo(lesson).fileName());
+                layout::Result r;
+                try {
+                    r = layout::lesson(project, style, lesson, control);
+                } catch (const Stopped &) {
+                    r.failure = QStringLiteral("Lavoro fermato.");
+                }
+                return std::function<void()>([this, r] {
+                    checkpoint(QStringLiteral("Impaginazione del seguito"));
+                    refreshTree();
+                    emit filesChanged();
+                    say(r.failure.isEmpty() ? QStringLiteral("Seguito rimpaginato: %1 mosse fatte, %2 da decidere.").arg(r.done).arg(r.proposed) : r.failure);
+                    m_compiler.compileDocument();
+                });
+            });
+        }
+    }
     if (state == "agente")                             // se ne occupa l'agente, nella chat
         emit agentAsked(QStringLiteral("Nella lezione %1, al blocco %2, c'è un problema di impaginazione: %3\nSistemalo toccando il meno possibile "
                                        "(accorciare, spostare, cambiare la misura di una figura, spezzare in un punto migliore), poi compila la lezione "
@@ -1930,4 +1970,48 @@ void Workspace::reopenLesson(const QString &lesson, const QString &section)
         }
     }
     decided(lesson, QStringLiteral("Lezione riaperta"), error);      // riaprire toglie «fatta» alla lezione
+}
+
+bool Workspace::showsLesson(const QString &file) const { return hasProject() && m_pdf == Compiler::pdfOf(m_project, file); }
+
+QVariantMap Workspace::moveSpot(const QString &lesson, const QString &block) const
+{
+    int line = 0;
+    QString sign;
+    for (const layout::Move &m : layout::moves(m_project, lesson))
+        if (m.block == block) {
+            line = m.line;
+            sign = m.sign.trimmed();
+        }
+    // la riga della mossa nella lezione, se c'è: attorno al blocco
+    const QStringList lines = files::read(m_project.path(lesson)).split('\n');
+    static const QRegularExpression marker(R"(^\s*%\s*@L\d+\.\d+)");
+    int end = line;
+    while (end < lines.size() && !marker.match(lines[end]).hasMatch())
+        ++end;
+    for (int i = qMax(0, line - 11); i < end && i < lines.size(); ++i)
+        if (!sign.isEmpty() && lines[i].trimmed() == sign)
+            return {{"line", i + 1}, {"present", true}, {"movable", true}};
+    return {{"line", qMax(1, line)}, {"present", false}, {"movable", !sign.isEmpty()}};
+}
+
+void Workspace::resetLayout()
+{
+    if (!hasProject())
+        return;
+    if (busy())
+        return say(QStringLiteral("Aspetta la fine del lavoro in corso."));
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    int n = 0, lessons = 0;
+    for (const QString &file : m_project.inputs()) {
+        if (m_settings.isDone(file))
+            continue;                                  // le lezioni fatte non si toccano
+        n += layout::reset(m_project, file);
+        ++lessons;
+    }
+    checkpoint(QStringLiteral("Impaginazioni eliminate"));
+    refreshTree();
+    emit filesChanged();
+    say(QStringLiteral("Impaginazioni eliminate (%1): %2 da rifare con «Impagina ciò che è nuovo».").arg(n).arg(plural(lessons, "lezione", "lezioni")));
+    m_compiler.compileDocument();
 }

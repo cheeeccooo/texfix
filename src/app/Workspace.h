@@ -178,7 +178,14 @@ public:
     // cronologia). layoutItems: le mosse, lezione per lezione (type lesson | move). decideMove: accettata | lasciata.
     Q_INVOKABLE void paginate();
     Q_INVOKABLE QVariantList layoutItems() const;
-    Q_INVOKABLE void decideMove(const QString &lesson, const QString &block, const QString &state);
+    // redo: se la lezione cambia, le mosse non ancora decise che vengono dopo si ricalcolano (l'ordine conta).
+    Q_INVOKABLE void decideMove(const QString &lesson, const QString &block, const QString &state, bool redo = true);
+    // Dov'è la mossa di un blocco nella lezione (line) e se la sua riga c'è (present); showsLesson: il PDF mostrato è la
+    // prova di quella lezione sola.
+    // Elimina tutte le impaginazioni delle lezioni non fatte, per farle rifare: un passo della cronologia.
+    Q_INVOKABLE void resetLayout();
+    Q_INVOKABLE QVariantMap moveSpot(const QString &lesson, const QString &block) const;
+    Q_INVOKABLE bool showsLesson(const QString &file) const;
 
     // I lavori con un piano. jobs: quelli aperti (id, title, state). plan: il piano com'è; savePlan lo salva subito.
     // planMessage: ciò che si dice all'agente per avviarlo (how: avvia) o rifarlo (rivedi). planReady: l'agente ha

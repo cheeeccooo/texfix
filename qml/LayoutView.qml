@@ -34,6 +34,21 @@ Rectangle {
             Layout.margins: Theme.gap + 4
             spacing: Theme.gap
             TxLabel { Layout.fillWidth: true; text: "Rivedi impaginazione"; font.pixelSize: Theme.textSize + 3; font.weight: Font.DemiBold }
+            TxButton {
+                id: wipe
+                property bool armed: false             // chiede conferma: un secondo clic
+                text: armed ? "Sì, elimina tutte le impaginazioni" : "Elimina le impaginazioni"
+                primary: armed
+                hint: "Toglie tutte le mosse dalle lezioni non fatte, per farle rifare. ⌘Z lo annulla."
+                enabled: !Workspace.busy
+                onClicked: {
+                    if (!armed)
+                        return armed = true
+                    armed = false
+                    Workspace.resetLayout()
+                }
+                Timer { interval: 5000; running: wipe.armed; onTriggered: wipe.armed = false }
+            }
             TxButton { text: "Impagina ciò che è nuovo"; enabled: !Workspace.busy; onClicked: Workspace.paginate() }
         }
         ListView {
@@ -109,6 +124,15 @@ Rectangle {
                     color: box.open ? Theme.warn : Theme.textFaint
                     font.pixelSize: Theme.smallSize
                 }
+                TxLabel {
+                    Layout.fillWidth: true
+                    visible: box.row.locked === true
+                    text: "Prima decidi le mosse sopra: l'ordine conta, cambiandone una cambia tutto ciò che segue."
+                    color: Theme.textFaint
+                    font.pixelSize: Theme.smallSize
+                    wrapMode: Text.WordWrap
+                    elide: Text.ElideNone
+                }
                 // le pagine in piccolo: com'era, e com'è venuta
                 Flow {
                     Layout.fillWidth: true
@@ -167,6 +191,8 @@ Rectangle {
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: Theme.gap
+                    enabled: box.row.locked !== true
+                    opacity: enabled ? 1 : 0.45
                     Item { Layout.fillWidth: true }
                     TxButton { visible: box.row.line > 0; text: "Apri alla riga"; flat: true; onClicked: root.lineAsked(box.row.lesson, box.row.line) }
                     TxButton {

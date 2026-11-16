@@ -172,7 +172,12 @@ uguale a prima resta la stessa, e le schede restano finché il numero delle righ
 **§3.8 Figure.** Registro unico, «Ridisegna», «Ritaglia dalla fonte», Rivedi figure, «Ricontrolla con le fonti»
 (l'agente rilegge le fonti e propone un piano).
 
-**§3.9 Impaginazione.** Una lezione senza marcatori dei blocchi (scritta a mano o portata da fuori) resta da impaginare, e
+**§3.9 Impaginazione.** L'impaginazione non usa il modello: ogni mossa si misura compilando la lezione (una lezione con molte figure
+costa 7-10 secondi a compilazione, ed è lì che va il tempo). L'ordine conta: le mosse si decidono dall'alto in basso (quelle
+sotto una mossa ancora da decidere sono spente), e se una decisione cambia la lezione le mosse non decise che seguono si
+tolgono e si ricalcolano (`layout::dropAfter`, poi `layout::lesson`). «Elimina le impaginazioni» (`layout::reset`, con
+conferma) toglie tutte le mosse dalle lezioni non fatte per farle rifare. Rivedi impaginazione prende tutta la finestra: i
+pannelli si chiudono e tornano com'erano quando la si lascia (`ProjectView.syncReview`). Una lezione senza marcatori dei blocchi (scritta a mano o portata da fuori) resta da impaginare, e
 l'impaginazione glieli aggiunge. La revisione elenca anche le lezioni ancora da impaginare. Un clic sul testo di una mossa
 apre le pagine in piccolo del prima e del dopo (`layout::snap`, in `build/impaginazione/<lezione>/`), con il contorno del
 blocco rosso com'era e verde com'è venuto. Una mossa che fa uscire qualcosa dalla colonna non resta. Un'unità spezzata fra due pagine (a pagina nuova, o spezzata fra due paragrafi); un titolo
@@ -182,8 +187,9 @@ una voce sola dall'altra parte (si segnalano). Un'unità che finisce con poche r
 (`\enlargethispage`, su una colonna sola). Ogni mossa si accetta, si lascia com'era, si sistema a mano o si manda
 all'agente. A mano (`ProjectView.startManual`): Progetto e chat si chiudono, la lezione si apre al blocco accanto alla
 prova, che è della lezione sola (la prima si compila da sola, poi «Prova» o ⌘B). La striscia in alto dice che cosa c'è
-da sistemare e ha «Vai al blocco», i comandi pronti da inserire alla riga del cursore (`\newpage`, il comando dello
-stile per spezzare, `\vspace{-2mm}`, `\enlargethispage`), «Senza la mossa». «Risolta», «Torna alla revisione» o
+da sistemare e ha «Vai alla mossa» (nell'editor e nella prova), lo scambio «Con la mossa · Senza la mossa», i comandi
+pronti da inserire alla riga del cursore (`\newpage`, il comando dello stile per spezzare, `\vspace{-2mm}`). ⌘J porta
+dal cursore alla prova (se la riga non lascia segno, una vicina). «Risolta», «Torna alla revisione» o
 chiudere la lezione dall'editor rimettono i pannelli com'erano e ricompilano il documento. Una mossa si decide anche
 mentre un lavoro gira, purché non stia lavorando su quella lezione. Righe sole in cima o in fondo le evita `texfix.sty`. Con poco spazio (finestra sotto i 900 px) la prova va sotto l'editor (`ProjectView.stacked`).
 

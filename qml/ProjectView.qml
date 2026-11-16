@@ -45,12 +45,32 @@ Item {
     // compila da sola; ⌘B le successive; ⌘-clic sulla pagina porta alla riga, ⌘J al punto del PDF). Progetto e chat si
     // chiudono, e tornano alla fine se c'erano.
     property var manual: null                          // lesson, block, what, leftOpen, chatOpen
+    property var manualSpot: ({ line: 1, present: false, movable: false })   // dov'è la mossa, e se la sua riga c'è
+    function refreshManual() { if (manual) manualSpot = Workspace.moveSpot(manual.lesson, manual.block) }
     function startManual(lesson, block, line, what) {
-        manual = { lesson: lesson, block: block, what: what, line: Math.max(1, line), leftOpen: leftOpen, chatOpen: chatOpen }
+        const base = reviewSaved || { leftOpen: leftOpen, chatOpen: chatOpen }
+        manual = { lesson: lesson, block: block, what: what, leftOpen: base.leftOpen, chatOpen: base.chatOpen }
+        refreshManual()
         leftOpen = false
         chatOpen = false
+        bottomOpen = false
         split = 1
-        openFile(lesson, Math.max(1, line))
+        openFile(lesson, manualSpot.line)
+        compileFile()
+    }
+    // «Vai alla mossa»: nell'editor e nella prova.
+    function goToMove() {
+        refreshManual()
+        openFile(manual.lesson, manualSpot.line)
+        jumpToPdf(manual.lesson, manualSpot.line)
+    }
+    // Con o senza la mossa fatta dal programma: si scambia, e si va a vedere quel punto.
+    function setMove(on) {
+        editor.saveAll()
+        Workspace.decideMove(manual.lesson, manual.block, on ? "accettata" : "lasciata", false)
+        Workspace.decideMove(manual.lesson, manual.block, "a_mano", false)
+        refreshManual()
+        openFile(manual.lesson, manualSpot.line)
         compileFile()
     }
     function endManual(solved) {
@@ -60,11 +80,37 @@ Item {
         manual = null
         editor.saveAll()
         if (solved)
-            Workspace.decideMove(m.lesson, m.block, "risolta")
-        Workspace.compileDocument()                    // la prova era della lezione sola: si torna al documento
-        leftOpen = m.leftOpen
-        chatOpen = m.chatOpen
+            Workspace.decideMove(m.lesson, m.block, "risolta")   // il seguito della lezione si rimpagina
+        if (!Workspace.jobRunning)
+            Workspace.compileDocument()                // la prova era della lezione sola: si torna al documento
+        if (reviewSaved) {                             // si torna alla revisione, che sta a tutto schermo
+            split = 2
+        } else {
+            leftOpen = m.leftOpen
+            chatOpen = m.chatOpen
+        }
         openFile("rivedi:impaginazione")
+    }
+    // Rivedi impaginazione prende tutta la finestra: i pannelli si chiudono, e tornano com'erano quando la si lascia.
+    property var reviewSaved: null
+    function syncReview() {
+        if (manual)
+            return
+        const inReview = editor.currentFile === "rivedi:impaginazione"
+        if (inReview && !reviewSaved) {
+            reviewSaved = { leftOpen: leftOpen, chatOpen: chatOpen, bottomOpen: bottomOpen, split: split }
+            leftOpen = false
+            chatOpen = false
+            bottomOpen = false
+            split = 2
+        } else if (!inReview && reviewSaved) {
+            const s = reviewSaved
+            reviewSaved = null
+            leftOpen = s.leftOpen
+            chatOpen = s.chatOpen
+            bottomOpen = s.bottomOpen
+            split = s.split === 2 ? 1 : s.split
+        }
     }
     function compileFile() {
         if (Workspace.compiling)
@@ -115,9 +161,12 @@ Item {
         if (Workspace.compiling)
             return Workspace.say("Sta già compilando.")
         editor.saveAll()
-        const spot = Workspace.toPdf(file, line)
+        const lessonOnly = manual !== null && !Workspace.showsLesson(file)   // la prova è della lezione sola
+        const spot = lessonOnly ? ({ ok: false, stale: true }) : Workspace.toPdf(file, line)
         if (spot.ok)
             return showSpot(spot)
+        if (!spot.stale)
+            return Workspace.say("Questa riga non lascia un segno nel PDF: prova con una riga di testo vicina.")
         pendingJump = { file: file, line: line }
         Workspace.compileFile(file)
     }
@@ -162,6 +211,7 @@ Item {
         function onPlanReady(id) { root.openFile("piano:" + id) }
         function onFileRenamed(from, to) { editor.fileRenamed(from, to) }
         function onAgentAsked(message, title) { root.chatOpen = true; Chat.startProcedure(title, message) }
+        function onFilesChanged() { root.refreshManual() }
         function onBuildFinished() {
             if (Workspace.errorCount > 0)
                 root.bottomOpen = true
@@ -265,6 +315,8 @@ Item {
                 root.chatOpen = true
             } else if (name === "miniature") {
                 editor.showShots()
+            } else if (name === "elimina-impaginazioni") {
+                Workspace.resetLayout()
             } else if (name === "a-mano") {
                 const moves = Workspace.layoutItems().filter(i => i.type === "move")
                 if (moves.length > 0) {
@@ -364,15 +416,25 @@ Item {
                         maximumLineCount: 3
                     }
                     TxButton { text: "Torna alla revisione"; hint: "Lascia la modifica a mano: la mossa resta da decidere"; onClicked: root.endManual(false) }
-                    TxButton { text: "Risolta"; primary: true; onClicked: root.endManual(true) }
+                    TxButton { text: "Risolta"; hint: "La mossa è decisa: il seguito della lezione si rimpagina"; onClicked: root.endManual(true) }
                 }
-                // andare al punto, i comandi pronti (alla riga del cursore), la prova della lezione sola
-                Flow {
+                // a sinistra: andare alla mossa, con o senza; in mezzo i comandi pronti; a destra la prova
+                RowLayout {
                     Layout.fillWidth: true
                     spacing: Theme.gap
-                    TxButton { text: "Vai al blocco"; hint: "Porta l'editor al blocco da sistemare"; onClicked: root.openFile(root.manual.lesson, root.manual.line) }
+                    TxButton { text: "Vai alla mossa"; hint: "Porta l'editor e la prova al punto da sistemare"; onClicked: root.goToMove() }
+                    TxSegmented {
+                        visible: root.manualSpot.movable === true
+                        implicitHeight: Theme.rowHeight + 2
+                        implicitWidth: 250
+                        choices: [{ value: "con", label: "Con la mossa" }, { value: "senza", label: "Senza la mossa" }]
+                        value: root.manualSpot.present ? "con" : "senza"
+                        onChosen: value => root.setMove(value === "con")
+                    }
+                    Rectangle { implicitWidth: 1; implicitHeight: Theme.rowHeight - 6; color: Theme.border }
+                    TxLabel { text: "Inserisci:"; color: Theme.textMuted; font.pixelSize: Theme.smallSize }
                     Repeater {
-                        model: ["\\newpage", Workspace.breakCommand, "\\vspace{-2mm}", "\\enlargethispage{2\\baselineskip}"]
+                        model: ["\\newpage", Workspace.breakCommand, "\\vspace{-2mm}"]
                         TxButton {
                             required property string modelData
                             visible: modelData !== ""
@@ -381,10 +443,11 @@ Item {
                             onClicked: { root.openFile(root.manual.lesson, 0); editor.insertLine(modelData) }
                         }
                     }
-                    TxButton {
-                        text: "Senza la mossa"
-                        hint: "Toglie la mossa fatta da sola su questo blocco"
-                        onClicked: { editor.saveAll(); Workspace.decideMove(root.manual.lesson, root.manual.block, "lasciata"); Workspace.decideMove(root.manual.lesson, root.manual.block, "a_mano") }
+                    Item { Layout.fillWidth: true }
+                    TxLabel {
+                        text: root.manual ? "solo " + root.manual.lesson.substring(root.manual.lesson.lastIndexOf("/") + 1) + " · ⌘J: dal cursore alla prova" : ""
+                        color: Theme.textMuted
+                        font.pixelSize: Theme.smallSize
                     }
                     TxButton {
                         text: Workspace.compiling ? "Compilo…" : "Prova"
@@ -392,13 +455,6 @@ Item {
                         hint: "Compila solo questa lezione e mostra com'è venuta (⌘B)"
                         enabled: !Workspace.compiling
                         onClicked: { root.openFile(root.manual.lesson, 0); root.compileFile() }
-                    }
-                    TxLabel {
-                        height: Theme.rowHeight
-                        verticalAlignment: Text.AlignVCenter
-                        text: root.manual ? "La prova è solo di " + root.manual.lesson.substring(root.manual.lesson.lastIndexOf("/") + 1) : ""
-                        color: Theme.textMuted
-                        font.pixelSize: Theme.smallSize
                     }
                 }
             }
@@ -482,6 +538,7 @@ Item {
                         onChatAsked: root.chatOpen = true
                         onManualAsked: (lesson, block, line, what) => root.startManual(lesson, block, line, what)
                         // chiudere la lezione dall'editor è lasciare la modifica a mano
+                        onCurrentFileChanged: root.syncReview()
                         onTabClosed: file => { if (root.manual && file === root.manual.lesson) root.endManual(false) }
                     }
                     PdfPane {

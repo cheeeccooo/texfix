@@ -50,6 +50,12 @@ int toReview(const Project &project, const QString &file);
 // accettata: la mossa proposta si applica, o quella fatta si conferma. lasciata: l'a capo pagina si toglie.
 // a_mano, agente (se ne occupa l'utente o l'agente: resta da rivedere), risolta: cambia solo il registro.
 QString decide(const Project &project, const QString &file, const QString &block, const QString &state);
+// L'ordine conta: cambiare una mossa sposta tutto ciò che segue. dropAfter toglie dalla lezione e dal registro le mosse
+// non ancora decise che vengono dopo quel blocco (quante), e segna la lezione da rimpaginare: poi `lesson` le ricalcola.
+int dropAfter(const Project &project, const QString &file, const QString &block);
+// Toglie da una lezione tutte le mosse dell'impaginazione (le righe «% impaginazione», il registro, le pagine in piccolo):
+// torna da impaginare. Restituisce quante erano.
+int reset(const Project &project, const QString &file);
 // Le pagine in piccolo attorno a una mossa: «prima» (com'era quando il problema è stato visto) e «dopo» (com'è venuta).
 // Di ogni pagina, dove sta il blocco (in frazioni della pagina): il contorno da disegnarci sopra.
 struct Shot {

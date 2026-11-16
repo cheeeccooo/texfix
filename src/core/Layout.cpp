@@ -725,6 +725,9 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
                     snap(project, style, file, m.block, "dopo");
         }
     }
+    for (Move &m : fresh)
+        if (m.state == "segnalata")
+            m.sign.clear();                            // nessuna mossa del programma: niente da mettere o togliere
     QJsonArray list;
     for (const Move &m : kept + fresh)
         list.append(toJson(m));
@@ -839,5 +842,62 @@ QList<Shot> shots(const Project &project, const QString &file, const QString &bl
         out << shot;
     }
     return out;
+}
+}
+
+namespace tx::layout {
+int dropAfter(const Project &project, const QString &file, const QString &block)
+{
+    int line = 0;
+    const QList<Move> all = moves(project, file);
+    for (const Move &m : all)
+        if (m.block == block)
+            line = m.line;
+    QStringList drop;
+    for (const Move &m : all) {
+        if (m.line <= line || (m.state != "fatta" && m.state != "proposta" && m.state != "segnalata"))
+            continue;
+        if (m.state == "fatta")
+            decide(project, file, m.block, "lasciata");            // la sua riga esce dalla lezione
+        drop << m.block;
+    }
+    if (drop.isEmpty())
+        return 0;
+    QJsonObject registryNow = registry(project);
+    QJsonObject entry = registryNow.value(file).toObject();
+    QJsonArray kept;
+    for (const QJsonValue &v : entry.value("mosse").toArray())
+        if (!drop.contains(v.toObject().value("blocco").toString()))
+            kept.append(v);
+    entry["mosse"] = kept;
+    entry["impronta"] = QString();                                 // da rimpaginare
+    registryNow[file] = entry;
+    saveRegistry(project, registryNow);
+    return int(drop.size());
+}
+}
+
+namespace tx::layout {
+int reset(const Project &project, const QString &file)
+{
+    const QString path = project.path(file);
+    QStringList lines = files::read(path).split('\n');
+    int removed = 0;
+    for (int i = int(lines.size()) - 1; i >= 0; --i) {
+        if (!lines[i].trimmed().endsWith(QLatin1String("% impaginazione")))
+            continue;
+        lines.removeAt(i);
+        ++removed;
+        if (i > 0 && i < lines.size() && lines[i].trimmed().isEmpty() && lines[i - 1].trimmed().isEmpty())
+            lines.removeAt(i);                         // delle due righe vuote attorno ne resta una
+    }
+    if (removed)
+        files::write(path, lines.join('\n'));
+    QJsonObject all = registry(project);
+    const int moves = int(all.value(file).toObject().value("mosse").toArray().size());
+    all.remove(file);
+    saveRegistry(project, all);
+    QDir(project.path("build/impaginazione/" + QFileInfo(file).completeBaseName())).removeRecursively();
+    return qMax(removed, moves);
 }
 }
