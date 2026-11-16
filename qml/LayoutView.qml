@@ -52,7 +52,7 @@ Rectangle {
     function plain(shot) { return { path: shot.path, rects: [] } }
     // Il nome del blocco: l'inizio di ciò che è successo.
     function nameOf(what) {
-        const m = /^(.*?)(?= cadeva| cade | non ci stava| finiva| è più lungo|: | resta | lascia )/.exec(what || "")
+        const m = /^(.*?)(?= cadeva| passava| cade | non ci stava| finiva| è più lungo|: | resta | lascia )/.exec(what || "")
         return m ? m[1] : (what || "").split(".")[0]
     }
     function badgeOf(row) {

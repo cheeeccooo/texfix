@@ -191,7 +191,9 @@ l'impaginazione glieli aggiunge. La revisione elenca anche le lezioni ancora da 
 apre le pagine in piccolo del prima e del dopo (`layout::snap`, in `build/impaginazione/<lezione>/`), con il contorno del
 blocco rosso com'era e verde com'è venuto. Una mossa che fa uscire qualcosa dalla colonna non resta. Un'unità spezzata fra due pagine (a pagina nuova, o spezzata fra due paragrafi); un titolo
 rimasto in fondo senza il suo testo (a pagina nuova con lui); un grande vuoto prima di un'unità che non ci stava (una figura si
-rimpicciolisce quanto basta, `\scalebox{…}{% impaginazione` … `}% impaginazione` attorno al disegno; il resto si segnala); una formula rimasta in fondo senza la frase che la commenta e un elenco che lascia
+rimpicciolisce quanto basta, `\scalebox{…}{% impaginazione` … `}% impaginazione` attorno al disegno, fino al 55%; se non basta resta
+dov'è con un a capo e il vuoto è voluto; il resto si segnala); ciò che non si spezza (una figura, un riquadro intero) ed è passato oltre
+da solo lasciando poco vuoto (fra il 2% e il 25%) prende un a capo che fissa il punto, di solito «invariata»; una formula rimasta in fondo senza la frase che la commenta e un elenco che lascia
 una voce sola dall'altra parte (si segnalano). Un'unità che finisce con poche righe sulla pagina dopo resta intera allungando la pagina
 (`\enlargethispage`, su una colonna sola). Ogni mossa si accetta, si lascia com'era, si sistema a mano o si manda
 all'agente. A mano (`ProjectView.startManual`): Progetto e chat si chiudono, la lezione si apre al blocco accanto alla
@@ -201,6 +203,10 @@ pronti da inserire alla riga del cursore (`\newpage`, il comando dello stile per
 dal cursore alla prova (se la riga non lascia segno, una vicina). «Risolta», «Torna alla revisione» o
 chiudere la lezione dall'editor rimettono i pannelli com'erano e ricompilano il documento. Una mossa si decide anche
 mentre un lavoro gira, purché non stia lavorando su quella lezione. Righe sole in cima o in fondo le evita `texfix.sty`. Con poco spazio (finestra sotto i 900 px) la prova va sotto l'editor (`ProjectView.stacked`).
+
+Le misure: un'unità che non si spezza sta dove sta il segno più alto delle sue righe (`tallest`: la prima riga lascia un segno
+in fondo alla colonna di prima, lo spazio che la precede); i segni fuori dall'area del testo non contano (`spotOf`: una riga su cui
+la pagina si chiude si prende intestazione e piè di pagina).
 
 **§3.10 Errori e righe.** Gli errori al modello. Le righe: prima una formula in display troppo larga spezzata a ogni
 segno di relazione o a un + (`fix::splitDisplay`), poi il paragrafo spezzato a una fine di frase, poi il modello.

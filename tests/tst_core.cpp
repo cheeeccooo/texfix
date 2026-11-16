@@ -788,7 +788,7 @@ private slots:
     }
 
     // L'impaginazione oltre i riquadri spezzati: una figura che non ci stava ed è passata oltre lascia un grande vuoto.
-    // Non c'è una mossa sicura: si segnala, e si decide a mano o con l'agente.
+    // Qui non c'è un disegno da rimpicciolire: resta alla pagina dopo con un a capo, e il vuoto diventa voluto.
     void layoutHole()
     {
         if (!hasLatexmk())
@@ -809,11 +809,13 @@ private slots:
         const layout::Result r = layout::lesson(p, style, "src/src1.tex");
         QCOMPARE(r.failure, QString());
         QCOMPARE(r.found, 1);
-        QCOMPARE(r.done, 0);
-        QCOMPARE(files::read(p.path("src/src1.tex")), text);                           // niente è stato toccato
+        QCOMPARE(r.done, 1);
+        QVERIFY(text.count("\\newpage % impaginazione") == 0);
+        QCOMPARE(files::read(p.path("src/src1.tex")).count("\\newpage % impaginazione\n% @L1."), 1);   // l'a capo, prima della figura
         const QList<layout::Move> moves = layout::moves(p, "src/src1.tex");
         QCOMPARE(moves.size(), 1);
-        QCOMPARE(moves[0].state, "segnalata");
+        QCOMPARE(moves[0].state, "fatta");
+        QVERIFY(moves[0].same);                                                        // la pagina è rimasta com'era
         QVERIFY2(moves[0].what.startsWith("La figura non ci stava"), qPrintable(moves[0].what));
         QVERIFY(moves[0].hole > layout::HOLE_OK);
         QCOMPARE(layout::toReview(p, "src/src1.tex"), 1);

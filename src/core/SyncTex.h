@@ -1,4 +1,5 @@
 #pragma once
+#include <QList>
 #include <QString>
 
 // Il salto fra sorgente e PDF: dalla riga di un file al punto della pagina e ritorno. Serve il .synctex.gz che la
@@ -16,6 +17,8 @@ struct Spot {
 
 bool available(const QString &pdf);
 Spot toPdf(const QString &root, const QString &pdf, const QString &file, int line);
+// Tutti i segni che una riga lascia nel PDF (una riga può lasciarne più d'uno, anche in pagine diverse).
+QList<Spot> allToPdf(const QString &root, const QString &pdf, const QString &file, int line);
 Spot toSource(const QString &root, const QString &pdf, int page, double x, double y);
 
 }

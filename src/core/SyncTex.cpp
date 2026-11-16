@@ -34,17 +34,18 @@ bool available(const QString &pdf)
     return info.exists() && QFileInfo::exists(info.absolutePath() + '/' + info.completeBaseName() + ".synctex.gz");
 }
 
-Spot toPdf(const QString &root, const QString &pdf, const QString &file, int line)
+QList<Spot> allToPdf(const QString &root, const QString &pdf, const QString &file, int line)
 {
-    Spot spot;
+    QList<Spot> out;
     if (!available(pdf))
-        return spot;
+        return out;
     // il nome com'è scritto nell'\input (relativo alla radice), poi quello assoluto
     for (const QString &name : {file, QDir(root).absoluteFilePath(file)}) {
         const tools::Output run = tools::run("synctex", {"view", "-i", QStringLiteral("%1:0:%2").arg(line).arg(name), "-o", pdf}, root);
         for (const auto &record : records(run.text, "Output")) {
             if (!record.contains("Page"))
                 continue;
+            Spot spot;
             spot.ok = true;
             spot.page = record.value("Page").toInt();
             spot.x = record.value("h").toDouble();
@@ -52,10 +53,18 @@ Spot toPdf(const QString &root, const QString &pdf, const QString &file, int lin
             spot.y = record.value("v").toDouble() - spot.height;
             spot.file = file;
             spot.line = line;
-            return spot;
+            out << spot;
         }
+        if (!out.isEmpty())
+            break;
     }
-    return spot;
+    return out;
+}
+
+Spot toPdf(const QString &root, const QString &pdf, const QString &file, int line)
+{
+    const QList<Spot> all = allToPdf(root, pdf, file, line);
+    return all.isEmpty() ? Spot() : all.first();
 }
 
 Spot toSource(const QString &root, const QString &pdf, int page, double x, double y)

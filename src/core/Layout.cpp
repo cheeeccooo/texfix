@@ -72,6 +72,16 @@ QJsonObject toJson(const Move &m)
     return {{"blocco", m.block}, {"che_cosa", m.what}, {"vuoto", m.hole}, {"stato", m.state}, {"segno", m.sign}, {"dopo", m.after}, {"fino", m.until}, {"origine", m.origin.isEmpty() ? m.state : m.origin}, {"invariata", m.same}};
 }
 
+// Un'unità che non si spezza (una figura, un riquadro che lo stile dice intero) sta tutta dove sta la sua ultima riga:
+// la sua prima riga può lasciare un segno in fondo alla colonna di prima (lo spazio che la precede), e non vuol dire niente.
+bool unbreakable(const Style &style, const QString &kind)
+{
+    if (kind == "figura")
+        return true;
+    const Style::Environment *env = style.environment(kind);
+    return env && !env->breaks;
+}
+
 // Dove sta il testo nelle pagine di una lezione compilata, e dove cade una sua riga.
 struct Geometry {
     QString pdf;
@@ -98,11 +108,42 @@ struct Where {
     int slot = 0;                                      // la pagina, o la colonna
     double bottom = 0;                                 // quanto è scesa la riga nella colonna, fra 0 e 1
 };
+// Il segno che una riga lascia nel testo. Una riga durante la quale la pagina si chiude si prende anche l'intestazione e il
+// piè di pagina: quei segni, fuori dall'area del testo, non contano.
+synctex::Spot spotOf(const Project &project, const Geometry &g, const QString &lesson, int line)
+{
+    for (const synctex::Spot &s : synctex::allToPdf(project.root(), g.pdf, lesson, line))
+        if (s.y >= g.textTop - 2 && s.y + s.height <= g.textTop + g.textHeight + 2)
+            return s;
+    return {};
+}
 Where whereIs(const Project &project, const Geometry &g, const QString &lesson, int line)
 {
-    const synctex::Spot s = synctex::toPdf(project.root(), g.pdf, lesson, line);
+    const synctex::Spot s = spotOf(project, g, lesson, line);
     if (!s.ok)
         return {};
+    return {true, g.twoColumns ? s.page * 2 + (s.x > g.pageWidth / 2 ? 1 : 0) : s.page, qBound(0.0, (s.y + s.height - g.textTop) / g.textHeight, 1.0)};
+}
+// Il segno più alto che le righe di un'unità lasciano nel PDF: per ciò che non si spezza è l'unità stessa (il disegno, il
+// riquadro), dovunque siano finiti gli spazi che la precedono.
+synctex::Spot tallest(const Project &project, const Geometry &g, const QString &lesson, int line, int lastLine)
+{
+    synctex::Spot best;
+    const int step = qMax(1, (lastLine - line + 1) / 24);
+    for (int k = line; k <= lastLine; k += step)
+        for (const synctex::Spot &s : synctex::allToPdf(project.root(), g.pdf, lesson, k))
+            if ((!best.ok || s.height > best.height) && s.y >= g.textTop - 2 && s.y + s.height <= g.textTop + g.textHeight + 2)
+                best = s;
+    return best;
+}
+// Dove comincia un'unità: per ciò che non si spezza, dove sta lei per intero (`lastLine`: la riga che la chiude).
+Where unitWhere(const Project &project, const Style &style, const Geometry &g, const QString &lesson, const QString &kind, int line, int lastLine)
+{
+    if (!unbreakable(style, kind))
+        return whereIs(project, g, lesson, line);
+    const synctex::Spot s = tallest(project, g, lesson, line, lastLine);
+    if (!s.ok)
+        return whereIs(project, g, lesson, line);
     return {true, g.twoColumns ? s.page * 2 + (s.x > g.pageWidth / 2 ? 1 : 0) : s.page, qBound(0.0, (s.y + s.height - g.textTop) / g.textHeight, 1.0)};
 }
 }
@@ -122,12 +163,13 @@ QList<Placed> measure(const Project &project, const Style &style, const QString 
     auto slot = [&](const synctex::Spot &s) { return style.twoColumns() ? s.page * 2 + (s.x > pageWidth / 2 ? 1 : 0) : s.page; };
     const QStringList lines = files::read(project.path(lesson)).split('\n');
 
+    const Geometry geometry0 = geometryOf(project, style, lesson);
     // dove cade una riga del sorgente; se quella non lascia segno nel PDF, una vicina
     auto spot = [&](int line, int step, int until) {
         for (int k = 0; k < 4 && line >= 1 && line != until + step; ++k, line += step) {
             if (control)
                 control->check();
-            const synctex::Spot s = synctex::toPdf(project.root(), built.pdf, lesson, line);
+            const synctex::Spot s = spotOf(project, geometry0, lesson, line);
             if (s.ok)
                 return s;
         }
@@ -147,6 +189,13 @@ QList<Placed> measure(const Project &project, const Style &style, const QString 
             continue;
         textTop = qMin(textTop, first.y);
         textBottom = qMax(textBottom, last.y + last.height);
+        // ciò che non si spezza sta tutto dove sta la sua fine
+        if (unbreakable(style, block.kind)) {
+            const synctex::Spot whole = tallest(project, geometry0, lesson, block.line, block.endLine);
+            if (whole.ok)
+                raw << Raw{Placed{block.id, block.kind, block.title, block.line, slot(whole), slot(whole), 0}, whole.y};
+            continue;
+        }
         raw << Raw{Placed{block.id, block.kind, block.title, block.line, slot(first), slot(last), 0}, first.y};
     }
     // dove sta il testo nella pagina lo dice il documento stesso, nel log (texfix.sty); senza, ciò che si è visto
@@ -409,7 +458,7 @@ bool shrink(const Project &project, const Style &style, const QString &file, con
         try {
             if (!Compiler::compileSync(project, file, control).hasErrors()) {
                 const Geometry g = geometryOf(project, style, file);
-                const Where start = whereIs(project, g, file, block.line);
+                const Where start = unitWhere(project, style, g, file, block.kind, block.line, block.endLine + 2);   // due righe in più
                 Where end;
                 for (int line = previous.endLine; line >= previous.line && !end.ok; --line)
                     end = whereIs(project, g, file, line);
@@ -650,7 +699,7 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
             result.proposed += 1;
         }
     }
-    for (int round = 0; round < 6; ++round) {
+    for (int round = 0; round < 40; ++round) {
         bool shrunk = false;
         // un grande vuoto: un'unità che non ci stava è passata oltre da sola. Una figura si prova a rimpicciolirla; per il
         // resto non c'è una mossa sicura: si segnala.
@@ -716,21 +765,74 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
             const blocks::Block &b = parsed[i];
             if (b.kind == "testo" || b.id.isEmpty() || settled.contains(b.id))
                 continue;
-            const Where start = whereIs(project, g, file, b.line);
+            const Where start = unitWhere(project, style, g, file, b.kind, b.line, b.endLine);
             Where end;
             for (int line = parsed[i - 1].endLine; line >= parsed[i - 1].line && !end.ok; --line)
                 end = whereIs(project, g, file, line);
-            if (!start.ok || !end.ok || start.slot <= end.slot || 1.0 - end.bottom <= HOLE_OK)
+            if (!start.ok || !end.ok || start.slot <= end.slot)
                 continue;
+            const double hole = 1.0 - end.bottom;
+            const bool whole = unbreakable(style, b.kind);
+            // poco vuoto: ciò che non si spezza è passato oltre da solo, e va bene così; un a capo fissa il punto.
+            // Sotto il 2% la colonna è semplicemente piena: non c'è niente da fissare.
+            if (hole <= HOLE_OK && (!whole || hole <= 0.02))
+                continue;
+            Placed named;
+            named.kind = b.kind;
+            named.title = b.title;
+            const QString side = style.twoColumns() ? QStringLiteral("della colonna") : QStringLiteral("della pagina");
+            const QString next = style.twoColumns() ? QStringLiteral("alla colonna dopo") : QStringLiteral("alla pagina dopo");
+            // l'a capo prima dell'unità: resta se, ricompilata, lei e ciò che la precede stanno dove stavano
+            auto pin = [&](const QString &what) {
+                QStringList lines = text.split('\n');
+                lines.insert(groupStart(lines, b), QString::fromUtf8(SIGN));
+                files::write(path, lines.join('\n'));
+                bool good = false;
+                try {
+                    if (!Compiler::compileSync(project, file, control).hasErrors()) {
+                        const Geometry after = geometryOf(project, style, file);
+                        const Where now = unitWhere(project, style, after, file, b.kind, b.line + 1, b.endLine + 1);
+                        Where before;
+                        for (int line = parsed[i - 1].endLine; line >= parsed[i - 1].line && !before.ok; --line)
+                            before = whereIs(project, after, file, line);
+                        good = now.ok && before.ok && now.slot == start.slot && before.slot == end.slot;
+                    }
+                } catch (...) {
+                    files::write(path, text);
+                    throw;
+                }
+                if (!good) {
+                    files::write(path, text);
+                    return false;
+                }
+                Move move{file, b.id, what, hole, "fatta", 0};
+                snap(project, style, file, b.id, "dopo");
+                move.same = sameShots(project, file, b.id);
+                fresh << move;
+                ++result.found;
+                ++result.done;
+                return true;
+            };
             snap(project, style, file, b.id, "prima");
             settled << b.id;
+            if (hole <= HOLE_OK) {
+                pin(QStringLiteral("%1 passava %2 lasciando vuoto il %3% %4: un a capo ora fissa il punto.").arg(nameOf(named, style), next).arg(qRound(hole * 100)).arg(side));
+                shrunk = true;                         // fissata o no, si è ricompilato: si rimisura da capo
+                break;
+            }
             if (b.kind == "figura") {
-                Move move{file, b.id, {}, 1.0 - end.bottom, "fatta", 0};
+                Move move{file, b.id, {}, hole, "fatta", 0};
                 if (shrink(project, style, file, b, parsed[i - 1], control, &move)) {
                     ++result.found;
                     ++result.done;
                     fresh << move;
                     shrunk = true;                     // le righe sono cambiate: si rimisura da capo
+                    break;
+                }
+                // nemmeno rimpicciolita ci sta: resta dov'è con un a capo, e il vuoto diventa voluto
+                if (pin(QStringLiteral("%1 non ci stava nemmeno rimpicciolita al 55%: comincia %2 con un a capo, e il vuoto che lascia (%3% %4) è voluto.")
+                            .arg(nameOf(named, style), next).arg(qRound(hole * 100)).arg(side))) {
+                    shrunk = true;
                     break;
                 }
             }
@@ -742,6 +844,10 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
             fresh << Move{file, b.id, QStringLiteral("%1 non ci stava ed è passato oltre: prima resta vuoto il %2% %3. Si può accorciare o spostare a mano, o affidare all'agente.")
                                           .arg(nameOf(p, style)).arg(qRound((1.0 - end.bottom) * 100)).arg(style.twoColumns() ? QStringLiteral("della colonna") : QStringLiteral("della pagina")),
                           1.0 - end.bottom, "segnalata", 0};
+            if (b.kind == "figura") {
+                shrunk = true;                         // le prove hanno ricompilato: ciò che segue si rimisura
+                break;
+            }
         }
         if (!shrunk)
             break;
