@@ -297,7 +297,7 @@ Rectangle {
                                         }
                                         ToolTip.visible: undoArea.containsMouse
                                         ToolTip.delay: 400
-                                        ToolTip.text: tile.row.undo === tile.row.block ? "Annulla questa scelta: la mossa torna da rivedere" : "Annulla la scelta di prima e torna a quella mossa"
+                                        ToolTip.text: tile.row.byHand ? "Annulla la modifica a mano: la lezione torna com'era prima, e la mossa da rivedere" : "Annulla questa scelta: la mossa torna da rivedere"
                                     }
                                     ToolTip.visible: tileArea.containsMouse
                                     ToolTip.delay: 700

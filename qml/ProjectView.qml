@@ -83,10 +83,12 @@ Item {
         const m = manual
         manual = null
         editor.saveAll()
-        if (solved)
+        if (solved) {
+            Workspace.keepManual(m.lesson, m.block, m.original, m.registry)   // la × sulla mossa riporta qui
             Workspace.decideMove(m.lesson, m.block, "risolta")   // applicata: il seguito della lezione si rimpagina
-        else
+        } else {
             Workspace.restoreManual(m.lesson, m.original, m.registry)   // le prove non restano
+        }
         if (!Workspace.jobRunning)
             Workspace.compileDocument()                // la prova era della lezione sola: si torna al documento
         if (reviewSaved) {                             // si torna alla revisione, che sta a tutto schermo

@@ -191,6 +191,7 @@ public:
     Q_INVOKABLE void acceptRest(const QString &lesson);
     // «Chiudi senza applicare» nella modifica a mano: la lezione e il registro tornano com'erano all'inizio.
     Q_INVOKABLE void restoreManual(const QString &lesson, const QString &text, const QString &registry);
+    Q_INVOKABLE void keepManual(const QString &lesson, const QString &block, const QString &text, const QString &registry);
     Q_INVOKABLE QVariantMap moveSpot(const QString &lesson, const QString &block) const;
     Q_INVOKABLE bool showsLesson(const QString &file) const;
 

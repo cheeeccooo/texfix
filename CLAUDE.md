@@ -175,8 +175,10 @@ uguale a prima resta la stessa, e le schede restano finché il numero delle righ
 **§3.9 Impaginazione.** L'impaginazione non usa il modello: ogni mossa si misura compilando la lezione (una lezione con molte figure
 costa 7-10 secondi a compilazione, ed è lì che va il tempo). L'ordine conta: in ogni lezione c'è una mossa attuale, la prima ancora da rivedere
 (`role` in `layoutItems`: chiusa, attuale, attesa). Quelle prima sono oscurate e non si toccano più; quelle dopo aspettano.
-Per cambiarne una già decisa si torna indietro una alla volta: la × che compare passando sulla scheda attuale annulla la
-scelta di prima (`layout::reopen`: la mossa torna com'era quando il programma l'ha lasciata, da `origine` nel registro).
+Per cambiarne una già decisa si torna indietro una alla volta: la × che compare passando sull'ultima scheda decisa della lezione annulla quella
+scelta e si torna lì (`layout::reopen`: la mossa torna com'era quando il programma l'ha lasciata, da `origine` nel registro). Su una mossa sistemata a mano
+la × rimette anche la lezione e le sue mosse com'erano prima della modifica (`Workspace::keepManual` le tiene in
+`build/impaginazione/<lezione>/<blocco>-prima-della-modifica.json`), se dopo non è stato scritto altro nella lezione.
 Se una decisione cambia la lezione le mosse non decise che seguono si tolgono e si ricalcolano (`layout::dropAfter`, poi
 `layout::lesson`). Ciò che il programma non risolve (un a capo non basta, più lungo di una colonna, un grande vuoto) è
 «segnalata», senza una riga sua: è da rivedere come le altre, con Accetta, a mano o all'agente, e senza «Lascia com'era». «Elimina le impaginazioni» (`layout::reset`, con

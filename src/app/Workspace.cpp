@@ -1,4 +1,5 @@
 #include "Workspace.h"
+#include <QJsonObject>
 
 #include "core/Figures.h"
 #include "core/Files.h"
@@ -1200,6 +1201,31 @@ QVariantList shotList(const Project &project, const layout::Move &m, const QStri
 }
 }
 
+namespace {
+// Com'erano la lezione e le sue mosse prima di una modifica a mano applicata: «annulla la scelta» le rimette.
+QString manualFile(const Project &project, const QString &lesson, const QString &block)
+{
+    return project.path(QStringLiteral("build/impaginazione/%1/%2-prima-della-modifica.json").arg(QFileInfo(lesson).completeBaseName(), block));
+}
+// La lezione senza le righe dell'impaginazione: per capire se, a parte le mosse, è ancora quella.
+QString withoutMoves(const QString &text)
+{
+    QStringList out;
+    for (const QString &line : text.split('\n'))
+        if (!line.trimmed().endsWith(QLatin1String("% impaginazione")) && !line.trimmed().isEmpty())
+            out << line;
+    return out.join('\n');
+}
+}
+
+void Workspace::keepManual(const QString &lesson, const QString &block, const QString &text, const QString &registry)
+{
+    if (!hasProject())
+        return;
+    const QJsonValue entry = QJsonDocument::fromJson(registry.toUtf8()).object().value(lesson);
+    files::write(manualFile(m_project, lesson, block), QString::fromUtf8(QJsonDocument(QJsonObject{{"testo", text}, {"mosse", entry}, {"applicata", withoutMoves(files::read(m_project.path(lesson)))}}).toJson()));
+}
+
 QVariantList Workspace::layoutItems() const
 {
     QVariantList out;
@@ -1229,10 +1255,10 @@ QVariantList Workspace::layoutItems() const
             ++index;
             const QString role = index < now ? QStringLiteral("chiusa") : index == now ? QStringLiteral("attuale") : QStringLiteral("attesa");
             const bool locked = role != "attuale";
-            // «annulla la scelta di prima»: dalla mossa attuale, o dall'ultima se sono tutte decise
-            const QString undo = (index == now && index > 0) ? ordered[index - 1].block
-                                 : (now == ordered.size() && index == ordered.size() - 1) ? m.block : QString();
+            // «annulla la scelta»: sull'ultima mossa decisa, quella subito prima dell'attuale (o l'ultima se sono tutte decise)
+            const QString undo = index == now - 1 ? m.block : QString();
             out << QVariantMap{{"type", "move"}, {"lesson", m.lesson}, {"block", m.block}, {"what", m.what}, {"state", m.state}, {"locked", locked}, {"role", role}, {"undo", undo}, {"origin", m.origin}, {"same", m.same},
+                               {"byHand", QFileInfo::exists(manualFile(m_project, m.lesson, m.block))},
                                {"hole", qRound(m.hole * 100)}, {"line", m.line},
                                {"before", shotList(m_project, m, "prima")}, {"after", shotList(m_project, m, "dopo")}};
         }
@@ -1281,6 +1307,25 @@ void Workspace::reopenMove(const QString &lesson, const QString &block)
         return say(QStringLiteral("Aspetta la fine del lavoro in corso."));
     checkpoint(QStringLiteral("Modifiche a mano"));
     const QString textBefore = files::read(m_project.path(lesson));
+    // una mossa sistemata a mano: la lezione e le sue mosse tornano com'erano prima della modifica
+    const QString kept = manualFile(m_project, lesson, block);
+    const QJsonObject saved = QJsonDocument::fromJson(files::read(kept).toUtf8()).object();
+    QFile::remove(kept);
+    // solo se, a parte le mosse, la lezione è ancora quella della modifica: ciò che è stato scritto dopo non si butta
+    if (saved.contains("testo") && saved.value("applicata").toString() != withoutMoves(textBefore)) {
+        say(QStringLiteral("La lezione è cambiata dopo la modifica a mano: annullo la scelta, il testo resta com'è."));
+    } else if (saved.contains("testo")) {
+        const QString registryPath = m_project.path("salvataggi/impaginazione.json");
+        QJsonObject all = QJsonDocument::fromJson(files::read(registryPath).toUtf8()).object();
+        all[lesson] = saved.value("mosse");
+        files::write(m_project.path(lesson), saved.value("testo").toString());
+        files::write(registryPath, QString::fromUtf8(QJsonDocument(all).toJson()));
+        decided(lesson, QStringLiteral("Modifica a mano annullata"), {});
+        say(QStringLiteral("Modifica a mano annullata: la lezione è tornata com'era."));
+        if (!jobRunning())
+            m_compiler.compileDocument();
+        return;
+    }
     decided(lesson, QStringLiteral("Scelta annullata"), layout::reopen(m_project, lesson, block));
     if (files::read(m_project.path(lesson)) != textBefore)
         redoFollowing(lesson, block);
