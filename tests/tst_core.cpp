@@ -1452,6 +1452,8 @@ private slots:
         if (moves.first().state != "fatta")
             QSKIP(qPrintable("con queste misure il riquadro non si è potuto spezzare su una cucitura: " + moves.first().what));
         QVERIFY2(moves.first().what.contains("fra due paragrafi"), qPrintable(moves.first().what));
+        QCOMPARE(moves.first().same, moves.first().what.contains("la pagina resta uguale"));   // il segno «invariata» resta nel registro
+        qInfo() << "spezzamento:" << moves.first().what;
         const QString text = files::read(p.path("src/src1.tex"));
         QVERIFY(text.contains("\n\n    \\tcbbreak % impaginazione\n\n    Paragrafo "));
         QVERIFY(!layout::needed(p, "src/src1.tex"));

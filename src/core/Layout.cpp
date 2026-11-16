@@ -10,6 +10,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QImage>
 #include <QImageReader>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -68,7 +69,7 @@ QString nameOf(const Placed &p, const Style &style)
 
 QJsonObject toJson(const Move &m)
 {
-    return {{"blocco", m.block}, {"che_cosa", m.what}, {"vuoto", m.hole}, {"stato", m.state}, {"segno", m.sign}, {"dopo", m.after}, {"fino", m.until}, {"origine", m.origin.isEmpty() ? m.state : m.origin}};
+    return {{"blocco", m.block}, {"che_cosa", m.what}, {"vuoto", m.hole}, {"stato", m.state}, {"segno", m.sign}, {"dopo", m.after}, {"fino", m.until}, {"origine", m.origin.isEmpty() ? m.state : m.origin}, {"invariata", m.same}};
 }
 
 // Dove sta il testo nelle pagine di una lezione compilata, e dove cade una sua riga.
@@ -182,7 +183,7 @@ QList<Move> moves(const Project &project, const QString &file)
     for (const QJsonValue &v : registry(project).value(file).toObject().value("mosse").toArray()) {
         const QJsonObject o = v.toObject();
         out << Move{file, o.value("blocco").toString(), o.value("che_cosa").toString(), o.value("vuoto").toDouble(), o.value("stato").toString(),
-                    where.value(o.value("blocco").toString()), o.value("segno").toString(QString::fromUtf8(SIGN)), o.value("dopo").toString(), o.value("fino").toString(), o.value("origine").toString(o.value("stato").toString())};
+                    where.value(o.value("blocco").toString()), o.value("segno").toString(QString::fromUtf8(SIGN)), o.value("dopo").toString(), o.value("fino").toString(), o.value("origine").toString(o.value("stato").toString()), o.value("invariata").toBool()};
     }
     return out;
 }
@@ -243,11 +244,6 @@ bool breakInside(const Project &project, const Style &style, const QString &file
         --last;
     static const QRegularExpression lead(R"(^\s*)");
     const QString sign = lead.match(lines[last - 1]).captured(0) + style.breakCommand + " % impaginazione";
-    // se il riquadro si spezzava già da solo proprio a questa cucitura, la mossa fissa il punto ma alla vista non cambia niente
-    const Where tailBefore = whereIs(project, g, file, last);
-    Where headBefore;
-    for (int line = seam + 1; line <= seam + 4 && line <= lines.size() && !headBefore.ok; ++line)
-        headBefore = whereIs(project, g, file, line);
     lines.insert(seam, sign);                          // fra due righe vuote
     lines.insert(seam + 1, QString());
     files::write(path, lines.join('\n'));
@@ -262,8 +258,6 @@ bool breakInside(const Project &project, const Style &style, const QString &file
                 head = whereIs(project, after, file, line);
             hole = tail.ok ? 1 - tail.bottom : 1;
             good = tail.ok && head.ok && head.slot > tail.slot && hole <= HOLE_OK;
-            move->same = good && tailBefore.ok && headBefore.ok && tailBefore.slot == tail.slot && headBefore.slot == head.slot
-                         && qAbs(tailBefore.bottom - tail.bottom) < 0.01;
         }
     } catch (...) {
         files::write(path, before);
@@ -343,6 +337,33 @@ void snap(const Project &project, const Style &style, const QString &file, const
         rects[QString::number(p.page - page)] = list;
     }
     files::write(base + ".json", QString::fromUtf8(QJsonDocument(rects).toJson()));
+}
+// Le pagine in piccolo del prima e del dopo sono la stessa immagine: la mossa non ha cambiato ciò che si vede.
+bool sameShots(const Project &project, const QString &file, const QString &block)
+{
+    const QString first = shotBase(project, file, block, "prima"), second = shotBase(project, file, block, "dopo");
+    const QDir dir = QFileInfo(first).dir();
+    const QStringList before = dir.entryList({QFileInfo(first).fileName() + "-*.png"}, QDir::Files, QDir::Name);
+    const QStringList after = dir.entryList({QFileInfo(second).fileName() + "-*.png"}, QDir::Files, QDir::Name);
+    if (before.isEmpty() || before.size() != after.size())
+        return false;
+    for (qsizetype i = 0; i < before.size(); ++i) {
+        if (before[i].section('-', -1) != after[i].section('-', -1))
+            return false;                              // non le stesse pagine
+        const QImage a = QImage(dir.filePath(before[i])).convertToFormat(QImage::Format_Grayscale8);
+        const QImage b = QImage(dir.filePath(after[i])).convertToFormat(QImage::Format_Grayscale8);
+        if (a.isNull() || a.size() != b.size())
+            return false;
+        qsizetype different = 0;
+        for (int y = 0; y < a.height(); ++y) {
+            const uchar *x = a.constScanLine(y), *z = b.constScanLine(y);
+            for (int k = 0; k < a.width(); ++k)
+                different += qAbs(int(x[k]) - int(z[k])) > 48;
+        }
+        if (different > a.width() * a.height() / 2000)  // qualche punto sì (un bordo spostato di un niente), una riga no
+            return false;
+    }
+    return true;
 }
 int wideLines(const Project &project, const QString &file)
 {
@@ -463,8 +484,10 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
             Move move{file, problem->block, {}, 0, "fatta", 0};
             if (!breakInside(project, style, file, problem->block, control, &move))
                 return false;
+            snap(project, style, file, problem->block, "dopo");
+            move.same = sameShots(project, file, problem->block);
             move.what = move.same
-                ? QStringLiteral("%1 cadeva a cavallo di %2 già fra due paragrafi: il punto ora è fissato, alla vista non cambia niente.").arg(name, two)
+                ? QStringLiteral("%1 cadeva a cavallo di %2 già fra due paragrafi: il punto ora è fissato, la pagina resta uguale.").arg(name, two)
                 : QStringLiteral("%1 cadeva a cavallo di %2 in un punto qualunque: ora si spezza fra due paragrafi (vuoto lasciato: %3%).").arg(name, two).arg(qRound(move.hole * 100));
             fresh << move;
             ++result.done;

@@ -242,12 +242,25 @@ Rectangle {
                                         anchors.fill: parent
                                         anchors.margins: Theme.gap
                                         spacing: 6
-                                        Rectangle {
-                                            width: tag.implicitWidth + 12
-                                            height: tag.implicitHeight + 4
-                                            radius: 3
-                                            color: Qt.rgba(tile.badge.color.r, tile.badge.color.g, tile.badge.color.b, 0.25)
-                                            Text { id: tag; anchors.centerIn: parent; text: tile.badge.text; color: Theme.text; font.pixelSize: Theme.smallSize - 1; font.weight: Font.DemiBold }
+                                        Row {
+                                            spacing: 4
+                                            Rectangle {
+                                                width: tag.implicitWidth + 12
+                                                height: tag.implicitHeight + 4
+                                                radius: 3
+                                                color: Qt.rgba(tile.badge.color.r, tile.badge.color.g, tile.badge.color.b, 0.25)
+                                                Text { id: tag; anchors.centerIn: parent; text: tile.badge.text; color: Theme.text; font.pixelSize: Theme.smallSize - 1; font.weight: Font.DemiBold }
+                                            }
+                                            Rectangle {
+                                                visible: tile.row.same === true
+                                                width: sameMark.implicitWidth + 12
+                                                height: sameMark.implicitHeight + 4
+                                                radius: 3
+                                                color: "transparent"
+                                                border.width: 1
+                                                border.color: Theme.border
+                                                Text { id: sameMark; anchors.centerIn: parent; text: "invariata"; color: Theme.textMuted; font.pixelSize: Theme.smallSize - 1; font.weight: Font.DemiBold }
+                                            }
                                         }
                                         TxLabel {
                                             width: parent.width
@@ -361,13 +374,26 @@ Rectangle {
                 Layout.maximumWidth: 320
                 Layout.fillHeight: true
                 spacing: Theme.gap
-                Rectangle {
-                    readonly property var badge: root.card ? root.badgeOf(root.card) : ({ text: "", color: Theme.idle })
-                    implicitWidth: state.implicitWidth + 14
-                    implicitHeight: state.implicitHeight + 6
-                    radius: 3
-                    color: Qt.rgba(badge.color.r, badge.color.g, badge.color.b, 0.28)
-                    Text { id: state; anchors.centerIn: parent; text: parent.badge.text; color: Theme.text; font.pixelSize: Theme.smallSize; font.weight: Font.DemiBold }
+                Row {
+                    spacing: 6
+                    Rectangle {
+                        readonly property var badge: root.card ? root.badgeOf(root.card) : ({ text: "", color: Theme.idle })
+                        width: state.implicitWidth + 14
+                        height: state.implicitHeight + 6
+                        radius: 3
+                        color: Qt.rgba(badge.color.r, badge.color.g, badge.color.b, 0.28)
+                        Text { id: state; anchors.centerIn: parent; text: parent.badge.text; color: Theme.text; font.pixelSize: Theme.smallSize; font.weight: Font.DemiBold }
+                    }
+                    Rectangle {                        // la mossa non ha cambiato ciò che si vede
+                        visible: root.card !== null && root.card.same === true
+                        width: sameTag.implicitWidth + 14
+                        height: sameTag.implicitHeight + 6
+                        radius: 3
+                        color: "transparent"
+                        border.width: 1
+                        border.color: Theme.border
+                        Text { id: sameTag; anchors.centerIn: parent; text: "pagina invariata"; color: Theme.textMuted; font.pixelSize: Theme.smallSize; font.weight: Font.DemiBold }
+                    }
                 }
                 TxLabel { Layout.fillWidth: true; text: root.card ? root.nameOf(root.card.what) : ""; font.weight: Font.DemiBold; font.pixelSize: Theme.textSize + 2; wrapMode: Text.WordWrap; elide: Text.ElideNone }
                 TxLabel {

@@ -1231,7 +1231,7 @@ QVariantList Workspace::layoutItems() const
             // «annulla la scelta di prima»: dalla mossa attuale, o dall'ultima se sono tutte decise
             const QString undo = (index == now && index > 0) ? ordered[index - 1].block
                                  : (now == ordered.size() && index == ordered.size() - 1) ? m.block : QString();
-            out << QVariantMap{{"type", "move"}, {"lesson", m.lesson}, {"block", m.block}, {"what", m.what}, {"state", m.state}, {"locked", locked}, {"role", role}, {"undo", undo}, {"origin", m.origin},
+            out << QVariantMap{{"type", "move"}, {"lesson", m.lesson}, {"block", m.block}, {"what", m.what}, {"state", m.state}, {"locked", locked}, {"role", role}, {"undo", undo}, {"origin", m.origin}, {"same", m.same},
                                {"hole", qRound(m.hole * 100)}, {"line", m.line},
                                {"before", shotList(m_project, m, "prima")}, {"after", shotList(m_project, m, "dopo")}};
         }
