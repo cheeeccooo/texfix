@@ -46,7 +46,7 @@ Item {
     // chiudono, e tornano alla fine se c'erano.
     property var manual: null                          // lesson, block, what, leftOpen, chatOpen
     function startManual(lesson, block, line, what) {
-        manual = { lesson: lesson, block: block, what: what, leftOpen: leftOpen, chatOpen: chatOpen }
+        manual = { lesson: lesson, block: block, what: what, line: Math.max(1, line), leftOpen: leftOpen, chatOpen: chatOpen }
         leftOpen = false
         chatOpen = false
         split = 1
@@ -61,6 +61,7 @@ Item {
         editor.saveAll()
         if (solved)
             Workspace.decideMove(m.lesson, m.block, "risolta")
+        Workspace.compileDocument()                    // la prova era della lezione sola: si torna al documento
         leftOpen = m.leftOpen
         chatOpen = m.chatOpen
         openFile("rivedi:impaginazione")
@@ -270,6 +271,10 @@ Item {
                     Workspace.decideMove(moves[0].lesson, moves[0].block, "a_mano")
                     root.startManual(moves[0].lesson, moves[0].block, moves[0].line, moves[0].what)
                 }
+            } else if (name === "chiudi-scheda") {
+                editor.closeTab(editor.current)
+            } else if (name === "inserisci") {
+                editor.insertLine(argument)
             } else if (name === "risolta") {
                 root.endManual(true)
             } else if (name === "avvia-piano") {
@@ -343,21 +348,59 @@ Item {
             visible: root.manual !== null
             implicitHeight: visible ? manualRow.implicitHeight + 2 * Theme.gap : 0
             color: Theme.selected
-            RowLayout {
+            ColumnLayout {
                 id: manualRow
                 anchors.fill: parent
                 anchors.margins: Theme.gap
                 spacing: Theme.gap
-                TxLabel {
+                RowLayout {
                     Layout.fillWidth: true
-                    text: root.manual ? "Impaginazione a mano · " + root.manual.what : ""
-                    wrapMode: Text.WordWrap
-                    elide: Text.ElideNone
-                    maximumLineCount: 3
+                    spacing: Theme.gap
+                    TxLabel {
+                        Layout.fillWidth: true
+                        text: root.manual ? "Impaginazione a mano · " + root.manual.what : ""
+                        wrapMode: Text.WordWrap
+                        elide: Text.ElideNone
+                        maximumLineCount: 3
+                    }
+                    TxButton { text: "Torna alla revisione"; hint: "Lascia la modifica a mano: la mossa resta da decidere"; onClicked: root.endManual(false) }
+                    TxButton { text: "Risolta"; primary: true; onClicked: root.endManual(true) }
                 }
-                TxButton { text: "Prova"; hint: "Compila la lezione e mostra com'è venuta (⌘B)"; enabled: !Workspace.compiling; onClicked: root.compileFile() }
-                TxButton { text: "Torna alla revisione"; onClicked: root.endManual(false) }
-                TxButton { text: "Risolta"; primary: true; onClicked: root.endManual(true) }
+                // andare al punto, i comandi pronti (alla riga del cursore), la prova della lezione sola
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: Theme.gap
+                    TxButton { text: "Vai al blocco"; hint: "Porta l'editor al blocco da sistemare"; onClicked: root.openFile(root.manual.lesson, root.manual.line) }
+                    Repeater {
+                        model: ["\\newpage", Workspace.breakCommand, "\\vspace{-2mm}", "\\enlargethispage{2\\baselineskip}"]
+                        TxButton {
+                            required property string modelData
+                            visible: modelData !== ""
+                            text: modelData
+                            hint: "Inserisce alla riga del cursore"
+                            onClicked: { root.openFile(root.manual.lesson, 0); editor.insertLine(modelData) }
+                        }
+                    }
+                    TxButton {
+                        text: "Senza la mossa"
+                        hint: "Toglie la mossa fatta da sola su questo blocco"
+                        onClicked: { editor.saveAll(); Workspace.decideMove(root.manual.lesson, root.manual.block, "lasciata"); Workspace.decideMove(root.manual.lesson, root.manual.block, "a_mano") }
+                    }
+                    TxButton {
+                        text: Workspace.compiling ? "Compilo…" : "Prova"
+                        primary: true
+                        hint: "Compila solo questa lezione e mostra com'è venuta (⌘B)"
+                        enabled: !Workspace.compiling
+                        onClicked: { root.openFile(root.manual.lesson, 0); root.compileFile() }
+                    }
+                    TxLabel {
+                        height: Theme.rowHeight
+                        verticalAlignment: Text.AlignVCenter
+                        text: root.manual ? "La prova è solo di " + root.manual.lesson.substring(root.manual.lesson.lastIndexOf("/") + 1) : ""
+                        color: Theme.textMuted
+                        font.pixelSize: Theme.smallSize
+                    }
+                }
             }
         }
 
@@ -438,6 +481,8 @@ Item {
                         onJumpAsked: (file, line) => root.jumpToPdf(file, line)
                         onChatAsked: root.chatOpen = true
                         onManualAsked: (lesson, block, line, what) => root.startManual(lesson, block, line, what)
+                        // chiudere la lezione dall'editor è lasciare la modifica a mano
+                        onTabClosed: file => { if (root.manual && file === root.manual.lesson) root.endManual(false) }
                     }
                     PdfPane {
                         id: pdf

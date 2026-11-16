@@ -42,6 +42,8 @@ Rectangle {
             id: list
             Layout.fillWidth: true
             Layout.fillHeight: true
+            Layout.leftMargin: 2 * Theme.gap + 4      // staccata dal bordo
+            Layout.rightMargin: Theme.gap
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             spacing: Theme.gap
@@ -50,8 +52,7 @@ Rectangle {
             ScrollBar.vertical: ScrollBar {}
             delegate: Loader {
                 required property var modelData
-                x: Theme.gap + 4
-                width: Math.min(list.width - 2 * Theme.gap - 8, 860)
+                width: Math.min(list.width - 14, 1100)
                 sourceComponent: modelData.type === "lesson" ? head : card
                 onLoaded: item.row = modelData
             }

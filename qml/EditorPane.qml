@@ -13,6 +13,7 @@ Rectangle {
     readonly property int currentLine: current >= 0 && editors.itemAt(current) ? editors.itemAt(current).currentLine : 0
     signal jumpAsked(string file, int line)
     signal chatAsked()
+    signal tabClosed(string file)
     signal manualAsked(string lesson, string block, int line, string what)
 
     // Che cosa si apre in una scheda: text, pdf, image; il resto (vuoto) lo apre un altro programma.
@@ -58,10 +59,12 @@ Rectangle {
         const editor = editors.itemAt(at)
         if (editor && editor.modified)
             editor.save()                              // ogni cosa è salvata subito: chiudere non perde niente
+        const closed = tabs.get(at).file
         tabs.remove(at)
         current = Math.min(current >= at ? current - 1 : current, tabs.count - 1)
         if (current < 0 && tabs.count > 0)
             current = 0
+        tabClosed(closed)
     }
     // La selezione dell'editor in vista, per portarla nella chat (⌘L): file, text, from, to; null se non è un testo.
     function selection() {
@@ -76,6 +79,11 @@ Rectangle {
         const page = current >= 0 ? editors.itemAt(current) : null
         if (page && page.item && page.item.showShots)
             page.item.showShots()
+    }
+    function insertLine(text) {
+        const page = current >= 0 ? editors.itemAt(current) : null
+        if (page && page.kind === "text" && page.item)
+            page.item.insertLine(text)
     }
     // Porta il pannello aperto su una lezione.
     function showLesson(lesson) {

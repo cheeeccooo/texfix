@@ -31,6 +31,13 @@ Item {
         flick.contentY = Math.max(0, Math.min(rect.y - flick.height / 3, flick.contentHeight - flick.height))
     }
     function focusText() { edit.forceActiveFocus() }
+    // Una riga nuova a quella del cursore (i tasti pronti della modifica a mano).
+    function insertLine(text) {
+        const at = backend.positionOf(page.currentLine)
+        const indent = /^\s*/.exec(edit.text.split("\n")[page.currentLine - 1] || "")[0]
+        edit.insert(at, indent + text + "\n")
+        edit.forceActiveFocus()
+    }
     // La selezione (o la riga del cursore): text, from, to.
     function selection() {
         if (edit.selectedText === "")

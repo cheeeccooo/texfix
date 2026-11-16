@@ -43,7 +43,7 @@ Rectangle {
             anchors.leftMargin: Theme.gap + 4 + row.indent
             anchors.rightMargin: Theme.gap + 4
             spacing: 6
-            Text { visible: row.arrow !== ""; text: row.arrow; color: Theme.textMuted; font.pixelSize: 14; Layout.preferredWidth: 12; horizontalAlignment: Text.AlignHCenter }
+            Text { visible: row.arrow !== ""; text: row.arrow; color: Theme.textMuted; font.pixelSize: 20; Layout.preferredWidth: 16; horizontalAlignment: Text.AlignHCenter }
             Rectangle {
                 visible: row.dot.a > 0
                 implicitWidth: row.done ? 12 : 8
@@ -62,7 +62,7 @@ Rectangle {
             hoverEnabled: true
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             onClicked: mouse => {
-                if (mouse.button === Qt.LeftButton && row.arrow !== "" && mouse.x < Theme.gap + 20 + row.indent)
+                if (mouse.button === Qt.LeftButton && row.arrow !== "" && mouse.x < Theme.gap + 28 + row.indent)
                     return row.arrowClicked()
                 if (mouse.button === Qt.LeftButton)
                     return row.panel !== "" ? root.panelAsked(row.panel, row.file) : root.fileChosen(row.file)

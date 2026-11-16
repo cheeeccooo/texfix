@@ -33,16 +33,33 @@ Rectangle {
         anchors.leftMargin: Theme.gap + 4
         anchors.rightMargin: Theme.gap
         spacing: Theme.gap
-        Text {
-            id: state
-            text: root.working ? "◌" : Workspace.errorCount > 0 ? "×" : Workspace.issues.length > 0 ? "△" : "✓"
-            color: root.working ? Theme.accent : Workspace.errorCount > 0 ? Theme.bad : Workspace.issues.length > 0 ? Theme.warn : Theme.good
-            font.pixelSize: root.working ? Theme.textSize + 7 : Theme.textSize + 2
-            Layout.preferredWidth: Theme.textSize + 8
-            horizontalAlignment: Text.AlignHCenter
-            font.weight: Font.Bold
-            RotationAnimator on rotation { id: spin; running: root.working; from: 0; to: 360; duration: 1200; loops: Animation.Infinite }
-            Connections { target: root; function onWorkingChanged() { if (!root.working) { spin.stop(); state.rotation = 0 } } }
+        // lo stato: mentre si lavora un anello fermo con un tratto che gira dentro; altrimenti un segno
+        Item {
+            implicitWidth: 20
+            implicitHeight: 20
+            Text {
+                anchors.centerIn: parent
+                visible: !root.working
+                text: Workspace.errorCount > 0 ? "×" : Workspace.issues.length > 0 ? "△" : "✓"
+                color: Workspace.errorCount > 0 ? Theme.bad : Workspace.issues.length > 0 ? Theme.warn : Theme.good
+                font.pixelSize: Theme.textSize + 2
+                font.weight: Font.Bold
+            }
+            Rectangle {                                // l'anello, fermo
+                anchors.centerIn: parent
+                visible: root.working
+                width: 18; height: 18; radius: 9
+                color: "transparent"
+                border.width: 2.5
+                border.color: Theme.border
+                Item {                                 // il tratto, che gira
+                    anchors.fill: parent
+                    Rectangle { x: parent.width / 2 - 2.5; y: -1; width: 5; height: 5; radius: 2.5; color: Theme.accent }
+                    Rectangle { x: parent.width / 2 - 2.5; y: -1; width: 5; height: 5; radius: 2.5; color: Theme.accent; opacity: 0.55; transformOrigin: Item.Center; transform: Rotation { origin.x: 2.5; origin.y: 10; angle: -40 } }
+                    Rectangle { x: parent.width / 2 - 2.5; y: -1; width: 5; height: 5; radius: 2.5; color: Theme.accent; opacity: 0.25; transform: Rotation { origin.x: 2.5; origin.y: 10; angle: -80 } }
+                    RotationAnimator on rotation { running: root.working; from: 0; to: 360; duration: 1000; loops: Animation.Infinite }
+                }
+            }
         }
         TxLabel { Layout.fillWidth: true; text: root.messageText; color: Theme.textMuted; font.pixelSize: Theme.smallSize }
         TxLabel {

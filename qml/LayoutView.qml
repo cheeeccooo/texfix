@@ -40,6 +40,8 @@ Rectangle {
             id: list
             Layout.fillWidth: true
             Layout.fillHeight: true
+            Layout.leftMargin: 2 * Theme.gap + 4      // staccata dal bordo
+            Layout.rightMargin: Theme.gap
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             spacing: Theme.gap
@@ -48,8 +50,7 @@ Rectangle {
             ScrollBar.vertical: ScrollBar {}
             delegate: Loader {
                 required property var modelData
-                x: Theme.gap + 4
-                width: Math.min(list.width - 2 * Theme.gap - 8, 860)
+                width: Math.min(list.width - 14, 4000)
                 sourceComponent: modelData.type === "lesson" ? head : modelData.type === "todo" ? todo : card
                 onLoaded: item.row = modelData
             }
@@ -127,7 +128,7 @@ Rectangle {
                                     Rectangle {
                                         id: sheet
                                         required property var modelData
-                                        width: Math.max(90, Math.min(230, (box.width - 80) / 4))
+                                        width: Math.max(90, Math.min(480, (box.width - 90) / 4))
                                         height: width * 1.414
                                         color: "white"
                                         border.width: 1

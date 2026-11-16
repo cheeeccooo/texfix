@@ -293,7 +293,8 @@ void snap(const Project &project, const Style &style, const QString &file, const
         const int step = qMax(1, (b.endLine - b.line + 1) / 150);
         for (int line = b.line; line <= b.endLine; line += step) {
             const synctex::Spot s = synctex::toPdf(project.root(), g.pdf, file, line);
-            if (!s.ok)
+            // una riga che non lascia segno nel testo (un comando, un'etichetta) può finire fuori dall'area del testo: non conta
+            if (!s.ok || s.y < g.textTop - 2 || s.y + s.height > g.textTop + g.textHeight + 2)
                 continue;
             if (page == 0)
                 page = s.page;
@@ -326,8 +327,8 @@ void snap(const Project &project, const Style &style, const QString &file, const
     const double pageHeight = made.isEmpty() ? 1 : qMax(1.0, QImageReader(dir.filePath(made.first())).size().height() * 72.0 / 60.0);
     QJsonObject rects;
     for (const Piece &p : std::as_const(pieces)) {
-        if (p.page < page || p.page > page + 1)
-            continue;
+        if (p.page < page || p.page > page + 1 || p.bottom - p.top < 9)
+            continue;                                  // fuori dalle due pagine, o un filo: non è un pezzo del blocco
         const double x0 = p.column == 0 ? margin - 5 : p.x - 5;
         const double x1 = g.twoColumns && p.column == 0 ? g.pageWidth / 2 - 6 : g.pageWidth - margin + 5;
         QJsonArray list = rects.value(QString::number(p.page - page)).toArray();

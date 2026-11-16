@@ -100,6 +100,8 @@ Rectangle {
             id: list
             Layout.fillWidth: true
             Layout.fillHeight: true
+            Layout.leftMargin: 2 * Theme.gap + 4      // staccata dal bordo
+            Layout.rightMargin: Theme.gap
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             spacing: Theme.gap
@@ -111,8 +113,7 @@ Rectangle {
                 required property int index
                 readonly property var modelData: root.items[index] || ({ type: "lesson" })
                 readonly property string kind: modelData.type
-                x: Theme.gap + 4
-                width: Math.min(list.width - 2 * Theme.gap - 8, 860)
+                width: Math.min(list.width - 14, 1100)
                 sourceComponent: kind === "lesson" ? lessonHead : kind === "doubt" ? doubtCard : kind === "issue" ? issueCard : declaredCard
                 onLoaded: item.row = modelData
                 onModelDataChanged: if (item) item.row = modelData

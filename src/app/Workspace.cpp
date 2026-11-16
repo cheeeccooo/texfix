@@ -1217,8 +1217,9 @@ QVariantList Workspace::layoutItems() const
 
 void Workspace::decideMove(const QString &lesson, const QString &block, const QString &state)
 {
-    if (busy())
-        return say(QStringLiteral("Aspetta la fine del lavoro."));
+    // si decide anche mentre un lavoro gira, purché non stia lavorando proprio su questa lezione
+    if (m_agentRunning || (jobRunning() && (m_jobLabel.isEmpty() || m_jobLabel.contains(QFileInfo(lesson).fileName()))))
+        return say(QStringLiteral("Aspetta: il lavoro in corso sta toccando questa lezione."));
     checkpoint(QStringLiteral("Modifiche a mano"));
     QString what;
     for (const layout::Move &m : layout::moves(m_project, lesson))

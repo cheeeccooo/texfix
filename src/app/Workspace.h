@@ -64,6 +64,7 @@ class Workspace : public QObject {
     // Le regole del progetto, una per voce (Impostazioni del progetto).
     Q_PROPERTY(QStringList projectRules READ projectRules WRITE setProjectRules NOTIFY settingsChanged)
     Q_PROPERTY(QString styleName READ styleName NOTIFY styleChanged)
+    Q_PROPERTY(QString breakCommand READ breakCommand NOTIFY styleChanged)   // come lo stile spezza un riquadro in un punto scelto
 
 public:
     static Workspace *instance();
@@ -103,6 +104,7 @@ public:
     QStringList projectRules() const { return m_settings.rules; }
     void setProjectRules(const QStringList &rules);
     QString styleName() const { return m_style.name; }
+    QString breakCommand() const { return m_style.breakCommand; }
     const tx::Style &style() const { return m_style; }
     const tx::Project &project() const { return m_project; }
     // L'agente sta lavorando: come un lavoro, niente altro parte e niente si annulla.
