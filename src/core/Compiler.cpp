@@ -315,31 +315,38 @@ BuildResult Compiler::compileSync(const Project &project, const QString &lesson,
     }
     QElapsedTimer timer;
     timer.start();
-    QProcess process;
-    tools::ownGroup(process);
-    process.setProcessEnvironment(environment());
-    process.setWorkingDirectory(project.root());
-    process.setStandardOutputFile(QProcess::nullDevice());
-    process.setStandardErrorFile(QProcess::nullDevice());
-    process.start("latexmk", arguments(lesson));
-    if (!process.waitForStarted(10000)) {
-        result.failure = QStringLiteral("Non trovo latexmk: serve una distribuzione TeX (MacTeX).");
-        return result;
-    }
-    if (control)
-        control->track(process.processId());
-    while (!process.waitForFinished(200)) {
-        if ((control && control->stopped()) || timer.elapsed() > 10 * 60 * 1000) {
-            tools::stopGroup(process.processId());
-            process.waitForFinished(2000);
-            for (const char *ext : {".aux", ".fdb_latexmk"})   // interrotta a metà: il suo .aux può essere troncato
-                QFile::remove(base + QLatin1String(ext));
-            break;
+    // due volte al più: un .aux troncato (una compilazione interrotta a metà) si butta e si ricompila, una volta
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        QProcess process;
+        tools::ownGroup(process);
+        process.setProcessEnvironment(environment());
+        process.setWorkingDirectory(project.root());
+        process.setStandardOutputFile(QProcess::nullDevice());
+        process.setStandardErrorFile(QProcess::nullDevice());
+        process.start("latexmk", arguments(lesson));
+        if (!process.waitForStarted(10000)) {
+            result.failure = QStringLiteral("Non trovo latexmk: serve una distribuzione TeX (MacTeX).");
+            return result;
         }
-    }
-    if (control) {
-        control->untrack(process.processId());
-        control->check();
+        if (control)
+            control->track(process.processId());
+        while (!process.waitForFinished(200)) {
+            if ((control && control->stopped()) || timer.elapsed() > 10 * 60 * 1000) {
+                tools::stopGroup(process.processId());
+                process.waitForFinished(2000);
+                for (const char *ext : {".aux", ".fdb_latexmk"})   // interrotta a metà: il suo .aux può essere troncato
+                    QFile::remove(base + QLatin1String(ext));
+                break;
+            }
+        }
+        if (control) {
+            control->untrack(process.processId());
+            control->check();
+        }
+        if (attempt > 0 || !texlog::brokenAux(files::read(base + ".log")))
+            break;
+        for (const char *ext : {".aux", ".fdb_latexmk"})
+            QFile::remove(base + QLatin1String(ext));
     }
     result.issues = texlog::parse(files::read(base + ".log"));
     result.ms = timer.elapsed();

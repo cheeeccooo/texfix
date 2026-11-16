@@ -1680,6 +1680,17 @@ private slots:
         QCOMPARE(r.pdf, p.path("build/lezioni/src1.pdf"));
         QVERIFY(QFileInfo::exists(r.pdf));
 
+        // un .aux troncato non ferma nemmeno la compilazione di un lavoro (quella dell'impaginazione): si butta e si rifà
+        {
+            const QString aux = p.path("build/lezioni/src1.aux");
+            const QString whole = files::read(aux);
+            QVERIFY(whole.contains("\\@writefile{toc}"));
+            files::write(aux, whole.left(whole.indexOf("\\@writefile{toc}") + 40) + "\n");   // una riga lasciata a metà
+            const BuildResult again = Compiler::compileSync(p, "src/src1.tex");
+            QVERIFY2(!again.hasErrors(), "il .aux troncato ha fermato la compilazione");
+            QVERIFY(files::read(aux).size() >= whole.size());
+        }
+
         // il salto: dalla riga del teorema alla pagina della lezione, e da quel punto di nuovo alla lezione
         const synctex::Spot there = synctex::toPdf(root, r.pdf, "src/src1.tex", 3);
         QVERIFY(there.ok);

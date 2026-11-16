@@ -210,7 +210,7 @@ mentre un lavoro gira, purché non stia lavorando su quella lezione. Righe sole 
 I tre giri (unità a cavallo, titoli, vuoti e formule) si ripetono finché uno non cambia più niente, al più otto volte: una figura
 rimpicciolita o un a capo spostano ciò che segue, e un riquadro può finire a cavallo dopo. L'ordine conta anche qui: alla fine di ogni giro le mosse fatte prima di un'altra che sta più in alto nella lezione (e che cambia la pagina:
 non una «invariata») si tolgono, perché guardavano una pagina che non c'è più, e il giro dopo le rifà. Un titolo che comincia nell'ultimo 13% della
-colonna (`NEAR_END`) passa oltre con il suo testo, anche se due righe gli stavano sotto. Ogni prova lascia il PDF com'era con la prova: chi misura dopo ricompila prima (`breakInside` lo fa da sé, e se l'ultima cucitura non regge
+colonna (`NEAR_END`) passa oltre con il suo testo, anche se due righe gli stavano sotto. Un `.aux` troncato (una compilazione interrotta) non ferma un lavoro: anche `Compiler::compileSync` lo butta e ricompila, una volta. Ogni prova lascia il PDF com'era con la prova: chi misura dopo ricompila prima (`breakInside` lo fa da sé, e se l'ultima cucitura non regge
 prova le due prima). Le misure: un'unità che non si spezza sta dove sta il segno più alto delle sue righe (`tallest`: la prima riga lascia un segno
 in fondo alla colonna di prima, lo spazio che la precede); i segni fuori dall'area del testo non contano (`spotOf`: una riga su cui
 la pagina si chiude si prende intestazione e piè di pagina).
