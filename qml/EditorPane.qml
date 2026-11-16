@@ -8,7 +8,7 @@ Rectangle {
     id: root
     color: Theme.surface
     property bool wrap: true                           // ⌥Z: a capo o no, per tutti gli editor
-    readonly property string currentFile: tabs.count > 0 && current >= 0 ? tabs.get(current).file : ""
+    readonly property string currentFile: tabs.count > 0 && current >= 0 && current < tabs.count ? tabs.get(current).file : ""
     property int current: -1
     readonly property int currentLine: current >= 0 && editors.itemAt(current) ? editors.itemAt(current).currentLine : 0
     signal jumpAsked(string file, int line)
@@ -71,6 +71,11 @@ Rectangle {
         const s = page.item.selection()
         s.file = page.file
         return s
+    }
+    function showShots() {                              // per le prove: apre le miniature della prima mossa
+        const page = current >= 0 ? editors.itemAt(current) : null
+        if (page && page.item && page.item.showShots)
+            page.item.showShots()
     }
     // Porta il pannello aperto su una lezione.
     function showLesson(lesson) {

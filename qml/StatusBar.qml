@@ -37,7 +37,9 @@ Rectangle {
             id: state
             text: root.working ? "◌" : Workspace.errorCount > 0 ? "×" : Workspace.issues.length > 0 ? "△" : "✓"
             color: root.working ? Theme.accent : Workspace.errorCount > 0 ? Theme.bad : Workspace.issues.length > 0 ? Theme.warn : Theme.good
-            font.pixelSize: Theme.textSize
+            font.pixelSize: root.working ? Theme.textSize + 7 : Theme.textSize + 2
+            Layout.preferredWidth: Theme.textSize + 8
+            horizontalAlignment: Text.AlignHCenter
             font.weight: Font.Bold
             RotationAnimator on rotation { id: spin; running: root.working; from: 0; to: 360; duration: 1200; loops: Animation.Infinite }
             Connections { target: root; function onWorkingChanged() { if (!root.working) { spin.stop(); state.rotation = 0 } } }

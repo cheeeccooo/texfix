@@ -172,7 +172,10 @@ uguale a prima resta la stessa, e le schede restano finché il numero delle righ
 **§3.8 Figure.** Registro unico, «Ridisegna», «Ritaglia dalla fonte», Rivedi figure, «Ricontrolla con le fonti»
 (l'agente rilegge le fonti e propone un piano).
 
-**§3.9 Impaginazione.** Un'unità spezzata fra due pagine (a pagina nuova, o spezzata fra due paragrafi); un titolo
+**§3.9 Impaginazione.** Una lezione senza marcatori dei blocchi (scritta a mano o portata da fuori) resta da impaginare, e
+l'impaginazione glieli aggiunge. La revisione elenca anche le lezioni ancora da impaginare. Un clic sul testo di una mossa
+apre le pagine in piccolo del prima e del dopo (`layout::snap`, in `build/impaginazione/<lezione>/`), con il contorno del
+blocco rosso com'era e verde com'è venuto. Una mossa che fa uscire qualcosa dalla colonna non resta. Un'unità spezzata fra due pagine (a pagina nuova, o spezzata fra due paragrafi); un titolo
 rimasto in fondo senza il suo testo (a pagina nuova con lui); un grande vuoto prima di un'unità che non ci stava (una figura si
 rimpicciolisce quanto basta, `\scalebox{…}{% impaginazione` … `}% impaginazione` attorno al disegno; il resto si segnala); una formula rimasta in fondo senza la frase che la commenta e un elenco che lascia
 una voce sola dall'altra parte (si segnalano). Un'unità che finisce con poche righe sulla pagina dopo resta intera allungando la pagina

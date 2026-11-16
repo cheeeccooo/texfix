@@ -1178,6 +1178,20 @@ void Workspace::paginate()
     });
 }
 
+namespace {
+QVariantList shotList(const Project &project, const layout::Move &m, const QString &which)
+{
+    QVariantList out;
+    for (const layout::Shot &shot : layout::shots(project, m.lesson, m.block, which)) {
+        QVariantList rects;
+        for (const QRectF &r : shot.rects)
+            rects << QVariantMap{{"x", r.x()}, {"y", r.y()}, {"w", r.width()}, {"h", r.height()}};
+        out << QVariantMap{{"path", shot.path}, {"rects", rects}};
+    }
+    return out;
+}
+}
+
 QVariantList Workspace::layoutItems() const
 {
     QVariantList out;
@@ -1185,13 +1199,18 @@ QVariantList Workspace::layoutItems() const
         return out;
     for (const Lesson &lesson : m_project.lessons()) {
         const QList<layout::Move> moves = layout::moves(m_project, lesson.file);
-        if (moves.isEmpty())
+        // una lezione che compila pulita e non è ancora impaginata (o è cambiata dopo) è da impaginare: lo si dice
+        const bool todo = !m_settings.isDone(lesson.file) && m_states.value(lesson.file) == "good" && layout::needed(m_project, lesson.file);
+        if (moves.isEmpty() && !todo)
             continue;
         out << QVariantMap{{"type", "lesson"}, {"lesson", lesson.file},
                            {"title", lesson.number > 0 ? QStringLiteral("Lezione %1 · %2").arg(lesson.number).arg(lesson.title) : lesson.title}};
+        if (todo)
+            out << QVariantMap{{"type", "todo"}, {"lesson", lesson.file}, {"fresh", moves.isEmpty()}};
         for (const layout::Move &m : moves)
             out << QVariantMap{{"type", "move"}, {"lesson", m.lesson}, {"block", m.block}, {"what", m.what}, {"state", m.state},
-                               {"hole", qRound(m.hole * 100)}, {"line", m.line}};
+                               {"hole", qRound(m.hole * 100)}, {"line", m.line},
+                               {"before", shotList(m_project, m, "prima")}, {"after", shotList(m_project, m, "dopo")}};
     }
     return out;
 }

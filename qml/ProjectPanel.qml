@@ -43,7 +43,7 @@ Rectangle {
             anchors.leftMargin: Theme.gap + 4 + row.indent
             anchors.rightMargin: Theme.gap + 4
             spacing: 6
-            Text { visible: row.arrow !== ""; text: row.arrow; color: Theme.textFaint; font.pixelSize: 9; Layout.preferredWidth: 8 }
+            Text { visible: row.arrow !== ""; text: row.arrow; color: Theme.textMuted; font.pixelSize: 14; Layout.preferredWidth: 12; horizontalAlignment: Text.AlignHCenter }
             Rectangle {
                 visible: row.dot.a > 0
                 implicitWidth: row.done ? 12 : 8

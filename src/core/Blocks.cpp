@@ -93,8 +93,14 @@ QList<Block> parse(const QString &tex, const Units &units)
                     break;
             }
             last = qMin(last, int(lines.size()) - 1);
-            while (unit == "figura" && last + 1 < lines.size() && lines[last + 1].trimmed().contains("caption"))
-                ++last;
+            while (unit == "figura" && last + 1 < lines.size() && lines[last + 1].trimmed().contains("caption")) {
+                ++last;                                // la didascalia non si separa dalla figura, nemmeno se va su più righe
+                int open = int(lines[last].count('{') - lines[last].count('}'));
+                while (open > 0 && last + 1 < lines.size()) {
+                    ++last;
+                    open += int(lines[last].count('{') - lines[last].count('}'));
+                }
+            }
         } else {                                       // testo: fino al prossimo riquadro, figura, titolo o marcatore
             block.kind = "testo";
             block.title = line.left(60);

@@ -7,6 +7,10 @@
 #include "core/Tools.h"
 
 #include <QCryptographicHash>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QImageReader>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -160,7 +164,10 @@ QList<Placed> measure(const Project &project, const Style &style, const QString 
 
 bool needed(const Project &project, const QString &file)
 {
-    return registry(project).value(file).toObject().value("impronta").toString() != contentHash(files::read(project.path(file)));
+    const QString text = files::read(project.path(file));
+    if (!text.contains("% @L") && !text.trimmed().isEmpty())
+        return true;                                   // nessun marcatore: non è mai stata misurata davvero
+    return registry(project).value(file).toObject().value("impronta").toString() != contentHash(text);
 }
 
 QList<Move> moves(const Project &project, const QString &file)
@@ -267,6 +274,75 @@ bool breakInside(const Project &project, const Style &style, const QString &file
 }
 
 namespace {
+QString shotBase(const Project &project, const QString &file, const QString &block, const QString &which)
+{
+    return project.path(QStringLiteral("build/impaginazione/%1/%2-%3").arg(QFileInfo(file).completeBaseName(), block, which));
+}
+// La pagina in cui comincia il blocco e quella dopo, in piccolo, dal PDF della lezione com'è adesso.
+void snap(const Project &project, const Style &style, const QString &file, const QString &blockId, const QString &which)
+{
+    const Geometry g = geometryOf(project, style, file);
+    int page = 0;
+    // dove sta il blocco: per ogni pagina e colonna, dalla prima all'ultima sua riga
+    struct Piece { int page, column; double x, top, bottom; };
+    QList<Piece> pieces;
+    double margin = g.pageWidth;
+    for (const blocks::Block &b : blocks::parse(files::read(project.path(file)), unitsOf(style))) {
+        if (b.id != blockId)
+            continue;
+        const int step = qMax(1, (b.endLine - b.line + 1) / 150);
+        for (int line = b.line; line <= b.endLine; line += step) {
+            const synctex::Spot s = synctex::toPdf(project.root(), g.pdf, file, line);
+            if (!s.ok)
+                continue;
+            if (page == 0)
+                page = s.page;
+            const int column = g.twoColumns && s.x > g.pageWidth / 2 ? 1 : 0;
+            if (column == 0)
+                margin = qMin(margin, s.x);
+            bool found = false;
+            for (Piece &p : pieces)
+                if (p.page == s.page && p.column == column) {
+                    p.x = qMin(p.x, s.x);
+                    p.top = qMin(p.top, s.y);
+                    p.bottom = qMax(p.bottom, s.y + s.height);
+                    found = true;
+                }
+            if (!found)
+                pieces << Piece{s.page, column, s.x, s.y, s.y + s.height};
+        }
+    }
+    if (margin >= g.pageWidth / 2)
+        margin = g.pageWidth * 0.08;
+    const QString base = shotBase(project, file, blockId, which);
+    const QDir dir = QFileInfo(base).dir();
+    QDir().mkpath(dir.path());
+    for (const QString &old : dir.entryList({QFileInfo(base).fileName() + "-*.png"}, QDir::Files))
+        QFile::remove(dir.filePath(old));
+    if (page > 0)
+        tools::run("pdftoppm", {"-png", "-r", "60", "-f", QString::number(page), "-l", QString::number(page + 1), g.pdf, base}, project.root(), 30000);
+    // i contorni: dove sta il blocco in ognuna delle due pagine, in frazioni della pagina
+    const QStringList made = dir.entryList({QFileInfo(base).fileName() + "-*.png"}, QDir::Files, QDir::Name);
+    const double pageHeight = made.isEmpty() ? 1 : qMax(1.0, QImageReader(dir.filePath(made.first())).size().height() * 72.0 / 60.0);
+    QJsonObject rects;
+    for (const Piece &p : std::as_const(pieces)) {
+        if (p.page < page || p.page > page + 1)
+            continue;
+        const double x0 = p.column == 0 ? margin - 5 : p.x - 5;
+        const double x1 = g.twoColumns && p.column == 0 ? g.pageWidth / 2 - 6 : g.pageWidth - margin + 5;
+        QJsonArray list = rects.value(QString::number(p.page - page)).toArray();
+        list.append(QJsonObject{{"x", x0 / g.pageWidth}, {"y", (p.top - 3) / pageHeight}, {"w", (x1 - x0) / g.pageWidth}, {"h", (p.bottom - p.top + 7) / pageHeight}});
+        rects[QString::number(p.page - page)] = list;
+    }
+    files::write(base + ".json", QString::fromUtf8(QJsonDocument(rects).toJson()));
+}
+int wideLines(const Project &project, const QString &file)
+{
+    return int(files::read(Compiler::pdfOf(project, file).chopped(4) + ".log").count("Overfull \\hbox"));
+}
+}
+
+namespace {
 const char *const CLOSE_SIGN = "}% impaginazione";
 
 // La misura di una figura: il disegno rimpicciolito quanto basta perché la figura stia con ciò che la precede invece di
@@ -291,6 +367,7 @@ bool shrink(const Project &project, const Style &style, const QString &file, con
     }
     if (last < 0)
         return false;
+    const int wideBefore = wideLines(project, file);   // la mossa non deve far uscire niente dalla colonna
     static const QRegularExpression lead(R"(^\s*)");
     const QString indent = lead.match(original[first]).captured(0);
     for (const double scale : {0.85, 0.7, 0.55}) {
@@ -307,7 +384,7 @@ bool shrink(const Project &project, const Style &style, const QString &file, con
                 Where end;
                 for (int line = previous.endLine; line >= previous.line && !end.ok; --line)
                     end = whereIs(project, g, file, line);
-                good = start.ok && end.ok && start.slot == end.slot;
+                good = start.ok && end.ok && start.slot == end.slot && wideLines(project, file) <= wideBefore;
             }
         } catch (...) {
             files::write(path, before);
@@ -335,6 +412,12 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
 {
     Result result;
     const QString path = project.path(file);
+    {   // i blocchi senza marcatore (lezioni scritte a mano, o portate da fuori) lo prendono ora: senza, non si misurano
+        const QString text = files::read(path);
+        const QString marked = blocks::mark(text, Project::lessonOf(file, text).number, unitsOf(style));
+        if (marked != text)
+            files::write(path, marked);
+    }
     // le decisioni prese restano: gli a capo accettati non si toccano, i blocchi lasciati com'erano non si riprovano
     QList<Move> kept;
     QStringList left;
@@ -360,6 +443,7 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
             break;
         ++result.found;
         tried << problem->block;
+        snap(project, style, file, problem->block, "prima");
         const double hole = 1.0 - problem->top;
         const QString name = nameOf(*problem, style);
         const QString two = style.twoColumns() ? QStringLiteral("due colonne") : QStringLiteral("due pagine");
@@ -501,6 +585,7 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
         ++result.found;
         const QString id = owner->id;
         settled << id;
+        snap(project, style, file, id, "prima");
         const double hole = 1.0 - top.bottom;
         const int percent = qRound(hole * 100);
         const QString where = style.twoColumns() ? QStringLiteral("alla colonna") : QStringLiteral("alla pagina");
@@ -553,6 +638,7 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
                 const QString id = owner(line);
                 if (id.isEmpty() || settled.contains(id))
                     return;
+                snap(project, style, file, id, "prima");
                 settled << id;
                 ++result.found;
                 ++result.proposed;
@@ -603,6 +689,7 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
                 end = whereIs(project, g, file, line);
             if (!start.ok || !end.ok || start.slot <= end.slot || 1.0 - end.bottom <= HOLE_OK)
                 continue;
+            snap(project, style, file, b.id, "prima");
             settled << b.id;
             if (b.kind == "figura") {
                 Move move{file, b.id, {}, 1.0 - end.bottom, "fatta", 0};
@@ -625,6 +712,17 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
         }
         if (!shrunk)
             break;
+    }
+    {   // com'è venuta ogni mossa fatta
+        bool any = false;
+        for (const Move &m : std::as_const(fresh))
+            any = any || m.state == "fatta";
+        if (any) {
+            Compiler::compileSync(project, file, control);
+            for (const Move &m : std::as_const(fresh))
+                if (m.state == "fatta")
+                    snap(project, style, file, m.block, "dopo");
+        }
     }
     QJsonArray list;
     for (const Move &m : kept + fresh)
@@ -724,4 +822,21 @@ QString decide(const Project &project, const QString &file, const QString &block
     return QStringLiteral("Questa mossa non c'è più.");
 }
 
+}
+
+namespace tx::layout {
+QList<Shot> shots(const Project &project, const QString &file, const QString &block, const QString &which)
+{
+    const QString base = shotBase(project, file, block, which);
+    const QDir dir = QFileInfo(base).dir();
+    const QJsonObject rects = QJsonDocument::fromJson(files::read(base + ".json").toUtf8()).object();
+    QList<Shot> out;
+    for (const QString &name : dir.entryList({QFileInfo(base).fileName() + "-*.png"}, QDir::Files, QDir::Name)) {
+        Shot shot{dir.filePath(name), {}};
+        for (const QJsonValue &v : rects.value(QString::number(out.size())).toArray())
+            shot.rects << QRectF(v.toObject().value("x").toDouble(), v.toObject().value("y").toDouble(), v.toObject().value("w").toDouble(), v.toObject().value("h").toDouble());
+        out << shot;
+    }
+    return out;
+}
 }

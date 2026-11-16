@@ -4,6 +4,7 @@
 #include "core/Style.h"
 
 #include <QList>
+#include <QRectF>
 
 // L'impaginazione: trova ciò che si impagina male e lo sistema con mosse misurate, con qualunque stile. La misura
 // viene dalla compilazione della lezione (dove cade ogni blocco nel PDF), non da comandi dello stile.
@@ -49,5 +50,12 @@ int toReview(const Project &project, const QString &file);
 // accettata: la mossa proposta si applica, o quella fatta si conferma. lasciata: l'a capo pagina si toglie.
 // a_mano, agente (se ne occupa l'utente o l'agente: resta da rivedere), risolta: cambia solo il registro.
 QString decide(const Project &project, const QString &file, const QString &block, const QString &state);
+// Le pagine in piccolo attorno a una mossa: «prima» (com'era quando il problema è stato visto) e «dopo» (com'è venuta).
+// Di ogni pagina, dove sta il blocco (in frazioni della pagina): il contorno da disegnarci sopra.
+struct Shot {
+    QString path;
+    QList<QRectF> rects;
+};
+QList<Shot> shots(const Project &project, const QString &file, const QString &block, const QString &which);
 
 }

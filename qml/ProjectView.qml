@@ -262,6 +262,8 @@ Item {
                 chat.showHistory()
             } else if (name === "chat") {
                 root.chatOpen = true
+            } else if (name === "miniature") {
+                editor.showShots()
             } else if (name === "a-mano") {
                 const moves = Workspace.layoutItems().filter(i => i.type === "move")
                 if (moves.length > 0) {
