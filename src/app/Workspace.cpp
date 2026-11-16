@@ -2015,3 +2015,28 @@ void Workspace::resetLayout()
     say(QStringLiteral("Impaginazioni eliminate (%1): %2 da rifare con «Impagina ciò che è nuovo».").arg(n).arg(plural(lessons, "lezione", "lezioni")));
     m_compiler.compileDocument();
 }
+
+void Workspace::acceptRest(const QString &lesson)
+{
+    if (!hasProject() || m_agentRunning)
+        return;
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    int n = 0;
+    for (const layout::Move &m : layout::moves(m_project, lesson))
+        if (m.state == "fatta" && layout::decide(m_project, lesson, m.block, "accettata").isEmpty())
+            ++n;                                       // la riga c'è già: accettare non cambia la lezione
+    checkpoint(QStringLiteral("Mosse accettate"));
+    refreshTree();
+    emit filesChanged();
+    say(n == 1 ? QStringLiteral("Una mossa accettata.") : QStringLiteral("%1 mosse accettate.").arg(n));
+}
+
+void Workspace::restoreManual(const QString &lesson, const QString &text, const QString &registry)
+{
+    if (!hasProject())
+        return;
+    files::write(m_project.path(lesson), text);
+    files::write(m_project.path("salvataggi/impaginazione.json"), registry);
+    refreshTree();
+    emit filesChanged();
+}

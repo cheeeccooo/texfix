@@ -11,10 +11,11 @@ Rectangle {
 
     property string messageText
     readonly property bool working: Workspace.busy
-    readonly property real fraction: Workspace.jobRunning ? Workspace.jobProgress : Workspace.progress
-    readonly property string activity: Workspace.jobRunning
-        ? Workspace.jobTitle + (Workspace.jobLabel !== "" ? ": " + Workspace.jobLabel : "")
-        : "Compilazione" + (Workspace.progressLabel !== "" ? ": " + Workspace.progressLabel : "")
+    // una compilazione chiesta dall'utente si vede anche mentre un lavoro gira
+    readonly property real fraction: Workspace.compiling ? Workspace.progress : Workspace.jobProgress
+    readonly property string activity: Workspace.compiling
+        ? "Compilazione" + (Workspace.progressLabel !== "" ? ": " + Workspace.progressLabel : "")
+        : Workspace.jobTitle + (Workspace.jobLabel !== "" ? ": " + Workspace.jobLabel : "")
     Connections {
         target: Workspace
         function onMessage(text) {
@@ -69,14 +70,24 @@ Rectangle {
             color: Theme.textMuted
             font.pixelSize: Theme.smallSize
         }
+        // la barra: quanto è fatto; finché non si sa, un tratto che scorre
         Rectangle {
+            id: bar
             visible: root.working
-            implicitWidth: 120; implicitHeight: 4; radius: 2
+            implicitWidth: 200; implicitHeight: 6; radius: 3
             color: Theme.border
-            Rectangle { width: parent.width * root.fraction; height: parent.height; radius: 2; color: Theme.accent }
+            clip: true
+            readonly property bool unknown: root.fraction < 0.02
+            Rectangle { visible: !bar.unknown; width: parent.width * Math.min(1, root.fraction); height: parent.height; radius: 3; color: Theme.accent }
+            Rectangle {
+                visible: bar.unknown
+                width: parent.width * 0.3; height: parent.height; radius: 3
+                color: Theme.accent
+                NumberAnimation on x { running: bar.visible && bar.unknown; from: -60; to: 200; duration: 1100; loops: Animation.Infinite }
+            }
         }
         TxLabel {
-            visible: root.working
+            visible: root.working && root.fraction >= 0.02
             text: Math.round(root.fraction * 100) + "%"
             color: Theme.textMuted
             font.pixelSize: Theme.smallSize

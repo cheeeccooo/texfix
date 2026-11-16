@@ -49,7 +49,11 @@ Item {
     function refreshManual() { if (manual) manualSpot = Workspace.moveSpot(manual.lesson, manual.block) }
     function startManual(lesson, block, line, what) {
         const base = reviewSaved || { leftOpen: leftOpen, chatOpen: chatOpen }
-        manual = { lesson: lesson, block: block, what: what, leftOpen: base.leftOpen, chatOpen: base.chatOpen }
+        editor.saveAll()
+        // com'erano la lezione e il registro: «Chiudi senza applicare» li rimette
+        manual = { lesson: lesson, block: block, what: what, leftOpen: base.leftOpen, chatOpen: base.chatOpen,
+                   original: Workspace.read(lesson), registry: Workspace.read("salvataggi/impaginazione.json") }
+        Workspace.decideMove(lesson, block, "a_mano", false)
         refreshManual()
         leftOpen = false
         chatOpen = false
@@ -80,7 +84,9 @@ Item {
         manual = null
         editor.saveAll()
         if (solved)
-            Workspace.decideMove(m.lesson, m.block, "risolta")   // il seguito della lezione si rimpagina
+            Workspace.decideMove(m.lesson, m.block, "risolta")   // applicata: il seguito della lezione si rimpagina
+        else
+            Workspace.restoreManual(m.lesson, m.original, m.registry)   // le prove non restano
         if (!Workspace.jobRunning)
             Workspace.compileDocument()                // la prova era della lezione sola: si torna al documento
         if (reviewSaved) {                             // si torna alla revisione, che sta a tutto schermo
@@ -320,7 +326,6 @@ Item {
             } else if (name === "a-mano") {
                 const moves = Workspace.layoutItems().filter(i => i.type === "move")
                 if (moves.length > 0) {
-                    Workspace.decideMove(moves[0].lesson, moves[0].block, "a_mano")
                     root.startManual(moves[0].lesson, moves[0].block, moves[0].line, moves[0].what)
                 }
             } else if (name === "chiudi-scheda") {
@@ -376,7 +381,7 @@ Item {
                     onClicked: root.leftOpen = !root.leftOpen
                 }
                 TxButton { text: "▶  File"; hint: "Compila il file aperto (⌘B)"; enabled: !Workspace.compiling; onClicked: root.compileFile() }
-                TxButton { text: "▶▶  Tutto"; hint: "Compila tutto il documento (⇧⌘B)"; enabled: !Workspace.compiling; onClicked: root.compileDocument() }
+                TxButton { text: "▶▶  Tutto"; hint: Workspace.jobRunning ? "Un lavoro sta usando il documento: aspetta che finisca" : "Compila tutto il documento (⇧⌘B)"; enabled: !Workspace.compiling && !Workspace.jobRunning; onClicked: root.compileDocument() }
                 TxButton { text: "Converti"; hint: "Le fonti da convertire diventano lezioni (⇧⌘K)"; enabled: !Workspace.jobRunning; onClicked: root.convertAsked() }
                 // i «Rivedi» ci sono solo quando c'è qualcosa da decidere
                 TxButton { visible: Workspace.openDoubts > 0; text: "Rivedi dubbi  " + Workspace.openDoubts; hint: "⇧⌘D"; onClicked: root.openFile("rivedi:dubbi") }
@@ -415,8 +420,8 @@ Item {
                         elide: Text.ElideNone
                         maximumLineCount: 3
                     }
-                    TxButton { text: "Torna alla revisione"; hint: "Lascia la modifica a mano: la mossa resta da decidere"; onClicked: root.endManual(false) }
-                    TxButton { text: "Risolta"; hint: "La mossa è decisa: il seguito della lezione si rimpagina"; onClicked: root.endManual(true) }
+                    TxButton { text: "Chiudi senza applicare"; hint: "La lezione torna com'era prima delle prove"; onClicked: root.endManual(false) }
+                    TxButton { text: "Applica alla lezione"; primary: true; hint: "Le prove diventano il testo della lezione: il seguito si rimpagina"; onClicked: root.endManual(true) }
                 }
                 // a sinistra: andare alla mossa, con o senza; in mezzo i comandi pronti; a destra la prova
                 RowLayout {
@@ -544,6 +549,7 @@ Item {
                     PdfPane {
                         id: pdf
                         SplitView.fillWidth: true
+                        busy: Workspace.compiling
                         SplitView.minimumWidth: 0
                         SplitView.fillHeight: true
                         source: Workspace.pdf

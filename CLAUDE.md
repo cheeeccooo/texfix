@@ -177,7 +177,12 @@ costa 7-10 secondi a compilazione, ed è lì che va il tempo). L'ordine conta: l
 sotto una mossa ancora da decidere sono spente), e se una decisione cambia la lezione le mosse non decise che seguono si
 tolgono e si ricalcolano (`layout::dropAfter`, poi `layout::lesson`). «Elimina le impaginazioni» (`layout::reset`, con
 conferma) toglie tutte le mosse dalle lezioni non fatte per farle rifare. Rivedi impaginazione prende tutta la finestra: i
-pannelli si chiudono e tornano com'erano quando la si lascia (`ProjectView.syncReview`). Una lezione senza marcatori dei blocchi (scritta a mano o portata da fuori) resta da impaginare, e
+pannelli si chiudono e tornano com'erano quando la si lascia (`ProjectView.syncReview`). È fatta come nella vecchia Texfix
+(`qml/LayoutView.qml`): la panoramica, lezione per lezione, con una scheda piccola per mossa (stato, nome del blocco, una
+pagina) e «Accetta le restanti»; un clic apre la scheda, con le pagine «Com'era» e «Com'è venuta» a sinistra e a destra le
+scelte colorate (Accetta A, all'agente S, a mano M, com'era L; frecce per la scheda prima e dopo, Esc per la panoramica).
+Nella modifica a mano le prove non restano finché non si preme «Applica alla lezione»: «Chiudi senza applicare» (o chiudere
+la lezione) rimette la lezione e il registro com'erano (`Workspace::restoreManual`). Una lezione senza marcatori dei blocchi (scritta a mano o portata da fuori) resta da impaginare, e
 l'impaginazione glieli aggiunge. La revisione elenca anche le lezioni ancora da impaginare. Un clic sul testo di una mossa
 apre le pagine in piccolo del prima e del dopo (`layout::snap`, in `build/impaginazione/<lezione>/`), con il contorno del
 blocco rosso com'era e verde com'è venuto. Una mossa che fa uscire qualcosa dalla colonna non resta. Un'unità spezzata fra due pagine (a pagina nuova, o spezzata fra due paragrafi); un titolo

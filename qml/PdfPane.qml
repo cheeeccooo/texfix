@@ -131,4 +131,14 @@ Rectangle {
         text: "Compila per vedere il PDF."
         color: Theme.textFaint
     }
+    // mentre si compila la vista si vela di grigio: ciò che si vede sta per cambiare
+    property bool busy: false
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.window
+        opacity: root.busy ? 0.55 : 0
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: 180 } }
+        TxLabel { anchors.horizontalCenter: parent.horizontalCenter; y: 3 * Theme.gap; text: "Compilo…"; color: Theme.text; font.weight: Font.Medium }
+    }
 }

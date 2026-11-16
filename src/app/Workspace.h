@@ -184,6 +184,10 @@ public:
     // prova di quella lezione sola.
     // Elimina tutte le impaginazioni delle lezioni non fatte, per farle rifare: un passo della cronologia.
     Q_INVOKABLE void resetLayout();
+    // «Accetta le restanti»: tutte le mosse fatte da sole di una lezione, in un colpo.
+    Q_INVOKABLE void acceptRest(const QString &lesson);
+    // «Chiudi senza applicare» nella modifica a mano: la lezione e il registro tornano com'erano all'inizio.
+    Q_INVOKABLE void restoreManual(const QString &lesson, const QString &text, const QString &registry);
     Q_INVOKABLE QVariantMap moveSpot(const QString &lesson, const QString &block) const;
     Q_INVOKABLE bool showsLesson(const QString &file) const;
 
