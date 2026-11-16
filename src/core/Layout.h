@@ -16,6 +16,7 @@
 namespace tx::layout {
 
 constexpr double HOLE_OK = 0.25;           // il vuoto che un a capo pagina può lasciare da solo, in frazioni di pagina
+constexpr double NEAR_END = 0.13;         // un titolo che comincia così vicino alla fine passa oltre con il suo testo
 constexpr const char *SIGN = "\\newpage % impaginazione";
 
 struct Move {

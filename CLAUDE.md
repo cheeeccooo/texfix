@@ -207,7 +207,9 @@ dal cursore alla prova (se la riga non lascia segno, una vicina). «Risolta», �
 chiudere la lezione dall'editor rimettono i pannelli com'erano e ricompilano il documento. Una mossa si decide anche
 mentre un lavoro gira, purché non stia lavorando su quella lezione. Righe sole in cima o in fondo le evita `texfix.sty`. Con poco spazio (finestra sotto i 900 px) la prova va sotto l'editor (`ProjectView.stacked`).
 
-Ogni prova lascia il PDF com'era con la prova: chi misura dopo ricompila prima (`breakInside` lo fa da sé, e se l'ultima cucitura non regge
+I tre giri (unità a cavallo, titoli, vuoti e formule) si ripetono finché uno non cambia più niente, al più cinque volte: una figura
+rimpicciolita o un a capo spostano ciò che segue, e un riquadro può finire a cavallo dopo. Un titolo che comincia nell'ultimo 13% della
+colonna (`NEAR_END`) passa oltre con il suo testo, anche se due righe gli stavano sotto. Ogni prova lascia il PDF com'era con la prova: chi misura dopo ricompila prima (`breakInside` lo fa da sé, e se l'ultima cucitura non regge
 prova le due prima). Le misure: un'unità che non si spezza sta dove sta il segno più alto delle sue righe (`tallest`: la prima riga lascia un segno
 in fondo alla colonna di prima, lo spazio che la precede); i segni fuori dall'area del testo non contano (`spotOf`: una riga su cui
 la pagina si chiude si prende intestazione e piè di pagina).

@@ -620,13 +620,17 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
     }
     QList<Move> fresh;
     QStringList tried = left;
+    QStringList settled;
+    // Ogni mossa sposta ciò che segue: dopo i titoli e i vuoti si riguarda da capo se qualcosa è finito a cavallo, finché
+    // un giro non cambia più niente.
+    for (int sweep = 0; sweep < 5; ++sweep) {
     for (int round = 0; round < 40; ++round) {
         const QList<Placed> placed = measure(project, style, file, control, &result.failure);
         if (!result.failure.isEmpty())
             return result;
         const Placed *problem = nullptr;
         for (const Placed &p : placed)
-            if (p.kind != "testo" && p.split() && !p.block.isEmpty() && !tried.contains(p.block)) {
+            if (p.kind != "testo" && p.split() && !p.block.isEmpty() && !tried.contains(p.block) && !settled.contains(p.block)) {
                 problem = &p;
                 break;                                 // dall'alto in basso: ogni mossa sposta ciò che segue
             }
@@ -735,7 +739,8 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
         }
     }
     // poi ciò che non è un'unità spezzata: un titolo rimasto in fondo senza il suo testo, un grande vuoto prima di un'unità
-    QStringList settled = tried;
+    const QString afterUnits = files::read(path);
+    settled += tried;
     for (const Move &m : kept + fresh)
         settled << m.block;
     static const QRegularExpression heading(R"(^\s*\\(?:sub)*section\*?[\[{])");
@@ -745,7 +750,9 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
         const QString before = files::read(path);
         QStringList lines = before.split('\n');
         const QList<blocks::Block> parsed = blocks::parse(before, unitsOf(style));
+        Compiler::compileSync(project, file, control);  // una prova tolta lascia il PDF com'era con la prova
         const Geometry g = geometryOf(project, style, file);
+        bool near = false;                             // non è rimasto solo, ma comincia troppo vicino alla fine
         int title = -1, content = -1;                  // da 0
         const blocks::Block *owner = nullptr;
         Where top;
@@ -768,7 +775,10 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
             Where wc;
             for (int k = j; k < j + 3 && k < lines.size() && !wc.ok; ++k)
                 wc = whereIs(project, g, file, k + 1);
-            if (wt.ok && wc.ok && wc.slot > wt.slot) {
+            // rimasto in fondo senza il suo testo, o con così poco spazio sotto (meno del 13% della colonna, cinque o sei
+            // righe con il titolo) che il suo testo comincia appena
+            if (wt.ok && wc.ok && (wc.slot > wt.slot || wt.bottom > 1 - NEAR_END)) {
+                near = wc.slot == wt.slot;
                 title = i;
                 content = j;
                 owner = next;
@@ -794,14 +804,15 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
                 Where wc;
                 for (int k = content + 1; k < content + 4 && k < lines.size() && !wc.ok; ++k)
                     wc = whereIs(project, after, file, k + 1);
-                together = wt.ok && wc.ok && wt.slot == wc.slot;
+                together = wt.ok && wc.ok && wt.slot == wc.slot && wt.slot > top.slot;
             }
         } catch (...) {
             files::write(path, before);
             throw;
         }
         if (together && hole <= HOLE_OK) {
-            fresh << Move{file, id, QStringLiteral("Un titolo restava in fondo senza il suo testo: ora passa %1 dopo con lui (vuoto lasciato: %2%).").arg(where).arg(percent), hole, "fatta", 0};
+            fresh << Move{file, id, (near ? QStringLiteral("Un titolo cominciava troppo vicino alla fine: ora passa %1 dopo con il suo testo (vuoto lasciato: %2%).")
+                                          : QStringLiteral("Un titolo restava in fondo senza il suo testo: ora passa %1 dopo con lui (vuoto lasciato: %2%).")).arg(where).arg(percent), hole, "fatta", 0};
             ++result.done;
         } else {
             files::write(path, before);
@@ -1009,6 +1020,9 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
         }
         if (!shrunk)
             break;
+    }
+    if (files::read(path) == afterUnits)
+        break;
     }
     {   // com'è venuta ogni mossa fatta
         bool any = false;
