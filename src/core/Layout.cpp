@@ -525,11 +525,19 @@ bool breakBefore(const Project &project, const Style &style, const QString &file
     if (box && exact)
         return false;
     int at = line;                                     // la riga (da 1) prima della quale va l'a capo
-    bool above = false;
+    bool above = false, mid = false;
     if (!exact) {
-        while (at > block.line && !lines[at - 2].trimmed().isEmpty())
+        // il paragrafo comincia dopo una riga vuota, o dopo la formula di prima: lì la frase che introduce questa è già
+        // un capoverso a sé nel PDF, anche se nel sorgente il paragrafo continua
+        static const QRegularExpression displayEnd(R"(^\s*(\\\]|\\end\{(align|equation|gather|multline)\*?\}))");
+        while (at > block.line && !lines[at - 2].trimmed().isEmpty()) {
+            if (at < line && displayEnd.match(lines[at - 2]).hasMatch()) {
+                mid = true;
+                break;
+            }
             --at;
-        above = at <= block.line + (box ? 1 : 0);
+        }
+        above = !mid && at <= block.line + (box ? 1 : 0);
         if (box && !above) {                           // in un riquadro solo al primo livello, e se lo stile sa spezzarlo
             const Style::Environment *env = style.environment(block.kind);
             int depth = 0;
@@ -538,7 +546,7 @@ bool breakBefore(const Project &project, const Style &style, const QString &file
                 depth += int(code.count(QLatin1String("\\begin{")) - code.count(QLatin1String("\\end{")));
             }
             if (!env || !env->breaks || style.breakCommand.isEmpty() || depth != 1)
-                above = true;
+                above = true, mid = false;
         }
     }
     int index = at - 1, added = 1;                     // dove si inserisce (da 0), quante righe
@@ -550,7 +558,9 @@ bool breakBefore(const Project &project, const Style &style, const QString &file
         while (last > 1 && lines[last - 1].trimmed().isEmpty())
             --last;
         static const QRegularExpression lead(R"(^\s*)");
-        sign = lead.match(lines[at - 1]).captured(0) + (box ? style.breakCommand : QStringLiteral("\\par\\newpage")) + " % impaginazione";
+        // dopo una formula il paragrafo continuava: ciò che segue l'a capo non deve prendere il rientro
+        sign = lead.match(lines[at - 1]).captured(0) + (box ? style.breakCommand : QStringLiteral("\\par\\newpage"))
+               + (mid ? QStringLiteral("\\noindent") : QString()) + " % impaginazione";
         after = lines[last - 1];
     }
     // il vuoto che lascerebbe: da dove finisce ciò che resta di qua
@@ -564,7 +574,7 @@ bool breakBefore(const Project &project, const Style &style, const QString &file
         return false;
     const int wideBefore = wideLines(project, file);
     lines.insert(index, sign);
-    if (!above && !exact) {
+    if (!above && !exact && !mid) {
         lines.insert(index + 1, QString());
         added = 2;
     }

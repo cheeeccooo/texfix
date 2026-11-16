@@ -193,7 +193,7 @@ blocco rosso com'era e verde com'è venuto. Una mossa che fa uscire qualcosa dal
 rimasto in fondo senza il suo testo (a pagina nuova con lui); un grande vuoto prima di un'unità che non ci stava (una figura si
 rimpicciolisce quanto basta, `\scalebox{…}{% impaginazione` … `}% impaginazione` attorno al disegno, fino al 55%; se non basta resta
 dov'è con un a capo e il vuoto è voluto; il resto si segnala); ciò che non si spezza (una figura, un riquadro intero) ed è passato oltre
-da solo lasciando poco vuoto (fra il 2% e il 25%) prende un a capo che fissa il punto, di solito «invariata»; una formula rimasta in fondo senza la frase che la commenta (passa oltre con il paragrafo che la introduce) e un elenco che lascia
+da solo lasciando poco vuoto (fra il 2% e il 25%) prende un a capo che fissa il punto, di solito «invariata»; una formula rimasta in fondo senza la frase che la commenta (passa oltre con il paragrafo che la introduce: da una riga vuota, o da dopo la formula di prima se il paragrafo nel sorgente continua, e allora la riga è `\par\newpage\noindent % impaginazione`) e un elenco che lascia
 una voce sola dall'altra parte (la penultima raggiunge l'ultima, o l'elenco passa oltre con la sua frase): `breakBefore`, un a capo dentro il blocco
 (`\par\newpage % impaginazione` nel testo, il comando dello stile in un riquadro), se il vuoto è al più il 25%. Qualunque unità passata oltre
 lasciando un grande vuoto prende un a capo e il vuoto è voluto. Resta segnalato solo ciò che nessuna mossa sistema: un riquadro senza una
