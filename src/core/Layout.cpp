@@ -396,6 +396,15 @@ void snap(const Project &project, const Style &style, const QString &file, const
     const QString base = shotBase(project, file, blockId, which);
     const QDir dir = QFileInfo(base).dir();
     QDir().mkpath(dir.path());
+    // il dopo mostra le stesse pagine del prima: se il blocco è passato alla pagina dopo, si deve vedere anche quella
+    // che ha lasciato (e dove stava), non solo quella in cui è arrivato
+    if (which == "dopo" && page > 0) {
+        const QString first = QFileInfo(shotBase(project, file, blockId, "prima")).fileName();
+        const QStringList before = dir.entryList({first + "-*.png"}, QDir::Files, QDir::Name);
+        if (!before.isEmpty())
+            if (const int was = QFileInfo(before.first()).completeBaseName().section('-', -1).toInt(); was > 0)
+                page = qMin(page, was);
+    }
     for (const QString &old : dir.entryList({QFileInfo(base).fileName() + "-*.png"}, QDir::Files))
         QFile::remove(dir.filePath(old));
     if (page > 0)
@@ -1221,6 +1230,12 @@ QList<Shot> shots(const Project &project, const QString &file, const QString &bl
 }
 
 namespace tx::layout {
+void retake(const Project &project, const Style &style, const QString &file, const QString &block, JobControl *control)
+{
+    if (!Compiler::compileSync(project, file, control).hasErrors())
+        snap(project, style, file, block, "dopo");
+}
+
 int dropAfter(const Project &project, const QString &file, const QString &block)
 {
     int line = 0;

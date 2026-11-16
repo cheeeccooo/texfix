@@ -186,7 +186,7 @@ public:
     Q_INVOKABLE void resetLayout();
     // Annulla la scelta su una mossa (dalla panoramica, a ritroso): ciò che segue si ricalcola.
     Q_INVOKABLE void reopenMove(const QString &lesson, const QString &block);
-    void redoFollowing(const QString &lesson, const QString &block);
+    void redoFollowing(const QString &lesson, const QString &block, bool retake = false);
     // «Accetta le restanti»: tutte le mosse fatte da sole di una lezione, in un colpo.
     Q_INVOKABLE void acceptRest(const QString &lesson);
     // «Chiudi senza applicare» nella modifica a mano: la lezione e il registro tornano com'erano all'inizio.

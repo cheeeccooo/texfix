@@ -69,5 +69,7 @@ struct Shot {
     QList<QRectF> rects;
 };
 QList<Shot> shots(const Project &project, const QString &file, const QString &block, const QString &which);
+// Rifà le pagine in piccolo del «dopo» di una mossa dalla lezione com'è adesso (dopo una modifica a mano): la compila.
+void retake(const Project &project, const Style &style, const QString &file, const QString &block, JobControl *control = nullptr);
 
 }

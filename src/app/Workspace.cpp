@@ -1193,7 +1193,8 @@ QVariantList shotList(const Project &project, const layout::Move &m, const QStri
         QVariantList rects;
         for (const QRectF &r : shot.rects)
             rects << QVariantMap{{"x", r.x()}, {"y", r.y()}, {"w", r.width()}, {"h", r.height()}};
-        out << QVariantMap{{"path", shot.path}, {"rects", rects}};
+        // l'ora del file: una pagina rifatta ha lo stesso nome, e la finestra deve accorgersi che è cambiata
+        out << QVariantMap{{"path", shot.path}, {"rects", rects}, {"stamp", QFileInfo(shot.path).lastModified().toMSecsSinceEpoch()}};
     }
     return out;
 }
@@ -1240,27 +1241,34 @@ QVariantList Workspace::layoutItems() const
 }
 
 // L'ordine conta: le mosse non ancora decise che vengono dopo un blocco si tolgono e si ricalcolano.
-void Workspace::redoFollowing(const QString &lesson, const QString &block)
+void Workspace::redoFollowing(const QString &lesson, const QString &block, bool retake)
 {
-    if (layout::dropAfter(m_project, lesson, block) == 0)
+    const bool following = layout::dropAfter(m_project, lesson, block) > 0;
+    if (!following && !retake)
         return;
     refreshTree();
     emit filesChanged();
     if (jobRunning())
         return say(QStringLiteral("Il seguito della lezione va rimpaginato: «Impagina ciò che è nuovo» quando il lavoro in corso finisce."));
-    startJob(QStringLiteral("Rimpagino il seguito"), [this, lesson, project = m_project, style = m_style](JobControl *control) {
+    startJob(following ? QStringLiteral("Rimpagino il seguito") : QStringLiteral("Rifaccio le pagine in piccolo"),
+             [this, lesson, block, following, retake, project = m_project, style = m_style](JobControl *control) {
         control->progress(0.1, QFileInfo(lesson).fileName());
         layout::Result r;
         try {
-            r = layout::lesson(project, style, lesson, control);
+            if (retake)                                // sistemata a mano: com'è venuta si vede dalla lezione com'è adesso
+                layout::retake(project, style, lesson, block, control);
+            if (following)
+                r = layout::lesson(project, style, lesson, control);
         } catch (const Stopped &) {
             r.failure = QStringLiteral("Lavoro fermato.");
         }
-        return std::function<void()>([this, r] {
-            checkpoint(QStringLiteral("Impaginazione del seguito"));
+        return std::function<void()>([this, r, following] {
+            if (following)
+                checkpoint(QStringLiteral("Impaginazione del seguito"));
             refreshTree();
             emit filesChanged();
-            say(r.failure.isEmpty() ? QStringLiteral("Seguito rimpaginato: %1 mosse fatte, %2 da rivedere.").arg(r.done).arg(r.proposed) : r.failure);
+            if (following)
+                say(r.failure.isEmpty() ? QStringLiteral("Seguito rimpaginato: %1 mosse fatte, %2 da rivedere.").arg(r.done).arg(r.proposed) : r.failure);
             m_compiler.compileDocument();
         });
     });
@@ -1294,7 +1302,7 @@ void Workspace::decideMove(const QString &lesson, const QString &block, const QS
             layout::decide(m_project, lesson, block, state));
     // l'ordine conta: se la lezione è cambiata, le mosse non ancora decise che vengono dopo si ricalcolano
     if (redo && (state == "risolta" || files::read(m_project.path(lesson)) != textBefore))
-        redoFollowing(lesson, block);
+        redoFollowing(lesson, block, state == "risolta");
     if (state == "agente")                             // se ne occupa l'agente, nella chat
         emit agentAsked(QStringLiteral("Nella lezione %1, al blocco %2, c'è un problema di impaginazione: %3\nSistemalo toccando il meno possibile "
                                        "(accorciare, spostare, cambiare la misura di una figura, spezzare in un punto migliore), poi compila la lezione "

@@ -189,7 +189,7 @@ Nella modifica a mano le prove non restano finché non si preme «Applica alla l
 la lezione) rimette la lezione e il registro com'erano (`Workspace::restoreManual`). Una lezione senza marcatori dei blocchi (scritta a mano o portata da fuori) resta da impaginare, e
 l'impaginazione glieli aggiunge. La revisione elenca anche le lezioni ancora da impaginare. Un clic sul testo di una mossa
 apre le pagine in piccolo del prima e del dopo (`layout::snap`, in `build/impaginazione/<lezione>/`), con il contorno del
-blocco rosso com'era e verde com'è venuto. Una mossa che fa uscire qualcosa dalla colonna non resta. Un'unità spezzata fra due pagine (a pagina nuova, o spezzata fra due paragrafi); un titolo
+blocco rosso com'era e verde com'è venuto. Il dopo mostra le stesse pagine del prima (se il blocco è passato oltre si vede anche la pagina che ha lasciato), e dopo «Risolta» a mano si rifà dalla lezione com'è (`layout::retake`). Una mossa che fa uscire qualcosa dalla colonna non resta. Un'unità spezzata fra due pagine (a pagina nuova, o spezzata fra due paragrafi); un titolo
 rimasto in fondo senza il suo testo (a pagina nuova con lui); un grande vuoto prima di un'unità che non ci stava (una figura si
 rimpicciolisce quanto basta, `\scalebox{…}{% impaginazione` … `}% impaginazione` attorno al disegno, fino al 55%; se non basta resta
 dov'è con un a capo e il vuoto è voluto; il resto si segnala); ciò che non si spezza (una figura, un riquadro intero) ed è passato oltre

@@ -49,7 +49,7 @@ Rectangle {
     function isOpen(row) { return openStates.includes(row.state) }
     // il programma ha fatto o proposto una mossa (c'è qualcosa da lasciare com'era); altrimenti ha solo segnalato
     function hasMove(row) { return row.origin === "fatta" || row.origin === "proposta" }
-    function plain(shot) { return { path: shot.path, rects: [] } }
+    function plain(shot) { return { path: shot.path, rects: [], stamp: shot.stamp } }
     // Il nome del blocco: l'inizio di ciò che è successo.
     function nameOf(what) {
         const m = /^(.*?)(?= cadeva| passava| cade | non ci stava| finiva| è più lungo|: | resta | lascia )/.exec(what || "")
@@ -97,7 +97,7 @@ Rectangle {
         Image {
             anchors.fill: parent
             anchors.margins: 1
-            source: parent.shot.path ? "file://" + parent.shot.path : ""
+            source: parent.shot.path ? "file://" + parent.shot.path + (parent.shot.stamp ? "?" + parent.shot.stamp : "") : ""
             cache: false
             asynchronous: true
             fillMode: Image.PreserveAspectFit
