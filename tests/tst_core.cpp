@@ -1469,6 +1469,16 @@ private slots:
         const QString text = files::read(p.path("src/src1.tex"));
         QVERIFY(text.contains("\n\n    \\tcbbreak % impaginazione\n\n    Paragrafo "));
         QVERIFY(!layout::needed(p, "src/src1.tex"));
+        {   // la lezione cambia e si rimpagina: la mossa resta una, e la sua riga non si scrive due volte
+            files::write(p.path("src/src1.tex"), QString(text).replace("Fine.", "Fine davvero."));
+            QVERIFY(layout::needed(p, "src/src1.tex"));
+            QCOMPARE(layout::lesson(p, style, "src/src1.tex").failure, QString());
+            QCOMPARE(files::read(p.path("src/src1.tex")).count("% impaginazione"), 1);
+            QCOMPARE(layout::moves(p, "src/src1.tex").size(), moves.size());
+            files::write(p.path("src/src1.tex"), text);
+            QCOMPARE(layout::lesson(p, style, "src/src1.tex").failure, QString());
+            QCOMPARE(files::read(p.path("src/src1.tex")), text);
+        }
         Compiler compiler;
         compiler.setProject(p);
         QVERIFY(!build(compiler, "src/src1.tex").hasErrors());

@@ -630,6 +630,8 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
     }
     QList<Move> fresh;
     QStringList tried = left;
+    for (const Move &m : std::as_const(kept))          // una mossa per blocco: chi ne ha già una (fatta e da rivedere, o
+        tried << m.block;                              // decisa) non si riprova, o la sua riga finirebbe scritta due volte
     QStringList settled;
     // Ogni mossa sposta ciò che segue: dopo i titoli e i vuoti si riguarda da capo se qualcosa è finito a cavallo, finché
     // un giro non cambia più niente.
@@ -1092,15 +1094,19 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
     if (!dropped && files::read(path) == afterUnits)
         break;
     }
-    {   // com'è venuta ogni mossa fatta
-        bool any = false;
+    {   // com'è venuta ogni mossa fatta; e quelle di prima, che restano: la lezione è cambiata, e il loro «dopo» con lei
+        bool any = !kept.isEmpty();
         for (const Move &m : std::as_const(fresh))
             any = any || m.state == "fatta";
-        if (any) {
-            Compiler::compileSync(project, file, control);
+        if (any && !Compiler::compileSync(project, file, control).hasErrors()) {
             for (const Move &m : std::as_const(fresh))
                 if (m.state == "fatta")
                     snap(project, style, file, m.block, "dopo");
+            for (const Move &m : std::as_const(kept)) {
+                if (control)
+                    control->check();
+                snap(project, style, file, m.block, "dopo");
+            }
         }
     }
     for (Move &m : fresh)
