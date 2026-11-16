@@ -184,6 +184,9 @@ public:
     // prova di quella lezione sola.
     // Elimina tutte le impaginazioni delle lezioni non fatte, per farle rifare: un passo della cronologia.
     Q_INVOKABLE void resetLayout();
+    // Annulla la scelta su una mossa (dalla panoramica, a ritroso): ciò che segue si ricalcola.
+    Q_INVOKABLE void reopenMove(const QString &lesson, const QString &block);
+    void redoFollowing(const QString &lesson, const QString &block);
     // «Accetta le restanti»: tutte le mosse fatte da sole di una lezione, in un colpo.
     Q_INVOKABLE void acceptRest(const QString &lesson);
     // «Chiudi senza applicare» nella modifica a mano: la lezione e il registro tornano com'erano all'inizio.

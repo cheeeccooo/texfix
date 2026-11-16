@@ -1216,17 +1216,66 @@ QVariantList Workspace::layoutItems() const
             out << QVariantMap{{"type", "todo"}, {"lesson", lesson.file}, {"fresh", moves.isEmpty()}};
         QList<layout::Move> ordered = moves;           // in ordine di documento: l'ordine conta
         std::stable_sort(ordered.begin(), ordered.end(), [](const layout::Move &a, const layout::Move &b) { return a.line < b.line; });
-        bool openAbove = false;
+        // l'ordine: la mossa attuale è la prima ancora da rivedere; quelle prima sono chiuse (non si toccano più, se non
+        // annullando le scelte a ritroso), quelle dopo aspettano
+        const QStringList openStates{"fatta", "proposta", "segnalata", "a_mano", "agente"};
+        qsizetype now = ordered.size();
+        for (qsizetype i = ordered.size() - 1; i >= 0; --i)
+            if (openStates.contains(ordered[i].state))
+                now = i;
+        qsizetype index = -1;
         for (const layout::Move &m : ordered) {
-            const bool open = QStringList{"fatta", "proposta", "segnalata", "a_mano", "agente"}.contains(m.state);
-            const bool locked = open && openAbove;      // prima si decidono quelle sopra
-            openAbove = openAbove || open;
-            out << QVariantMap{{"type", "move"}, {"lesson", m.lesson}, {"block", m.block}, {"what", m.what}, {"state", m.state}, {"locked", locked},
+            ++index;
+            const QString role = index < now ? QStringLiteral("chiusa") : index == now ? QStringLiteral("attuale") : QStringLiteral("attesa");
+            const bool locked = role != "attuale";
+            // «annulla la scelta di prima»: dalla mossa attuale, o dall'ultima se sono tutte decise
+            const QString undo = (index == now && index > 0) ? ordered[index - 1].block
+                                 : (now == ordered.size() && index == ordered.size() - 1) ? m.block : QString();
+            out << QVariantMap{{"type", "move"}, {"lesson", m.lesson}, {"block", m.block}, {"what", m.what}, {"state", m.state}, {"locked", locked}, {"role", role}, {"undo", undo}, {"origin", m.origin},
                                {"hole", qRound(m.hole * 100)}, {"line", m.line},
                                {"before", shotList(m_project, m, "prima")}, {"after", shotList(m_project, m, "dopo")}};
         }
     }
     return out;
+}
+
+// L'ordine conta: le mosse non ancora decise che vengono dopo un blocco si tolgono e si ricalcolano.
+void Workspace::redoFollowing(const QString &lesson, const QString &block)
+{
+    if (layout::dropAfter(m_project, lesson, block) == 0)
+        return;
+    refreshTree();
+    emit filesChanged();
+    if (jobRunning())
+        return say(QStringLiteral("Il seguito della lezione va rimpaginato: «Impagina ciò che è nuovo» quando il lavoro in corso finisce."));
+    startJob(QStringLiteral("Rimpagino il seguito"), [this, lesson, project = m_project, style = m_style](JobControl *control) {
+        control->progress(0.1, QFileInfo(lesson).fileName());
+        layout::Result r;
+        try {
+            r = layout::lesson(project, style, lesson, control);
+        } catch (const Stopped &) {
+            r.failure = QStringLiteral("Lavoro fermato.");
+        }
+        return std::function<void()>([this, r] {
+            checkpoint(QStringLiteral("Impaginazione del seguito"));
+            refreshTree();
+            emit filesChanged();
+            say(r.failure.isEmpty() ? QStringLiteral("Seguito rimpaginato: %1 mosse fatte, %2 da rivedere.").arg(r.done).arg(r.proposed) : r.failure);
+            m_compiler.compileDocument();
+        });
+    });
+}
+
+// Annulla la scelta su una mossa: torna com'era quando il programma l'ha lasciata, e ciò che segue si ricalcola.
+void Workspace::reopenMove(const QString &lesson, const QString &block)
+{
+    if (m_agentRunning || jobRunning())
+        return say(QStringLiteral("Aspetta la fine del lavoro in corso."));
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    const QString textBefore = files::read(m_project.path(lesson));
+    decided(lesson, QStringLiteral("Scelta annullata"), layout::reopen(m_project, lesson, block));
+    if (files::read(m_project.path(lesson)) != textBefore)
+        redoFollowing(lesson, block);
 }
 
 void Workspace::decideMove(const QString &lesson, const QString &block, const QString &state, bool redo)
@@ -1244,30 +1293,8 @@ void Workspace::decideMove(const QString &lesson, const QString &block, const QS
                     : state == "risolta" ? QStringLiteral("Impaginazione risolta") : QStringLiteral("Impaginazione: scelta cambiata"),
             layout::decide(m_project, lesson, block, state));
     // l'ordine conta: se la lezione è cambiata, le mosse non ancora decise che vengono dopo si ricalcolano
-    if (redo && (state == "risolta" || files::read(m_project.path(lesson)) != textBefore) && layout::dropAfter(m_project, lesson, block) > 0) {
-        refreshTree();
-        emit filesChanged();
-        if (jobRunning()) {
-            say(QStringLiteral("Il seguito della lezione va rimpaginato: «Impagina ciò che è nuovo» quando il lavoro in corso finisce."));
-        } else {
-            startJob(QStringLiteral("Rimpagino il seguito"), [this, lesson, project = m_project, style = m_style](JobControl *control) {
-                control->progress(0.1, QFileInfo(lesson).fileName());
-                layout::Result r;
-                try {
-                    r = layout::lesson(project, style, lesson, control);
-                } catch (const Stopped &) {
-                    r.failure = QStringLiteral("Lavoro fermato.");
-                }
-                return std::function<void()>([this, r] {
-                    checkpoint(QStringLiteral("Impaginazione del seguito"));
-                    refreshTree();
-                    emit filesChanged();
-                    say(r.failure.isEmpty() ? QStringLiteral("Seguito rimpaginato: %1 mosse fatte, %2 da decidere.").arg(r.done).arg(r.proposed) : r.failure);
-                    m_compiler.compileDocument();
-                });
-            });
-        }
-    }
+    if (redo && (state == "risolta" || files::read(m_project.path(lesson)) != textBefore))
+        redoFollowing(lesson, block);
     if (state == "agente")                             // se ne occupa l'agente, nella chat
         emit agentAsked(QStringLiteral("Nella lezione %1, al blocco %2, c'è un problema di impaginazione: %3\nSistemalo toccando il meno possibile "
                                        "(accorciare, spostare, cambiare la misura di una figura, spezzare in un punto migliore), poi compila la lezione "

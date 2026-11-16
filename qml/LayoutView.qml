@@ -47,19 +47,21 @@ Rectangle {
 
     readonly property var openStates: ["fatta", "proposta", "segnalata", "a_mano", "agente"]
     function isOpen(row) { return openStates.includes(row.state) }
-    function hasMove(row) { return !["segnalata", "a_mano", "agente", "risolta"].includes(row.state) }
+    // il programma ha fatto o proposto una mossa (c'è qualcosa da lasciare com'era); altrimenti ha solo segnalato
+    function hasMove(row) { return row.origin === "fatta" || row.origin === "proposta" }
+    function plain(shot) { return { path: shot.path, rects: [] } }
     // Il nome del blocco: l'inizio di ciò che è successo.
     function nameOf(what) {
         const m = /^(.*?)(?= cadeva| cade | non ci stava| finiva| è più lungo|: | resta | lascia )/.exec(what || "")
         return m ? m[1] : (what || "").split(".")[0]
     }
     function badgeOf(row) {
-        if (row.locked)
-            return { text: "aspetta le mosse sopra", color: Theme.idle }
-        return ({ fatta: { text: "da rivedere", color: Theme.warn }, proposta: { text: "da decidere", color: Theme.warn },
-                  segnalata: { text: "da decidere", color: Theme.warn }, a_mano: { text: "a mano", color: Theme.accent },
+        if (row.role === "attesa")
+            return { text: "aspetta le mosse prima", color: Theme.idle }
+        return ({ fatta: { text: "da rivedere", color: Theme.warn }, proposta: { text: "da rivedere", color: Theme.warn },
+                  segnalata: { text: "da rivedere", color: Theme.warn }, a_mano: { text: "a mano", color: Theme.accent },
                   agente: { text: "all'agente", color: Theme.accent }, accettata: { text: "accettata", color: Theme.good },
-                  risolta: { text: "risolta", color: Theme.good } })[row.state] || { text: "lasciata com'era", color: Theme.idle }
+                  risolta: { text: "risolta a mano", color: Theme.good } })[row.state] || { text: "lasciata com'era", color: Theme.idle }
     }
     function act(state) {
         if (!card || card.locked)
@@ -80,10 +82,10 @@ Rectangle {
     Shortcut { sequence: "Escape"; enabled: root.visible && root.card !== null; onActivated: root.current = -1 }
     Shortcut { sequence: "Left"; enabled: root.visible && root.card !== null; onActivated: root.step(-1) }
     Shortcut { sequence: "Right"; enabled: root.visible && root.card !== null; onActivated: root.step(1) }
-    Shortcut { sequence: "A"; enabled: root.visible && root.card !== null; onActivated: if (root.hasMove(root.card)) root.act("accettata") }
+    Shortcut { sequence: "A"; enabled: root.visible && root.card !== null; onActivated: root.act("accettata") }
     Shortcut { sequence: "S"; enabled: root.visible && root.card !== null; onActivated: if (root.isOpen(root.card)) root.act("agente") }
     Shortcut { sequence: "M"; enabled: root.visible && root.card !== null; onActivated: root.manual() }
-    Shortcut { sequence: "L"; enabled: root.visible && root.card !== null; onActivated: root.act("lasciata") }
+    Shortcut { sequence: "L"; enabled: root.visible && root.card !== null; onActivated: if (root.hasMove(root.card)) root.act("lasciata") }
 
     // una pagina in piccolo, con il contorno del blocco
     component Page: Rectangle {
@@ -199,7 +201,7 @@ Rectangle {
                             TxLabel {
                                 Layout.fillWidth: true
                                 text: lessonGroup.modelData.cards.length === 0 ? ""
-                                      : lessonGroup.modelData.cards.length + (lessonGroup.modelData.cards.length === 1 ? " mossa" : " mosse") + (lessonGroup.pending > 0 ? " · " + lessonGroup.pending + " da decidere" : " · tutte decise")
+                                      : lessonGroup.modelData.cards.length + (lessonGroup.modelData.cards.length === 1 ? " mossa" : " mosse") + (lessonGroup.pending > 0 ? " · " + lessonGroup.pending + " da rivedere" : " · tutte decise")
                                 color: lessonGroup.pending > 0 ? Theme.warn : Theme.textFaint
                                 font.pixelSize: Theme.smallSize
                             }
@@ -227,14 +229,15 @@ Rectangle {
                                     required property var modelData
                                     readonly property var row: modelData.row
                                     readonly property var badge: root.badgeOf(row)
-                                    readonly property var shot: (row.after || []).length > 0 ? row.after[0] : (row.before || []).length > 0 ? row.before[0] : null
+                                    readonly property bool now: row.role === "attuale"
+                                    readonly property var shot: (row.after || []).length > 0 ? row.after[0] : (row.before || []).length > 0 ? (root.hasMove(row) ? row.before[0] : root.plain(row.before[0])) : null
                                     width: 232
                                     height: 268
                                     radius: Theme.radius
                                     color: tileArea.containsMouse ? Theme.hover : Theme.surface
-                                    border.width: 1
-                                    border.color: root.isOpen(row) && !row.locked ? badge.color : Theme.border
-                                    opacity: row.locked ? 0.55 : 1
+                                    border.width: now ? 2 : 1
+                                    border.color: now ? badge.color : Theme.border
+                                    opacity: now ? 1 : 0.5              // quelle già decise e quelle che aspettano sono oscurate
                                     Column {
                                         anchors.fill: parent
                                         anchors.margins: Theme.gap
@@ -264,6 +267,25 @@ Rectangle {
                                         }
                                     }
                                     MouseArea { id: tileArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.current = tile.modelData.index }
+                                    // annulla la scelta di prima e torna lì (a ritroso, una alla volta)
+                                    Rectangle {
+                                        visible: tile.row.undo !== "" && (tileArea.containsMouse || undoArea.containsMouse) && !Workspace.busy
+                                        anchors.right: parent.right
+                                        anchors.top: parent.top
+                                        anchors.margins: 6
+                                        width: 22; height: 22; radius: 11
+                                        color: undoArea.containsMouse ? Theme.bad : Theme.border
+                                        Text { anchors.centerIn: parent; text: "×"; color: Theme.text; font.pixelSize: 15 }
+                                        MouseArea {
+                                            id: undoArea
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            onClicked: Workspace.reopenMove(tile.row.lesson, tile.row.undo)
+                                        }
+                                        ToolTip.visible: undoArea.containsMouse
+                                        ToolTip.delay: 400
+                                        ToolTip.text: tile.row.undo === tile.row.block ? "Annulla questa scelta: la mossa torna da rivedere" : "Annulla la scelta di prima e torna a quella mossa"
+                                    }
                                     ToolTip.visible: tileArea.containsMouse
                                     ToolTip.delay: 700
                                     ToolTip.text: tile.row.what
@@ -296,7 +318,7 @@ Rectangle {
                 id: stage
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                readonly property var before: root.card ? (root.card.before || []) : []
+                readonly property var before: root.card ? (root.hasMove(root.card) ? (root.card.before || []) : (root.card.before || []).map(root.plain)) : []
                 readonly property var after: root.card ? (root.card.after || []) : []
                 readonly property int count: Math.max(1, before.length + after.length)
                 readonly property real pageWidth: Math.max(60, Math.min((width - (count + 1) * 8 - 24) / count, (height - 30) / 1.414))
@@ -358,7 +380,9 @@ Rectangle {
                 TxLabel {
                     Layout.fillWidth: true
                     visible: root.card !== null && root.card.locked === true
-                    text: "Prima decidi le mosse che vengono prima in questa lezione: l'ordine conta, cambiandone una cambia tutto ciò che segue."
+                    text: root.card && root.card.role === "chiusa"
+                          ? "Già decisa. Per cambiarla, dalla panoramica annulla le scelte a ritroso (la × sulla scheda attuale): l'ordine conta."
+                          : "Prima rivedi le mosse che vengono prima in questa lezione: l'ordine conta, cambiandone una cambia tutto ciò che segue."
                     color: Theme.warn
                     font.pixelSize: Theme.smallSize
                     wrapMode: Text.WordWrap
@@ -370,7 +394,7 @@ Rectangle {
                     spacing: Theme.gap
                     enabled: root.card !== null && root.card.locked !== true
                     Choice {
-                        visible: root.card !== null && root.hasMove(root.card)
+                        visible: root.card !== null && root.card.state !== "a_mano" && root.card.state !== "agente"
                         text: root.card && root.card.state === "proposta" ? "Accetta: a pagina nuova  (A)" : "Accetta  (A)"
                         tone: Theme.good
                         chosen: root.card !== null && root.card.state === "accettata"
@@ -396,6 +420,7 @@ Rectangle {
                         onClicked: root.manual()
                     }
                     Choice {
+                        visible: root.card !== null && root.hasMove(root.card)      // se il programma non ha fatto niente non c'è niente da lasciare
                         text: "Lascia com'era  (L)"
                         tone: Theme.idle
                         chosen: root.card !== null && root.card.state === "lasciata"

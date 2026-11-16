@@ -68,7 +68,7 @@ QString nameOf(const Placed &p, const Style &style)
 
 QJsonObject toJson(const Move &m)
 {
-    return {{"blocco", m.block}, {"che_cosa", m.what}, {"vuoto", m.hole}, {"stato", m.state}, {"segno", m.sign}, {"dopo", m.after}, {"fino", m.until}};
+    return {{"blocco", m.block}, {"che_cosa", m.what}, {"vuoto", m.hole}, {"stato", m.state}, {"segno", m.sign}, {"dopo", m.after}, {"fino", m.until}, {"origine", m.origin.isEmpty() ? m.state : m.origin}};
 }
 
 // Dove sta il testo nelle pagine di una lezione compilata, e dove cade una sua riga.
@@ -182,7 +182,7 @@ QList<Move> moves(const Project &project, const QString &file)
     for (const QJsonValue &v : registry(project).value(file).toObject().value("mosse").toArray()) {
         const QJsonObject o = v.toObject();
         out << Move{file, o.value("blocco").toString(), o.value("che_cosa").toString(), o.value("vuoto").toDouble(), o.value("stato").toString(),
-                    where.value(o.value("blocco").toString()), o.value("segno").toString(QString::fromUtf8(SIGN)), o.value("dopo").toString(), o.value("fino").toString()};
+                    where.value(o.value("blocco").toString()), o.value("segno").toString(QString::fromUtf8(SIGN)), o.value("dopo").toString(), o.value("fino").toString(), o.value("origine").toString(o.value("stato").toString())};
     }
     return out;
 }
@@ -425,7 +425,7 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
     for (const Move &m : moves(project, file)) {
         if (m.state != "proposta" && m.state != "segnalata")
             kept << m;                             // le decisioni prese restano; ciò che era solo proposto si rimisura
-        if (m.state == "lasciata" || m.state == "a_mano" || m.state == "agente" || m.state == "risolta")
+        if (m.state == "lasciata" || m.state == "a_mano" || m.state == "agente" || m.state == "risolta" || (m.state == "accettata" && m.sign.isEmpty()))
             left << m.block;                       // decise in altro modo: non si riprovano
     }
     QList<Move> fresh;
@@ -463,7 +463,7 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
         };
         if (problem->lastPage - problem->firstPage > 1 || problem->top < 0.02) {       // più alto di una colonna: si spezza comunque
             if (!inside())
-                fresh << Move{file, problem->block, QStringLiteral("%1 è più lungo di %2: resta spezzato.").arg(name, style.twoColumns() ? QStringLiteral("una colonna") : QStringLiteral("una pagina")), hole, "lasciata", 0};
+                fresh << Move{file, problem->block, QStringLiteral("%1 è più lungo di %2: resta spezzato.").arg(name, style.twoColumns() ? QStringLiteral("una colonna") : QStringLiteral("una pagina")), hole, "segnalata", 0};
             continue;
         }
         // prima lo spazio: se dall'altra parte finiscono solo poche righe, la pagina si allunga di quel poco e l'unità resta
@@ -536,7 +536,7 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
             fresh << Move{file, problem->block,
                           whole ? QStringLiteral("%1 cade a cavallo di %3. Portarlo %4 lascerebbe vuoto il %2% %5.").arg(name).arg(percent).arg(two, fresh1, whole1)
                                 : QStringLiteral("%1 cade a cavallo di %2 e un a capo non basta: va sistemato a mano.").arg(name, two),
-                          hole, whole ? "proposta" : "lasciata", 0};
+                          hole, whole ? "proposta" : "segnalata", 0};
             result.proposed += whole;
         }
     }
@@ -746,7 +746,9 @@ QString decide(const Project &project, const QString &file, const QString &block
         QJsonObject move = list[i].toObject();
         if (move.value("blocco").toString() != block)
             continue;
-        if (state != "accettata" && state != "lasciata") {         // a_mano, agente, risolta: cambia solo ciò che si ricorda
+        // a_mano, agente, risolta, o una mossa che il programma non ha fatto (niente da mettere o togliere): cambia solo
+        // ciò che si ricorda
+        if ((state != "accettata" && state != "lasciata") || move.value("segno").toString(QString::fromUtf8(SIGN)).isEmpty()) {
             move["stato"] = state;
             list[i] = move;
             entry["mosse"] = list;
@@ -899,5 +901,26 @@ int reset(const Project &project, const QString &file)
     saveRegistry(project, all);
     QDir(project.path("build/impaginazione/" + QFileInfo(file).completeBaseName())).removeRecursively();
     return qMax(removed, moves);
+}
+}
+
+namespace tx::layout {
+QString reopen(const Project &project, const QString &file, const QString &block)
+{
+    QString origin;
+    for (const Move &m : moves(project, file))
+        if (m.block == block)
+            origin = m.origin;
+    if (origin.isEmpty())
+        return QStringLiteral("Questa mossa non c'è più.");
+    // la riga della mossa: c'è se il programma l'aveva fatta, non c'è se l'aveva solo proposta
+    QString error;
+    if (origin == "fatta")
+        error = decide(project, file, block, "accettata");
+    else if (origin == "proposta")
+        error = decide(project, file, block, "lasciata");
+    if (!error.isEmpty())
+        return error;
+    return decide(project, file, block, origin == "fatta" ? QStringLiteral("fatta") : origin == "proposta" ? QStringLiteral("proposta") : QStringLiteral("segnalata"));
 }
 }

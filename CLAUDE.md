@@ -115,7 +115,7 @@ rileggere gli editor senza modifiche in sospeso; una rilettura svuota la pila de
 
 `--gesti`, separati da «;»: `apri FILE [RIGA]`, `compila`, `tutto`, `salta` (⌘J), `sorgente PAGINA X Y`, `divisore 0|1|2`,
 `avvisi`, `progetto chiuso`, `annulla`, `ripeti`, `passo TITOLO`, `scrivi FILE TESTO`, `fatta FILE`, `impostazioni`,
-`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `converti` (tutta la coda), `converti finestra`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `lezione N DATA FILE…` (crea una lezione), `nuova-lezione` (apre la finestra), `materiale FILE…` (fa il piano dello smistamento), `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`, `rinomina FILE NOME`, `console`, `argomenti` (propone la scaletta), `applica-argomenti`, `per-data`, `salva-profilo NOME`, `nuovo CARTELLA [PROFILO]`, `correggo LEZIONE DUBBIO`, `decidi LEZIONE [DUBBIO…]` (costa), `tag [no]` (mostra o nasconde i tag di provenienza), `libreria STILE`, `avvia-piano`, `archivia`, `a-mano` (la prima mossa, a mano), `risolta`, `chiudi-scheda`, `inserisci TESTO`, `miniature`, `ramo LEZIONE` (apre la lezione nell'albero), `pannello PANNELLO LEZIONE`, `cita` (⌘L), `allega FILE`, `foto editor|pdf|finestra`, `invia`, `storico`, `chat`, `attivita`, `versione si|no`, `fonti-lezione FILE…`. Ogni gesto parte quando niente lavora; poi la foto.
+`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `converti` (tutta la coda), `converti finestra`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `lezione N DATA FILE…` (crea una lezione), `nuova-lezione` (apre la finestra), `materiale FILE…` (fa il piano dello smistamento), `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`, `rinomina FILE NOME`, `console`, `argomenti` (propone la scaletta), `applica-argomenti`, `per-data`, `salva-profilo NOME`, `nuovo CARTELLA [PROFILO]`, `correggo LEZIONE DUBBIO`, `decidi LEZIONE [DUBBIO…]` (costa), `tag [no]` (mostra o nasconde i tag di provenienza), `libreria STILE`, `avvia-piano`, `archivia`, `a-mano` (la prima mossa, a mano), `risolta`, `mossa STATO` (decide la mossa attuale), `annulla-mossa`, `elimina-impaginazioni`, `chiudi-scheda`, `inserisci TESTO`, `miniature`, `ramo LEZIONE` (apre la lezione nell'albero), `pannello PANNELLO LEZIONE`, `cita` (⌘L), `allega FILE`, `foto editor|pdf|finestra`, `invia`, `storico`, `chat`, `attivita`, `versione si|no`, `fonti-lezione FILE…`. Ogni gesto parte quando niente lavora; poi la foto.
 
 ## Regole e stile (SPEC §4)
 
@@ -173,9 +173,13 @@ uguale a prima resta la stessa, e le schede restano finché il numero delle righ
 (l'agente rilegge le fonti e propone un piano).
 
 **§3.9 Impaginazione.** L'impaginazione non usa il modello: ogni mossa si misura compilando la lezione (una lezione con molte figure
-costa 7-10 secondi a compilazione, ed è lì che va il tempo). L'ordine conta: le mosse si decidono dall'alto in basso (quelle
-sotto una mossa ancora da decidere sono spente), e se una decisione cambia la lezione le mosse non decise che seguono si
-tolgono e si ricalcolano (`layout::dropAfter`, poi `layout::lesson`). «Elimina le impaginazioni» (`layout::reset`, con
+costa 7-10 secondi a compilazione, ed è lì che va il tempo). L'ordine conta: in ogni lezione c'è una mossa attuale, la prima ancora da rivedere
+(`role` in `layoutItems`: chiusa, attuale, attesa). Quelle prima sono oscurate e non si toccano più; quelle dopo aspettano.
+Per cambiarne una già decisa si torna indietro una alla volta: la × che compare passando sulla scheda attuale annulla la
+scelta di prima (`layout::reopen`: la mossa torna com'era quando il programma l'ha lasciata, da `origine` nel registro).
+Se una decisione cambia la lezione le mosse non decise che seguono si tolgono e si ricalcolano (`layout::dropAfter`, poi
+`layout::lesson`). Ciò che il programma non risolve (un a capo non basta, più lungo di una colonna, un grande vuoto) è
+«segnalata», senza una riga sua: è da rivedere come le altre, con Accetta, a mano o all'agente, e senza «Lascia com'era». «Elimina le impaginazioni» (`layout::reset`, con
 conferma) toglie tutte le mosse dalle lezioni non fatte per farle rifare. Rivedi impaginazione prende tutta la finestra: i
 pannelli si chiudono e tornano com'erano quando la si lascia (`ProjectView.syncReview`). È fatta come nella vecchia Texfix
 (`qml/LayoutView.qml`): la panoramica, lezione per lezione, con una scheda piccola per mossa (stato, nome del blocco, una

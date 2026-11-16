@@ -323,6 +323,14 @@ Item {
                 editor.showShots()
             } else if (name === "elimina-impaginazioni") {
                 Workspace.resetLayout()
+            } else if (name === "mossa") {                // decide la mossa attuale della prima lezione che ne ha una
+                const now = Workspace.layoutItems().find(i => i.type === "move" && i.role === "attuale")
+                if (now)
+                    Workspace.decideMove(now.lesson, now.block, argument)
+            } else if (name === "annulla-mossa") {
+                const row = Workspace.layoutItems().find(i => i.type === "move" && i.undo !== "")
+                if (row)
+                    Workspace.reopenMove(row.lesson, row.undo)
             } else if (name === "a-mano") {
                 const moves = Workspace.layoutItems().filter(i => i.type === "move")
                 if (moves.length > 0) {

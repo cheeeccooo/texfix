@@ -27,6 +27,7 @@ struct Move {
     QString sign = SIGN;                   // la riga scritta nella lezione: un a capo prima del blocco, o uno spezzamento dentro
     QString after;                         // per uno spezzamento dentro: la riga dopo cui sta
     QString until;                         // per una mossa che avvolge (la misura di una figura): la riga dopo cui chiude
+    QString origin;                        // lo stato che le ha dato il programma (fatta | proposta | segnalata): «annulla la scelta» torna lì
 };
 struct Result {
     int found = 0, done = 0, proposed = 0;
@@ -56,6 +57,9 @@ int dropAfter(const Project &project, const QString &file, const QString &block)
 // Toglie da una lezione tutte le mosse dell'impaginazione (le righe «% impaginazione», il registro, le pagine in piccolo):
 // torna da impaginare. Restituisce quante erano.
 int reset(const Project &project, const QString &file);
+// Annulla la scelta dell'utente su una mossa: torna com'era quando il programma l'ha fatta, proposta o segnalata (la sua
+// riga torna nella lezione, o ne esce). Vuoto se è andata.
+QString reopen(const Project &project, const QString &file, const QString &block);
 // Le pagine in piccolo attorno a una mossa: «prima» (com'era quando il problema è stato visto) e «dopo» (com'è venuta).
 // Di ogni pagina, dove sta il blocco (in frazioni della pagina): il contorno da disegnarci sopra.
 struct Shot {
