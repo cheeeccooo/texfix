@@ -28,6 +28,7 @@ struct Move {
     QString after;                         // per uno spezzamento dentro: la riga dopo cui sta
     QString until;                         // per una mossa che avvolge (la misura di una figura): la riga dopo cui chiude
     QString origin;                        // lo stato che le ha dato il programma (fatta | proposta | segnalata): «annulla la scelta» torna lì
+    bool same = false;                     // la mossa non cambia ciò che si vede (non resta nel registro: lo dice «what»)
 };
 struct Result {
     int found = 0, done = 0, proposed = 0;

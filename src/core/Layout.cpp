@@ -243,6 +243,11 @@ bool breakInside(const Project &project, const Style &style, const QString &file
         --last;
     static const QRegularExpression lead(R"(^\s*)");
     const QString sign = lead.match(lines[last - 1]).captured(0) + style.breakCommand + " % impaginazione";
+    // se il riquadro si spezzava già da solo proprio a questa cucitura, la mossa fissa il punto ma alla vista non cambia niente
+    const Where tailBefore = whereIs(project, g, file, last);
+    Where headBefore;
+    for (int line = seam + 1; line <= seam + 4 && line <= lines.size() && !headBefore.ok; ++line)
+        headBefore = whereIs(project, g, file, line);
     lines.insert(seam, sign);                          // fra due righe vuote
     lines.insert(seam + 1, QString());
     files::write(path, lines.join('\n'));
@@ -257,6 +262,8 @@ bool breakInside(const Project &project, const Style &style, const QString &file
                 head = whereIs(project, after, file, line);
             hole = tail.ok ? 1 - tail.bottom : 1;
             good = tail.ok && head.ok && head.slot > tail.slot && hole <= HOLE_OK;
+            move->same = good && tailBefore.ok && headBefore.ok && tailBefore.slot == tail.slot && headBefore.slot == head.slot
+                         && qAbs(tailBefore.bottom - tail.bottom) < 0.01;
         }
     } catch (...) {
         files::write(path, before);
@@ -456,7 +463,9 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
             Move move{file, problem->block, {}, 0, "fatta", 0};
             if (!breakInside(project, style, file, problem->block, control, &move))
                 return false;
-            move.what = QStringLiteral("%1 cadeva a cavallo di %2 in un punto qualunque: ora si spezza fra due paragrafi (vuoto lasciato: %3%).").arg(name, two).arg(qRound(move.hole * 100));
+            move.what = move.same
+                ? QStringLiteral("%1 cadeva a cavallo di %2 già fra due paragrafi: il punto ora è fissato, alla vista non cambia niente.").arg(name, two)
+                : QStringLiteral("%1 cadeva a cavallo di %2 in un punto qualunque: ora si spezza fra due paragrafi (vuoto lasciato: %3%).").arg(name, two).arg(qRound(move.hole * 100));
             fresh << move;
             ++result.done;
             return true;
