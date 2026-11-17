@@ -1260,7 +1260,9 @@ QVariantList Workspace::layoutItems() const
 // L'ordine conta: le mosse non ancora decise che vengono dopo un blocco si tolgono e si ricalcolano.
 void Workspace::redoFollowing(const QString &lesson, const QString &block, bool retake)
 {
-    const bool following = layout::dropAfter(m_project, lesson, block) > 0;
+    // il seguito si rimpagina se aveva mosse non decise, o se la lezione è cambiata da quando è stata misurata (una
+    // modifica a mano applicata): ciò che la modifica ha spostato più sotto va guardato di nuovo
+    const bool following = layout::dropAfter(m_project, lesson, block) > 0 || layout::needed(m_project, lesson);
     if (!following && !retake)
         return;
     refreshTree();

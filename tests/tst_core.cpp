@@ -920,6 +920,10 @@ private slots:
         QVERIFY(!layout::needed(p, "src/src1.tex"));
         files::write(p.path("src/src1.tex"), text + "Altro.\n");                        // una modifica a mano: è da rifare
         QVERIFY(layout::needed(p, "src/src1.tex"));
+        QCOMPARE(layout::decide(p, "src/src1.tex", "L1.2", "lasciata"), QString());     // decidere una mossa non la misura:
+        QVERIFY(layout::needed(p, "src/src1.tex"));                                     // resta da rimpaginare
+        QCOMPARE(layout::decide(p, "src/src1.tex", "L1.2", "risolta"), QString());
+        QVERIFY(layout::needed(p, "src/src1.tex"));
 
         // molto vuoto: la mossa non si applica da sola, resta proposta
         write(near - 12);

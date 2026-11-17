@@ -1141,13 +1141,15 @@ QString decide(const Project &project, const QString &file, const QString &block
             move["stato"] = state;
             list[i] = move;
             entry["mosse"] = list;
-            entry["impronta"] = contentHash(files::read(project.path(file)));
             all[file] = entry;
             saveRegistry(project, all);
             return {};
         }
         const QString path = project.path(file);
         QStringList lines = files::read(path).split('\n');
+        // l'impronta segue la decisione solo se la lezione era ancora quella misurata: una lezione cambiata a mano resta da
+        // rimpaginare (decidere una mossa non la misura di nuovo)
+        const bool measured = entry.value("impronta").toString() == contentHash(lines.join('\n'));
         static const QRegularExpression marker(R"(^\s*%\s*@(L\d+\.\d+))");
         int at = -1;                                   // il marcatore del blocco
         for (int k = 0; k < lines.size() && at < 0; ++k)
@@ -1213,7 +1215,8 @@ QString decide(const Project &project, const QString &file, const QString &block
         move["stato"] = state;
         list[i] = move;
         entry["mosse"] = list;
-        entry["impronta"] = contentHash(lines.join('\n'));
+        if (measured)                                  // togliere una riga può portarsi via una riga vuota
+            entry["impronta"] = contentHash(lines.join('\n'));
         all[file] = entry;
         saveRegistry(project, all);
         return {};
