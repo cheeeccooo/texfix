@@ -24,6 +24,7 @@ QString keyOf(const Project &project, const QString &text, Kind kind, const QStr
     hash.addData(text.toUtf8());
     hash.addData(kind == Kind::Prose ? "p" : "l");
     hash.addData(color.toUtf8());
+    hash.addData("2");                         // le rese fallite prima che pdflatex avesse percorsi relativi si riprovano
     // il preambolo: cambia lo stile, cambiano le rese
     const QFileInfo package(project.path(Project::PACKAGE));
     hash.addData(QByteArray::number(package.lastModified().toSecsSinceEpoch()) + QByteArray::number(package.size()));
@@ -96,7 +97,11 @@ bool compile(const Project &project, const QStringList &bodies, const QStringLis
     const QString base = dir + '/' + job;
     files::write(base + ".tex", document(bodies, color));
     QFile::remove(base + ".pdf");
-    const tools::Output out = tools::run("pdflatex", {"-interaction=nonstopmode", "-halt-on-error", "-output-directory=" + dir, base + ".tex"},
+    // percorsi relativi alla cartella del progetto, da cui pdflatex parte: TeX non legge un percorso con «~» (iCloud:
+    // «com~apple~CloudDocs»)
+    const QDir root(project.root());
+    const tools::Output out = tools::run("pdflatex", {"-interaction=nonstopmode", "-halt-on-error", "-output-directory=" + root.relativeFilePath(dir),
+                                                      root.relativeFilePath(base + ".tex")},
                                          project.root(), 90000);
     bool good = out.ok && QFileInfo::exists(base + ".pdf");
     if (good) {

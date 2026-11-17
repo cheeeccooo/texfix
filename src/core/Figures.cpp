@@ -118,7 +118,10 @@ QString compile(const Project &project, const QString &id, const QString &code, 
                 preamble += "\\usepackage{" + name.trimmed() + "}\n";
     files::write(dir + "/fig.tex", preamble + "\\pagestyle{empty}\n\\begin{document}\n\\setlength{\\columnseprule}{0pt}\\thispagestyle{empty}\n\\begin{center}\n" + code + "\n\\end{center}\n\\end{document}\n");
     QFile::remove(dir + "/fig.pdf");
-    tools::run("pdflatex", {"-interaction=nonstopmode", "-halt-on-error", "-file-line-error", "-output-directory=" + dir, dir + "/fig.tex"},
+    // percorsi relativi alla cartella del progetto, da cui pdflatex parte: TeX non legge un percorso con «~» (iCloud)
+    const QDir root(project.root());
+    tools::run("pdflatex", {"-interaction=nonstopmode", "-halt-on-error", "-file-line-error", "-output-directory=" + root.relativeFilePath(dir),
+                            root.relativeFilePath(dir + "/fig.tex")},
                project.root(), 120000);
     if (!QFileInfo::exists(dir + "/fig.pdf")) {
         for (const Issue &issue : texlog::parse(files::read(dir + "/fig.log")))
