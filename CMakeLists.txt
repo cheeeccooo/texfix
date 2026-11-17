@@ -73,6 +73,9 @@ qt_add_qml_module(texfix
         qml/TxSheet.qml
         qml/TxSegmented.qml
         qml/TxTextArea.qml
+        qml/TxRendered.qml
+        qml/TxChoice.qml
+        qml/ReviewDeck.qml
         qml/SettingsSheet.qml
         qml/PreferencesSheet.qml
         qml/StyleRolesSheet.qml

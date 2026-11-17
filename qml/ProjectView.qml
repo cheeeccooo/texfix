@@ -99,19 +99,22 @@ Item {
         }
         openFile("rivedi:impaginazione")
     }
-    // Rivedi impaginazione prende tutta la finestra: i pannelli si chiudono, e tornano com'erano quando la si lascia.
+    // Le revisioni (impaginazione, dubbi, correzioni, figure) prendono la finestra: i pannelli si chiudono, e tornano
+    // com'erano quando le si lascia. Rivedi figure tiene l'anteprima accanto: «Vai alla figura» la mostra lì.
     property var reviewSaved: null
     function syncReview() {
         if (manual)
             return
-        const inReview = editor.currentFile === "rivedi:impaginazione"
-        if (inReview && !reviewSaved) {
-            reviewSaved = { leftOpen: leftOpen, chatOpen: chatOpen, bottomOpen: bottomOpen, split: split }
+        const file = editor.currentFile
+        const inReview = ["rivedi:impaginazione", "rivedi:dubbi", "rivedi:correzioni", "rivedi:figure"].includes(file)
+        if (inReview) {
+            if (!reviewSaved)
+                reviewSaved = { leftOpen: leftOpen, chatOpen: chatOpen, bottomOpen: bottomOpen, split: split }
             leftOpen = false
             chatOpen = false
             bottomOpen = false
-            split = 2
-        } else if (!inReview && reviewSaved) {
+            split = file === "rivedi:figure" ? 1 : 2
+        } else if (reviewSaved) {
             const s = reviewSaved
             reviewSaved = null
             leftOpen = s.leftOpen

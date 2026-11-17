@@ -18,7 +18,6 @@ Rectangle {
     property int revision: 0                           // le immagini si rileggono dopo ogni lavoro
     function reload() {
         items = Workspace.figureItems()
-        revision++
         if (Workspace.busy)
             return
         if (Workspace.unadoptedFigures() > 0)
@@ -28,252 +27,236 @@ Rectangle {
     }
     Component.onCompleted: reload()
     onVisibleChanged: if (visible) reload()
-    Connections { target: Workspace; function onFilesChanged() { if (root.visible) root.reload() } }
+    // le immagini si rileggono quando i file cambiano o un lavoro finisce; non a ogni decisione (non lampeggiano)
+    Connections { target: Workspace; function onFilesChanged() { root.revision++; if (root.visible) root.reload() } }
     Connections { target: Workspace; function onTreeChanged() { if (root.visible) root.reload() } }
-    Connections { target: Workspace; function onBusyChanged() { if (root.visible && !Workspace.busy) root.reload() } }
+    Connections { target: Workspace; function onBusyChanged() { if (!Workspace.busy) { root.revision++; if (root.visible) root.reload() } } }
 
-    // Porta la vista su una lezione (dall'albero).
-    function showLesson(lesson) {
-        for (let i = 0; i < items.length; ++i)
-            if (items[i].type === "lesson" && items[i].lesson === lesson)
-                return list.positionViewAtIndex(i, ListView.Beginning)
-    }
-    // la didascalia come nel PDF (intanto il testo; se non compila resta il testo)
-    property int renderTick: 0
-    Connections { target: Workspace; function onSnippetsReady() { root.renderTick++ } }
-    readonly property string ink: ("" + Theme.textMuted).slice(-6)
-    component Rendered: Item {
-        id: piece
-        property string text
-        readonly property string path: text !== "" && root.renderTick >= 0 ? Workspace.snippet(text, "prosa", root.ink) : ""
-        readonly property bool ready: picture.status === Image.Ready
-        implicitHeight: ready ? picture.height : label.implicitHeight
-        TxLabel {
-            id: label
-            visible: !piece.ready
-            width: parent.width
-            text: piece.text
-            color: Theme.textMuted
-            wrapMode: Text.WordWrap
-            elide: Text.ElideNone
-        }
-        Image {
-            id: picture
-            visible: piece.ready
-            source: piece.path !== "" ? "file://" + piece.path : ""
-            asynchronous: true
-            width: Math.min(piece.width, sourceSize.width * 0.52)
-            height: sourceSize.width > 0 ? width * sourceSize.height / sourceSize.width : 0
-            smooth: true
-            mipmap: true
-        }
-    }
+    // Dall'albero: la panoramica (la lezione è lì).
+    function showLesson(lesson) { deck.current = -1 }
+    function showShots() { if (deck.cards.length > 0) deck.current = 0 }   // per le prove: la prima scheda
+
     function file(path) { return path ? "file://" + encodeURI(path) + "?" + root.revision : "" }
     function stateText(row) {
         return ({ disegnata: "disegnata", ritagliata: "ritagliata dalla fonte", scritta: "scritta nella lezione",
                   da_inserire: "da inserire" })[row.state] || row.state
     }
+    function accepted(row) { return row.decision === "accettata" }
 
-    ColumnLayout {
+    ReviewDeck {
+        id: deck
         anchors.fill: parent
-        spacing: 0
         visible: root.cropping === null
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.margins: Theme.gap + 4
-            TxLabel { Layout.fillWidth: true; text: "Rivedi figure"; font.pixelSize: Theme.textSize + 3; font.weight: Font.DemiBold }
-            TxButton {
-                text: "Ricontrolla con le fonti"
-                hint: "L'agente rilegge le fonti e propone un piano"
-                enabled: !Workspace.busy
-                onClicked: Workspace.recheckFigures()
-            }
+        title: "Rivedi figure"
+        items: root.items
+        emptyText: "Il progetto non ha figure."
+        goLabel: "Vai alla figura"
+        isOpen: row => !root.accepted(row)
+        badgeOf: row => root.accepted(row) ? { text: "accettata", color: Theme.good } : { text: "da rivedere", color: Theme.warn }
+        nameOf: row => row.name + " · " + root.stateText(row)
+        hintOf: row => row.description || ""
+        onGoAsked: row => root.figureAsked(row.lesson, row.line)
+        tilePreview: preview
+        stage: figureStage
+        choices: figureChoices
+        lessonActions: lessonButtons
+        TxButton {
+            text: "Accetta tutte"
+            enabled: root.items.some(i => i.type === "figure" && !root.accepted(i))
+            onClicked: Workspace.acceptAllFigures("", true)
         }
-        ListView {
-            id: list
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            Layout.leftMargin: 2 * Theme.gap + 4      // staccata dal bordo
-            Layout.rightMargin: Theme.gap
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
-            spacing: Theme.gap
-            bottomMargin: 2 * Theme.gap
-            model: root.items
-            ScrollBar.vertical: ScrollBar {}
-            delegate: Loader {
-                required property var modelData
-                width: Math.min(list.width - 14, 1100)
-                sourceComponent: modelData.type === "lesson" ? head : card
-                onLoaded: item.row = modelData
-                onModelDataChanged: if (item) item.row = modelData
-            }
+        TxButton {
+            text: "Riapri tutte"
+            enabled: root.items.some(i => i.type === "figure" && root.accepted(i))
+            onClicked: Workspace.acceptAllFigures("", false)
+        }
+        TxButton {
+            text: "Ricontrolla con le fonti"
+            hint: "L'agente rilegge le fonti e propone un piano"
+            enabled: !Workspace.busy
+            onClicked: Workspace.recheckFigures()
         }
     }
-    TxLabel { anchors.centerIn: parent; visible: root.items.length === 0 && root.cropping === null; text: "Il progetto non ha figure."; color: Theme.textFaint }
 
-    Component {
-        id: head
-        TxLabel { property var row: ({}); topPadding: Theme.gap; text: row.title || ""; font.weight: Font.DemiBold }
+    // ── i tasti: A accetta, R riapre, G rigenera, C modifica il ritaglio
+    Shortcut {
+        sequence: "A"
+        enabled: root.visible && root.cropping === null && deck.card !== null
+        onActivated: { Workspace.acceptFigure(deck.card.id, true); deck.next() }
+    }
+    Shortcut {
+        sequence: "R"
+        enabled: root.visible && root.cropping === null && deck.card !== null && root.accepted(deck.card)
+        onActivated: Workspace.acceptFigure(deck.card.id, false)
+    }
+    Shortcut {
+        sequence: "C"
+        enabled: root.visible && root.cropping === null && deck.card !== null && (deck.card.pageImage || "") !== "" && !Workspace.busy
+        onActivated: root.startCrop(deck.card)
     }
 
     // un'immagine su fondo bianco, con il suo titolo; un testo se non c'è ancora
     component Picture: ColumnLayout {
+        id: picture
         property string title
         property string path
         property string missing
+        property int maxHeight: 300
         spacing: 4
-        TxLabel { Layout.fillWidth: true; text: parent.title; color: Theme.textFaint; font.pixelSize: Theme.smallSize }
+        TxLabel { visible: picture.title !== ""; Layout.fillWidth: true; text: picture.title; color: Theme.textFaint; font.pixelSize: Theme.smallSize }
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: picture.status === Image.Ready ? Math.min(width * picture.sourceSize.height / Math.max(1, picture.sourceSize.width) + 16, 300) : 60
-            color: parent.path ? "white" : Theme.window
+            Layout.preferredHeight: image.status === Image.Ready ? Math.min(width * image.sourceSize.height / Math.max(1, image.sourceSize.width) + 16, picture.maxHeight) : 60
+            color: picture.path ? "white" : Theme.window
             radius: Theme.radius - 2
-            border.width: parent.path ? 0 : 1
+            border.width: picture.path ? 0 : 1
             border.color: Theme.border
             Image {
-                id: picture
+                id: image
                 anchors.fill: parent
                 anchors.margins: 8
                 fillMode: Image.PreserveAspectFit
                 cache: false
                 asynchronous: true
                 mipmap: true
-                source: root.file(parent.parent.path)
+                source: root.file(picture.path)
             }
             TxLabel {
                 anchors.centerIn: parent
                 width: parent.width - 2 * Theme.gap
                 horizontalAlignment: Text.AlignHCenter
-                visible: !parent.parent.path
-                text: parent.parent.missing
+                visible: !picture.path
+                text: picture.missing
                 color: Theme.textFaint
                 font.pixelSize: Theme.smallSize
+                wrapMode: Text.WordWrap
             }
         }
     }
 
     Component {
-        id: card
-        Rectangle {
-            id: box
+        id: preview
+        Picture {
             property var row: ({})
-            readonly property bool accepted: row.decision === "accettata"
-            readonly property bool fromSource: row.origin === "fonte"
-            implicitHeight: column.implicitHeight + 2 * Theme.gap + 4
-            radius: Theme.radius
-            color: Theme.surface
-            border.width: 1
-            border.color: accepted ? Theme.border : Theme.warn
-            ColumnLayout {
-                id: column
-                anchors.fill: parent
-                anchors.margins: Theme.gap + 2
-                spacing: Theme.gap
-                RowLayout {
+            path: row.render || ""
+            missing: Workspace.jobRunning ? "La preparo…" : "Non si compila da sola."
+            maxHeight: 168
+        }
+    }
+
+    Component {
+        id: lessonButtons
+        TxButton {
+            property var row: ({})
+            property var group: ({ cards: [] })
+            visible: group.cards.some(c => !root.accepted(c.row))
+            text: "Accetta tutte"
+            hint: "Accetta tutte le figure di questa lezione"
+            onClicked: Workspace.acceptAllFigures(row.lesson, true)
+        }
+    }
+
+    // la figura com'è nella lezione e, se viene da un'altra, l'originale; sopra la didascalia
+    Component {
+        id: figureStage
+        ColumnLayout {
+            property var row: ({})
+            spacing: Theme.gap
+            TxRendered { visible: (row.description || "") !== ""; text: row.description || ""; textColor: Theme.textMuted; zoom: 0.62 }
+            TxLabel { visible: !row.description; text: "Senza didascalia."; color: Theme.textFaint }
+            GridLayout {                               // affiancate; una sotto l'altra se lo spazio è poco
+                Layout.fillWidth: true
+                columns: width > 700 ? 2 : 1
+                columnSpacing: 2 * Theme.gap
+                rowSpacing: Theme.gap
+                Picture {
                     Layout.fillWidth: true
-                    spacing: Theme.gap
-                    TxLabel { text: box.row.name || ""; font.weight: Font.Medium }
-                    Rectangle {
-                        implicitWidth: badge.implicitWidth + 12
-                        implicitHeight: badge.implicitHeight + 4
-                        radius: 3
-                        readonly property color tone: box.accepted ? Theme.good : Theme.warn
-                        color: Qt.rgba(tone.r, tone.g, tone.b, 0.25)
-                        Text { id: badge; anchors.centerIn: parent; text: box.accepted ? "accettata" : "da rivedere"; color: Theme.text; font.pixelSize: Theme.smallSize - 1; font.weight: Font.DemiBold }
-                    }
-                    TxLabel { Layout.fillWidth: true; text: root.stateText(box.row); color: Theme.textFaint; font.pixelSize: Theme.smallSize }
-                    TxButton { text: "Vai alla figura"; flat: true; hint: "La mostra nell'anteprima del documento"; onClicked: root.figureAsked(box.row.lesson, box.row.line) }
+                    Layout.preferredWidth: 1
+                    Layout.alignment: Qt.AlignTop
+                    title: "Nella lezione"
+                    path: row.render || ""
+                    maxHeight: 640
+                    missing: Workspace.jobRunning ? "La preparo…" : "Non si compila da sola."
                 }
-                Rendered {
+                Picture {
+                    visible: row.origin !== ""
                     Layout.fillWidth: true
-                    visible: (box.row.description || "") !== ""
-                    text: box.row.description || ""
+                    Layout.preferredWidth: 1
+                    Layout.alignment: Qt.AlignTop
+                    title: row.origin === "fonte" ? "L'originale: " + row.source + ", pagina " + row.page : "L'originale: il codice dell'autore"
+                    path: row.original || ""
+                    maxHeight: 640
+                    missing: Workspace.jobRunning ? "Lo preparo…" : "La fonte non si trova più."
                 }
-                TxLabel { visible: !box.row.description; text: "Senza didascalia."; color: Theme.textFaint }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 2 * Theme.gap
-                    Picture {
-                        Layout.fillWidth: true
-                        Layout.preferredWidth: 1
-                        Layout.alignment: Qt.AlignTop
-                        title: "Nella lezione"
-                        path: box.row.render || ""
-                        missing: Workspace.jobRunning ? "La preparo…" : "Non si compila da sola."
-                    }
-                    Picture {
-                        visible: box.row.origin !== ""
-                        Layout.fillWidth: true
-                        Layout.preferredWidth: 1
-                        Layout.alignment: Qt.AlignTop
-                        title: box.fromSource ? "L'originale: " + box.row.source + ", pagina " + box.row.page : "L'originale: il codice dell'autore"
-                        path: box.row.original || ""
-                        missing: Workspace.jobRunning ? "Lo preparo…" : "La fonte non si trova più."
-                    }
+            }
+            TxLabel {
+                Layout.fillWidth: true
+                visible: (row.note || "") !== ""
+                text: row.note || ""
+                color: Theme.bad
+                font.pixelSize: Theme.smallSize
+                wrapMode: Text.WordWrap
+                elide: Text.ElideNone
+            }
+        }
+    }
+
+    Component {
+        id: figureChoices
+        ColumnLayout {
+            property var row: ({})
+            spacing: Theme.gap
+            TxChoice {
+                text: "Accetta  (A)"
+                tone: Theme.good
+                chosen: root.accepted(row)
+                onClicked: { Workspace.acceptFigure(row.id, true); deck.next() }
+            }
+            TxChoice { visible: root.accepted(row); text: "Riapri  (R)"; tone: Theme.idle; onClicked: Workspace.acceptFigure(row.id, false) }
+            // disegno o ritaglio, per una figura che viene da una pagina
+            TxSegmented {
+                visible: row.origin === "fonte"
+                Layout.fillWidth: true
+                choices: [{ value: "disegnata", label: "Disegno" }, { value: "ritagliata", label: "Ritaglio dalla fonte" }]
+                value: row.state
+                enabled: !Workspace.busy
+                onChosen: value => {
+                    if (value === row.state)
+                        return
+                    if (value === "disegnata")
+                        row.hasDrawing ? Workspace.useDrawing(row.id) : Workspace.redoFigure(row.id, "ridisegna")
+                    else
+                        Workspace.redoFigure(row.id, "ritaglia")
                 }
-                TxLabel {
-                    Layout.fillWidth: true
-                    visible: (box.row.note || "") !== ""
-                    text: box.row.note || ""
-                    color: Theme.bad
-                    font.pixelSize: Theme.smallSize
-                    wrapMode: Text.WordWrap
-                    elide: Text.ElideNone
-                }
-                // disegno o ritaglio, per una figura che viene da una pagina
-                RowLayout {
-                    Layout.fillWidth: true
-                    visible: box.fromSource
-                    spacing: Theme.gap
-                    TxSegmented {
-                        choices: [{ value: "disegnata", label: "Disegno" }, { value: "ritagliata", label: "Ritaglio dalla fonte" }]
-                        value: box.row.state
-                        enabled: !Workspace.busy
-                        onChosen: value => {
-                            if (value === box.row.state)
-                                return
-                            if (value === "disegnata") {
-                                if (box.row.hasDrawing)
-                                    Workspace.useDrawing(box.row.id)
-                                else
-                                    Workspace.redoFigure(box.row.id, "ridisegna")
-                            } else {
-                                Workspace.redoFigure(box.row.id, "ritaglia")
-                            }
-                        }
-                    }
-                    TxButton {
-                        text: "Modifica il ritaglio"
-                        hint: "Riquadro e cancellino sulla pagina della fonte"
-                        enabled: !Workspace.busy && (box.row.pageImage || "") !== ""
-                        onClicked: root.startCrop(box.row)
-                    }
-                    Item { Layout.fillWidth: true }
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.gap
-                    TxTextArea {
-                        id: comment
-                        Layout.fillWidth: true
-                        implicitHeight: Theme.rowHeight + 2 * Theme.gap
-                        placeholder: "Che cosa cambiare rigenerandola (facoltativo)"
-                    }
-                    TxButton {
-                        Layout.alignment: Qt.AlignTop
-                        text: "Rigenera"
-                        hint: "Il disegnatore la rifà" + (box.row.origin === "" ? " guardando com'è ora" : " dall'originale") + ", con il commento se c'è"
-                        enabled: !Workspace.busy
-                        onClicked: { Workspace.redoFigure(box.row.id, "ridisegna", comment.text); comment.text = "" }
-                    }
-                    TxButton {
-                        Layout.alignment: Qt.AlignTop
-                        text: box.accepted ? "Riapri" : "Accetta"
-                        primary: !box.accepted
-                        onClicked: Workspace.acceptFigure(box.row.id, !box.accepted)
-                    }
-                }
+            }
+            TxChoice {
+                visible: row.origin === "fonte"
+                enabled: !Workspace.busy && (row.pageImage || "") !== ""
+                text: "Modifica il ritaglio  (C)"
+                tone: Theme.warn
+                onClicked: root.startCrop(row)
+            }
+            Item { implicitHeight: Theme.gap / 2 }
+            TxTextArea {
+                id: comment
+                Layout.fillWidth: true
+                implicitHeight: 3 * Theme.rowHeight
+                placeholder: "Che cosa cambiare rigenerandola (facoltativo)"
+            }
+            TxChoice {
+                enabled: !Workspace.busy
+                text: "Rigenera"
+                tone: Theme.accent
+                onClicked: { Workspace.redoFigure(row.id, "ridisegna", comment.text); comment.text = "" }
+            }
+            TxLabel {
+                Layout.fillWidth: true
+                text: row.origin === "" ? "Il disegnatore la rifà guardando com'è ora e la didascalia, con il commento se c'è."
+                                        : "Il disegnatore la rifà dall'originale, con il commento se c'è."
+                color: Theme.textFaint
+                font.pixelSize: Theme.smallSize
+                wrapMode: Text.WordWrap
+                elide: Text.ElideNone
             }
         }
     }

@@ -68,7 +68,7 @@ Due parti, un processo solo.
 | `app/Theme` | l'unico posto con colori e misure (singleton QML); chiaro e scuro col sistema, `TEXFIX_TEMA=chiaro\|scuro` |
 | `app/EditorBackend`, `LatexHighlighter`, `LineGutter` | evidenziazione, righe ↔ posizioni, numeri di riga |
 | `app/PdfBackend` (+ `PdfPages`) | pagine e misure di un PDF; le pagine come `image://pdf/<revisione>/<pagina>/<pixel>/<percorso>` |
-| `qml/` | `Main` (finestra, menu, scorciatoie), `Welcome`, `ProjectView` (barra, pannelli), `ProjectPanel`, `EditorPane` (schede: `TexEditor`, `PdfPane`, `ImageView`), `BottomPanel`, `StatusBar`; componenti `Tx…` |
+| `qml/` | `ReviewDeck` (la forma comune delle revisioni: panoramica e scheda, come Rivedi impaginazione; la usano `ReviewView` per dubbi e correzioni e `FiguresView`), `TxRendered` (un pezzo come nel PDF), `TxChoice`; `Main` (finestra, menu, scorciatoie), `Welcome`, `ProjectView` (barra, pannelli), `ProjectPanel`, `EditorPane` (schede: `TexEditor`, `PdfPane`, `ImageView`), `BottomPanel`, `StatusBar`; componenti `Tx…` |
 
 ## Il progetto su disco (formato nuovo, D1)
 
@@ -161,7 +161,7 @@ un disegno più largo della colonna si restringe; con «Ridisegna» il disegnato
 già: una riga le conta e «Fai il piano» le affida all'agente. Se c'è un piano di materiale da approvare, Converti apre
 quello. «Ridisegna» per i `.tex` è provato con il modello.
 
-**§3.7 Rivedi dubbi e correzioni.** Scegli, «Correggo io», «Decidi tu», «Fai decidere al modello tutti i dubbi» (anche
+**§3.7 Rivedi dubbi e correzioni.** Hanno la forma di Rivedi impaginazione (`qml/ReviewDeck.qml`): la panoramica lezione per lezione con tutto (ciò che è deciso è oscurato; il riepilogo è la panoramica stessa) e la scheda con le scelte colorate e i tasti (le letture 1-9, A conferma o tiene, L toglie, M correggo io, S decide il modello o sistema, R riapre); prendono la finestra come lei, e Rivedi figure pure, ma con l'anteprima accanto. Scegli, «Correggo io», «Decidi tu», «Fai decidere al modello tutti i dubbi» (anche
 dal menu della lezione), «Ricorda come regola del progetto», riepilogo, «Riapri», «Annulla la modifica», «Riapri
 tutta». Domande, letture, aggiunte e il prima e dopo si vedono come nel PDF (`core/Snippets`, `Workspace::snippet`):
 intanto il testo; ciò che non compila resta testo. In Rivedi correzioni ci sono anche errori e righe fuori misura
@@ -178,7 +178,7 @@ esempio, o `\caption`; altrimenti la descrizione della conversione), la resa com
 compilata da sola con il preambolo di `main.tex` e rifatta quando cambia il codice, un'immagine inclusa o uno stile) e,
 se viene da un'altra, l'originale accanto (il pezzo della pagina della fonte, o la resa del codice dell'autore, tenuto in
 `salvataggi/figure/<nome>-autore.tex`). Rese e originali che mancano si fanno in un lavoro, «Preparo le figure». «Vai
-alla figura» la mostra nell'anteprima del documento (non apre il `.tex`). Si accetta (`decisione` nel registro; le figure
+alla figura» la mostra nell'anteprima del documento (non apre il `.tex`). Si accetta (una per una, «Accetta tutte» in una lezione, o in alto «Accetta tutte» e «Riapri tutte»; `decisione` nel registro; le figure
 non accettate contano fra quelle da rivedere), si rigenera con un commento facoltativo per il disegnatore (vede anche
 il disegno com'è; senza fonte rifà quello) e, se viene da una fonte, si passa fra l'ultimo disegno
 (`salvataggi/figure/<nome>.tex`, che resta anche passando al ritaglio) e il ritaglio, che si sistema a mano: riquadro e

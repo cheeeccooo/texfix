@@ -1196,6 +1196,19 @@ void Workspace::acceptFigure(const QString &id, bool accepted)
     refreshTree();
 }
 
+// Accetta (o riapre) tutte le figure di una lezione; con la lezione vuota, tutte quelle del progetto.
+void Workspace::acceptAllFigures(const QString &lesson, bool accepted)
+{
+    if (!hasProject())
+        return;
+    for (const figures::Figure &f : figures::all(m_project)) {
+        const QString in = figures::lessonOf(m_project, f.id);
+        if (!in.isEmpty() && (lesson.isEmpty() || in == lesson) && (f.decision == "accettata") != accepted)
+            figures::decide(m_project, f.id, accepted);
+    }
+    refreshTree();
+}
+
 // Disegno o ritaglio, per una figura che viene da una fonte: si torna all'ultimo disegno senza rifarlo.
 void Workspace::useDrawing(const QString &id)
 {

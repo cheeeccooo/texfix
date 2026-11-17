@@ -171,6 +171,7 @@ public:
     Q_INVOKABLE void adoptFigures();
     Q_INVOKABLE void renderFigures();
     Q_INVOKABLE void acceptFigure(const QString &id, bool accepted);
+    Q_INVOKABLE void acceptAllFigures(const QString &lesson, bool accepted);
     Q_INVOKABLE void useDrawing(const QString &id);
     Q_INVOKABLE void cropFigure(const QString &id, const QVariantList &box, const QVariantList &erase);
     Q_INVOKABLE QString figurePage(const QString &id) const;
