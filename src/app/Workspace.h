@@ -177,6 +177,9 @@ public:
     // Impaginazione. paginate impagina le lezioni non fatte che sono nuove o cambiate (un lavoro, un passo della
     // cronologia). layoutItems: le mosse, lezione per lezione (type lesson | move). decideMove: accettata | lasciata.
     Q_INVOKABLE void paginate();
+    // Rimpagina da sé le lezioni già impaginate e poi cambiate (dal punto cambiato in giù): Rivedi impaginazione lo chiede
+    // quando la si guarda e niente lavora.
+    Q_INVOKABLE void refreshLayout();
     Q_INVOKABLE QVariantList layoutItems() const;
     // redo: se la lezione cambia, le mosse non ancora decise che vengono dopo si ricalcolano (l'ordine conta).
     Q_INVOKABLE void decideMove(const QString &lesson, const QString &block, const QString &state, bool redo = true);
@@ -374,6 +377,7 @@ private:
     void remember(const QString &path);
     void moved(const tx::History::Outcome &outcome);
     void startJob(const QString &title, std::function<std::function<void()>(tx::JobControl *)> work);
+    void paginateLessons(const QStringList &lessons, const QString &title);
     void convertFinished(const tx::Convert::Result &result);
     void decided(const QString &lesson, const QString &title, const QString &error);
     void sortJob(const QStringList &sources, const QString &previous, const QString &replaces);
@@ -407,5 +411,6 @@ private:
     QHash<QString, QString> m_details;
     double m_progress = 0;
     QString m_progressLabel, m_pdf;
+    QHash<QString, QByteArray> m_layoutTried;           // il testo di una lezione già rimpaginata da sé (non si ritenta)
     int m_errorCount = 0, m_openDoubts = 0, m_openDeclared = 0, m_openFigures = 0, m_openLayout = 0, m_changeCount = 0;
 };

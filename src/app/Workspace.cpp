@@ -29,6 +29,7 @@
 
 #include <QDir>
 #include <QDirIterator>
+#include <QCryptographicHash>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QDate>
@@ -1153,8 +1154,38 @@ void Workspace::paginate()
             lessons << file;
     if (lessons.isEmpty())
         return say(QStringLiteral("Niente di nuovo da impaginare."));
+    paginateLessons(lessons, QStringLiteral("Impagino"));
+}
+
+namespace {
+QByteArray textHash(const QString &text) { return QCryptographicHash::hash(text.toUtf8(), QCryptographicHash::Sha1); }
+}
+
+// Rivedi impaginazione è sempre quella della lezione com'è: una lezione già impaginata e poi cambiata si rimpagina da sé
+// dal punto cambiato in giù (ciò che sta sopra resta deciso). Una volta per testo: se non riesce (ha errori) non si
+// ritenta finché la lezione non cambia ancora.
+void Workspace::refreshLayout()
+{
+    if (!hasProject() || busy())
+        return;
+    QStringList lessons;
+    for (const QString &file : m_project.inputs()) {
+        if (m_settings.isDone(file) || !QFileInfo::exists(m_project.path(file)) || !layout::known(m_project, file) || !layout::needed(m_project, file))
+            continue;
+        const QByteArray hash = textHash(files::read(m_project.path(file)));
+        if (m_layoutTried.value(file) == hash)
+            continue;
+        m_layoutTried.insert(file, hash);
+        lessons << file;
+    }
+    if (!lessons.isEmpty())
+        paginateLessons(lessons, QStringLiteral("Rimpagino ciò che è cambiato"));
+}
+
+void Workspace::paginateLessons(const QStringList &lessons, const QString &title)
+{
     checkpoint(QStringLiteral("Modifiche a mano"));
-    startJob(QStringLiteral("Impagino"), [this, lessons, project = m_project, style = m_style](JobControl *control) {
+    startJob(title, [this, lessons, project = m_project, style = m_style](JobControl *control) {
         int done = 0, proposed = 0;
         QStringList failed;
         QString stopped;
@@ -1231,9 +1262,16 @@ QVariantList Workspace::layoutItems() const
         out << QVariantMap{{"type", "lesson"}, {"lesson", lesson.file},
                            {"title", lesson.number > 0 ? QStringLiteral("Lezione %1 · %2").arg(lesson.number).arg(lesson.title) : lesson.title}};
         if (todo)
-            out << QVariantMap{{"type", "todo"}, {"lesson", lesson.file}, {"fresh", moves.isEmpty()}};
-        QList<layout::Move> ordered = moves;           // in ordine di documento: l'ordine conta
+            out << QVariantMap{{"type", "todo"}, {"lesson", lesson.file}, {"fresh", !layout::known(m_project, lesson.file)}};
+        // la lezione è cambiata da quando è stata misurata: le mosse dal punto cambiato in giù guardavano una pagina che non
+        // c'è più. Restano visibili, «da rifare», senza pagine in piccolo, finché la rimpaginazione non le rifà.
+        const QStringList stale = layout::changedBlocks(m_project, lesson.file);
+        QList<layout::Move> ordered;                   // in ordine di documento: l'ordine conta
+        QList<layout::Move> staleMoves;
+        for (const layout::Move &m : moves)
+            (stale.contains(m.block) ? staleMoves : ordered) << m;
         std::stable_sort(ordered.begin(), ordered.end(), [](const layout::Move &a, const layout::Move &b) { return a.line < b.line; });
+        std::stable_sort(staleMoves.begin(), staleMoves.end(), [](const layout::Move &a, const layout::Move &b) { return a.line < b.line; });
         // l'ordine: la mossa attuale è la prima ancora da rivedere; quelle prima sono chiuse (non si toccano più, se non
         // annullando le scelte a ritroso), quelle dopo aspettano
         const QStringList openStates{"fatta", "proposta", "segnalata", "a_mano", "agente"};
@@ -1253,6 +1291,9 @@ QVariantList Workspace::layoutItems() const
                                {"hole", qRound(m.hole * 100)}, {"line", m.line},
                                {"before", shotList(m_project, m, "prima")}, {"after", shotList(m_project, m, "dopo")}};
         }
+        for (const layout::Move &m : std::as_const(staleMoves))
+            out << QVariantMap{{"type", "move"}, {"lesson", m.lesson}, {"block", m.block}, {"what", m.what}, {"state", m.state}, {"locked", true}, {"role", "rifare"}, {"undo", QString()}, {"origin", m.origin}, {"same", false},
+                               {"byHand", false}, {"hole", qRound(m.hole * 100)}, {"line", m.line}, {"before", QVariantList()}, {"after", QVariantList()}};
     }
     return out;
 }
@@ -1262,7 +1303,7 @@ void Workspace::redoFollowing(const QString &lesson, const QString &block, bool 
 {
     // il seguito si rimpagina se aveva mosse non decise, o se la lezione è cambiata da quando è stata misurata (una
     // modifica a mano applicata): ciò che la modifica ha spostato più sotto va guardato di nuovo
-    const bool following = layout::dropAfter(m_project, lesson, block) > 0 || layout::needed(m_project, lesson);
+    const bool following = layout::dropAfter(m_project, lesson, block, retake) > 0 || layout::needed(m_project, lesson);
     if (!following && !retake)
         return;
     refreshTree();
@@ -2095,8 +2136,9 @@ void Workspace::acceptRest(const QString &lesson)
         return;
     checkpoint(QStringLiteral("Modifiche a mano"));
     int n = 0;
+    const QStringList stale = layout::changedBlocks(m_project, lesson);      // da rifare: non si accettano
     for (const layout::Move &m : layout::moves(m_project, lesson))
-        if (m.state == "fatta" && layout::decide(m_project, lesson, m.block, "accettata").isEmpty())
+        if (m.state == "fatta" && !stale.contains(m.block) && layout::decide(m_project, lesson, m.block, "accettata").isEmpty())
             ++n;                                       // la riga c'è già: accettare non cambia la lezione
     checkpoint(QStringLiteral("Mosse accettate"));
     refreshTree();

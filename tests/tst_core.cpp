@@ -925,6 +925,26 @@ private slots:
         QCOMPARE(layout::decide(p, "src/src1.tex", "L1.2", "risolta"), QString());
         QVERIFY(layout::needed(p, "src/src1.tex"));
 
+        {   // la lezione cambia sopra il teorema: la sua mossa, anche accettata, guardava una pagina che non c'è più e si rifà
+            layout::reset(p, "src/src1.tex");
+            write(near);
+            QCOMPARE(layout::lesson(p, style, "src/src1.tex").found, 1);
+            QCOMPARE(layout::decide(p, "src/src1.tex", "L1.2", "accettata"), QString());
+            QVERIFY(layout::changedBlocks(p, "src/src1.tex").isEmpty());
+            const QString accepted = files::read(p.path("src/src1.tex"));
+            files::write(p.path("src/src1.tex"), QString(accepted).replace("Riga 1 di testo.", "Riga 1 di testi."));
+            QVERIFY(layout::changedBlocks(p, "src/src1.tex").contains("L1.2"));
+            r = layout::lesson(p, style, "src/src1.tex");
+            QCOMPARE(r.failure, QString());
+            QCOMPARE(r.found, 1);                                                      // rifatta, non tenuta
+            moves = layout::moves(p, "src/src1.tex");
+            QCOMPARE(moves.size(), 1);
+            QCOMPARE(moves[0].state, "fatta");                                         // e di nuovo da rivedere
+            QCOMPARE(files::read(p.path("src/src1.tex")).count("% impaginazione"), 1);
+            QVERIFY(layout::changedBlocks(p, "src/src1.tex").isEmpty());
+            QVERIFY(!layout::needed(p, "src/src1.tex"));
+        }
+
         // molto vuoto: la mossa non si applica da sola, resta proposta
         write(near - 12);
         if (theorem().split()) {
@@ -1490,7 +1510,6 @@ private slots:
             QCOMPARE(layout::lesson(p, style, "src/src1.tex").failure, QString());
             QCOMPARE(files::read(p.path("src/src1.tex")).count("% impaginazione"), 1);
             QCOMPARE(layout::moves(p, "src/src1.tex").size(), moves.size());
-            QVERIFY(!layout::moves(p, "src/src1.tex").first().same);   // la lezione è cambiata: «invariata» non vale più
             files::write(p.path("src/src1.tex"), text);
             QCOMPARE(layout::lesson(p, style, "src/src1.tex").failure, QString());
             QCOMPARE(files::read(p.path("src/src1.tex")), text);

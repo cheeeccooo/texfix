@@ -11,6 +11,7 @@ Rectangle {
     color: Theme.window
     signal lineAsked(string file, int line)
     signal manualAsked(string lesson, string block, int line, string what)
+    signal refreshAsked()                              // ciò che è cambiato va rimpaginato: lo fa ProjectView
 
     property var items: []
     property int current: -1                           // la scheda aperta (fra le mosse); -1: la panoramica
@@ -36,17 +37,21 @@ Rectangle {
         items = Workspace.layoutItems()
         if (current >= moves.length)
             current = -1
+        // una lezione già impaginata e poi cambiata: si rimpagina da sé, appena niente lavora
+        if (items.some(i => i.type === "todo" && !i.fresh) && !Workspace.busy)
+            Qt.callLater(root.refreshAsked)
     }
     Component.onCompleted: reload()
     onVisibleChanged: if (visible) reload()
     Connections { target: Workspace; function onFilesChanged() { if (root.visible) root.reload() } }
     Connections { target: Workspace; function onTreeChanged() { if (root.visible) root.reload() } }
+    Connections { target: Workspace; function onBusyChanged() { if (root.visible && !Workspace.busy) root.reload() } }
 
     function showLesson(lesson) { current = -1 }       // dall'albero: la panoramica
     function showShots() { if (moves.length > 0) current = 0 }   // per le prove: la prima scheda
 
     readonly property var openStates: ["fatta", "proposta", "segnalata", "a_mano", "agente"]
-    function isOpen(row) { return openStates.includes(row.state) }
+    function isOpen(row) { return row.role !== "rifare" && openStates.includes(row.state) }
     // il programma ha fatto o proposto una mossa (c'è qualcosa da lasciare com'era); altrimenti ha solo segnalato
     function hasMove(row) { return row.origin === "fatta" || row.origin === "proposta" }
     function plain(shot) { return { path: shot.path, rects: [], stamp: shot.stamp } }
@@ -56,6 +61,8 @@ Rectangle {
         return m ? m[1] : (what || "").split(".")[0]
     }
     function badgeOf(row) {
+        if (row.role === "rifare")
+            return { text: Workspace.jobRunning ? "la rifaccio…" : "da rifare: la lezione è cambiata", color: Theme.idle }
         if (row.role === "attesa")
             return { text: "aspetta le mosse prima", color: Theme.idle }
         return ({ fatta: { text: "da rivedere", color: Theme.warn }, proposta: { text: "da rivedere", color: Theme.warn },
@@ -191,7 +198,7 @@ Rectangle {
                         id: lessonGroup
                         required property var modelData
                         readonly property int pending: modelData.cards.filter(c => root.isOpen(c.row)).length
-                        readonly property bool canRest: modelData.cards.some(c => c.row.state === "fatta")
+                        readonly property bool canRest: modelData.cards.some(c => c.row.state === "fatta" && c.row.role !== "rifare")
                         width: grid.width
                         spacing: Theme.gap
                         RowLayout {
@@ -216,7 +223,9 @@ Rectangle {
                         TxLabel {
                             visible: lessonGroup.modelData.todo
                             width: parent.width
-                            text: lessonGroup.modelData.fresh ? "Non ancora impaginata: «Impagina ciò che è nuovo»." : "Cambiata dopo l'ultima impaginazione: «Impagina ciò che è nuovo» la rifà."
+                            text: lessonGroup.modelData.fresh ? "Non ancora impaginata: «Impagina ciò che è nuovo»."
+                                  : Workspace.jobRunning ? "Cambiata: la rimpagino dal punto cambiato in giù…"
+                                  : "Cambiata dopo l'ultima impaginazione: si rimpagina dal punto cambiato in giù appena niente lavora."
                             color: Theme.warn
                         }
                         Flow {

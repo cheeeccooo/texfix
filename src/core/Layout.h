@@ -55,7 +55,16 @@ int toReview(const Project &project, const QString &file);
 QString decide(const Project &project, const QString &file, const QString &block, const QString &state);
 // L'ordine conta: cambiare una mossa sposta tutto ciò che segue. dropAfter toglie dalla lezione e dal registro le mosse
 // non ancora decise che vengono dopo quel blocco (quante), e segna la lezione da rimpaginare: poi `lesson` le ricalcola.
-int dropAfter(const Project &project, const QString &file, const QString &block);
+// «edited»: la lezione è stata sistemata a mano a quel blocco. Dopo di lui si tolgono anche le mosse decise, e ciò che
+// resta vale per la lezione com'è adesso.
+int dropAfter(const Project &project, const QString &file, const QString &block, bool edited = false);
+// Una lezione cambiata da quando è stata misurata: le mosse dal punto cambiato in giù (del blocco che lo contiene e di
+// quelli dopo, decise o no) guardavano una pagina che non c'è più. changedBlocks dice quali; dropChanged le toglie dalla
+// lezione e dal registro (quante), e `lesson`, che lo chiama da sé, le ricalcola. Quelle sopra restano.
+QStringList changedBlocks(const Project &project, const QString &file);
+int dropChanged(const Project &project, const QString &file);
+// La lezione è già stata impaginata una volta (è nel registro).
+bool known(const Project &project, const QString &file);
 // Toglie da una lezione tutte le mosse dell'impaginazione (le righe «% impaginazione», il registro, le pagine in piccolo):
 // torna da impaginare. Restituisce quante erano.
 int reset(const Project &project, const QString &file);

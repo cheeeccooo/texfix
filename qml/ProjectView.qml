@@ -552,6 +552,8 @@ Item {
                         onJumpAsked: (file, line) => root.jumpToPdf(file, line)
                         onChatAsked: root.chatOpen = true
                         onManualAsked: (lesson, block, line, what) => root.startManual(lesson, block, line, what)
+                        // Rivedi impaginazione guardata: ciò che è cambiato si rimpagina da sé (non durante una modifica a mano)
+                        onLayoutRefreshAsked: { if (!root.manual && !Workspace.busy) { editor.saveAll(); Workspace.refreshLayout() } }
                         // chiudere la lezione dall'editor è lasciare la modifica a mano
                         onCurrentFileChanged: root.syncReview()
                         onTabClosed: file => { if (root.manual && file === root.manual.lesson) root.endManual(false) }

@@ -41,6 +41,27 @@ QString contentHash(const QString &text)
     return QString::fromLatin1(QCryptographicHash::hash(withoutSigns(text.split('\n')).join('\n').toUtf8(), QCryptographicHash::Sha1).toHex().left(16));
 }
 
+// La lezione com'era quando è stata misurata (senza le mosse), con la sua impronta nel nome: quando cambia dice da dove.
+// Si tengono le ultime, perché annullare una scelta può riportare il registro a un'impronta di prima. Sono fra ciò che si
+// rifà: se manca, la lezione si considera cambiata tutta.
+QString measuredPath(const Project &project, const QString &file, const QString &hash)
+{
+    return project.path(QStringLiteral("build/impaginazione/%1/misurata-%2.tex").arg(QFileInfo(file).completeBaseName(), hash));
+}
+// La lezione è misurata così com'è: l'impronta nel registro, il testo accanto.
+void stamp(const Project &project, const QString &file, QJsonObject *entry, const QString &text)
+{
+    const QString hash = contentHash(text);
+    (*entry)["impronta"] = hash;
+    entry->remove("da_rifare");
+    const QString path = measuredPath(project, file, hash);
+    files::write(path, withoutSigns(text.split('\n')).join('\n'));
+    const QDir dir = QFileInfo(path).dir();
+    const QStringList all = dir.entryList({"misurata-*.tex"}, QDir::Files, QDir::Time);
+    for (qsizetype i = 12; i < all.size(); ++i)
+        QFile::remove(dir.filePath(all[i]));
+}
+
 blocks::Units unitsOf(const Style &style) { return {style.boxes(), {style.figureWrapper(), "figure"}}; }
 
 // La riga in cui mettere l'a capo pagina per portare il blocco in cima: prima del suo marcatore e dei titoli che lo aprono.
@@ -233,8 +254,11 @@ bool needed(const Project &project, const QString &file)
     const QString text = files::read(project.path(file));
     if (!text.contains("% @L") && !text.trimmed().isEmpty())
         return true;                                   // nessun marcatore: non è mai stata misurata davvero
-    return registry(project).value(file).toObject().value("impronta").toString() != contentHash(text);
+    const QJsonObject entry = registry(project).value(file).toObject();
+    return entry.value("da_rifare").toBool() || entry.value("impronta").toString() != contentHash(text);
 }
+
+bool known(const Project &project, const QString &file) { return registry(project).contains(file); }
 
 QList<Move> moves(const Project &project, const QString &file)
 {
@@ -613,6 +637,7 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
 {
     Result result;
     const QString path = project.path(file);
+    dropChanged(project, file);                        // cambiata dall'ultima volta: ciò che sta dal punto cambiato in giù si rifà
     {   // i blocchi senza marcatore (lezioni scritte a mano, o portate da fuori) lo prendono ora: senza, non si misurano
         const QString text = files::read(path);
         const QString marked = blocks::mark(text, Project::lessonOf(file, text).number, unitsOf(style));
@@ -628,11 +653,6 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
         if (m.state == "lasciata" || m.state == "a_mano" || m.state == "agente" || m.state == "risolta" || (m.state == "accettata" && m.sign.isEmpty()))
             left << m.block;                       // decise in altro modo: non si riprovano
     }
-    // la lezione è cambiata da quando è stata impaginata: una mossa «invariata» lo era rispetto alla pagina di allora
-    if (const QString was = registry(project).value(file).toObject().value("impronta").toString();
-        !was.isEmpty() && was != contentHash(files::read(path)))
-        for (Move &m : kept)
-            m.same = false;
     QList<Move> fresh;
     QStringList tried = left;
     for (const Move &m : std::as_const(kept))          // una mossa per blocco: chi ne ha già una (fatta e da rivedere, o
@@ -1121,7 +1141,9 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
     for (const Move &m : kept + fresh)
         list.append(toJson(m));
     QJsonObject all = registry(project);
-    all[file] = QJsonObject{{"impronta", contentHash(files::read(path))}, {"mosse", list}};
+    QJsonObject entry{{"mosse", list}};
+    stamp(project, file, &entry, files::read(path));
+    all[file] = entry;
     saveRegistry(project, all);
     return result;
 }
@@ -1216,7 +1238,7 @@ QString decide(const Project &project, const QString &file, const QString &block
         list[i] = move;
         entry["mosse"] = list;
         if (measured)                                  // togliere una riga può portarsi via una riga vuota
-            entry["impronta"] = contentHash(lines.join('\n'));
+            stamp(project, file, &entry, lines.join('\n'));
         all[file] = entry;
         saveRegistry(project, all);
         return {};
@@ -1250,34 +1272,90 @@ void retake(const Project &project, const Style &style, const QString &file, con
         snap(project, style, file, block, "dopo");
 }
 
-int dropAfter(const Project &project, const QString &file, const QString &block)
+// Toglie delle mosse: la loro riga dalla lezione, la voce dal registro, le pagine in piccolo.
+static void drop(const Project &project, const QString &file, const QStringList &blocks)
+{
+    for (const QString &block : blocks)
+        decide(project, file, block, "lasciata");                  // la sua riga, se c'è, esce dalla lezione
+    QJsonObject all = registry(project);
+    QJsonObject entry = all.value(file).toObject();
+    QJsonArray kept;
+    for (const QJsonValue &v : entry.value("mosse").toArray())
+        if (!blocks.contains(v.toObject().value("blocco").toString()))
+            kept.append(v);
+    entry["mosse"] = kept;
+    all[file] = entry;
+    saveRegistry(project, all);
+    const QDir dir(project.path("build/impaginazione/" + QFileInfo(file).completeBaseName()));
+    for (const QString &block : blocks)
+        for (const QString &name : dir.entryList({block + "-prima*", block + "-dopo*"}, QDir::Files))
+            QFile::remove(dir.filePath(name));
+}
+
+int dropAfter(const Project &project, const QString &file, const QString &block, bool edited)
 {
     int line = 0;
     const QList<Move> all = moves(project, file);
     for (const Move &m : all)
         if (m.block == block)
             line = m.line;
-    QStringList drop;
-    for (const Move &m : all) {
-        if (m.line <= line || (m.state != "fatta" && m.state != "proposta" && m.state != "segnalata"))
-            continue;
-        if (m.state == "fatta")
-            decide(project, file, m.block, "lasciata");            // la sua riga esce dalla lezione
-        drop << m.block;
-    }
-    if (drop.isEmpty())
+    QStringList gone;
+    for (const Move &m : all)
+        if (m.line > line && (edited || m.state == "fatta" || m.state == "proposta" || m.state == "segnalata"))
+            gone << m.block;
+    if (gone.isEmpty() && !edited)
         return 0;
+    drop(project, file, gone);
     QJsonObject registryNow = registry(project);
     QJsonObject entry = registryNow.value(file).toObject();
-    QJsonArray kept;
-    for (const QJsonValue &v : entry.value("mosse").toArray())
-        if (!drop.contains(v.toObject().value("blocco").toString()))
-            kept.append(v);
-    entry["mosse"] = kept;
-    entry["impronta"] = QString();                                 // da rimpaginare
+    // ciò che resta vale per la lezione com'è adesso, se era quella misurata o se la modifica è stata fatta qui; una lezione
+    // cambiata altrove resta com'è, perché `lesson` veda da dove. Il seguito è da rimisurare.
+    const QString text = files::read(project.path(file));
+    if (edited || entry.value("impronta").toString() == contentHash(text))
+        stamp(project, file, &entry, text);
+    entry["da_rifare"] = true;
     registryNow[file] = entry;
     saveRegistry(project, registryNow);
-    return int(drop.size());
+    return int(gone.size());
+}
+
+QStringList changedBlocks(const Project &project, const QString &file)
+{
+    const QString was = registry(project).value(file).toObject().value("impronta").toString();
+    const QString text = files::read(project.path(file));
+    const QList<Move> all = moves(project, file);
+    if (all.isEmpty() || was.isEmpty() || was == contentHash(text))
+        return {};
+    // la prima riga diversa da quando è stata misurata (le mosse non contano)
+    const QStringList now = withoutSigns(text.split('\n'));
+    const QString measured = files::read(measuredPath(project, file, was));
+    qsizetype first = 0;
+    if (!measured.isEmpty() && contentHash(measured) == was) {
+        const QStringList then = measured.split('\n');
+        while (first < now.size() && first < then.size() && now[first] == then[first])
+            ++first;
+    }
+    // i blocchi dal punto cambiato in giù: quello che lo contiene e i successivi
+    static const QRegularExpression marker(R"(^\s*%\s*@(L\d+\.\d+))");
+    QStringList before;                                // i blocchi che cominciano sopra
+    for (qsizetype i = 0; i < now.size() && i <= first; ++i)
+        if (const auto m = marker.match(now[i]); m.hasMatch())
+            before << m.captured(1);
+    if (!before.isEmpty())
+        before.removeLast();                           // quello che contiene il punto cambiato
+    QStringList out;
+    for (const Move &m : all)
+        if (!before.contains(m.block))                 // anche le mosse di un blocco che non c'è più
+            out << m.block;
+    return out;
+}
+
+int dropChanged(const Project &project, const QString &file)
+{
+    const QStringList gone = changedBlocks(project, file);
+    if (!gone.isEmpty())
+        drop(project, file, gone);
+    return int(gone.size());
 }
 }
 
