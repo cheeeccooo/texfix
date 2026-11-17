@@ -628,6 +628,11 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
         if (m.state == "lasciata" || m.state == "a_mano" || m.state == "agente" || m.state == "risolta" || (m.state == "accettata" && m.sign.isEmpty()))
             left << m.block;                       // decise in altro modo: non si riprovano
     }
+    // la lezione è cambiata da quando è stata impaginata: una mossa «invariata» lo era rispetto alla pagina di allora
+    if (const QString was = registry(project).value(file).toObject().value("impronta").toString();
+        !was.isEmpty() && was != contentHash(files::read(path)))
+        for (Move &m : kept)
+            m.same = false;
     QList<Move> fresh;
     QStringList tried = left;
     for (const Move &m : std::as_const(kept))          // una mossa per blocco: chi ne ha già una (fatta e da rivedere, o

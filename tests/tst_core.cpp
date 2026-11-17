@@ -1475,6 +1475,7 @@ private slots:
             QCOMPARE(layout::lesson(p, style, "src/src1.tex").failure, QString());
             QCOMPARE(files::read(p.path("src/src1.tex")).count("% impaginazione"), 1);
             QCOMPARE(layout::moves(p, "src/src1.tex").size(), moves.size());
+            QVERIFY(!layout::moves(p, "src/src1.tex").first().same);   // la lezione è cambiata: «invariata» non vale più
             files::write(p.path("src/src1.tex"), text);
             QCOMPARE(layout::lesson(p, style, "src/src1.tex").failure, QString());
             QCOMPARE(files::read(p.path("src/src1.tex")), text);
