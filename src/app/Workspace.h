@@ -179,6 +179,8 @@ public:
     Q_INVOKABLE void paginate();
     // Rimpagina una lezione cambiata dopo l'ultima impaginazione, dal punto cambiato in giù.
     Q_INVOKABLE void paginateLesson(const QString &file);
+    // Rifà le pagine in piccolo del «dopo» fatte da un'altra lezione (Rivedi impaginazione lo chiede quando niente lavora).
+    Q_INVOKABLE void refreshShots();
     Q_INVOKABLE QVariantList layoutItems() const;
     // redo: se la lezione cambia, le mosse non ancora decise che vengono dopo si ricalcolano (l'ordine conta).
     Q_INVOKABLE void decideMove(const QString &lesson, const QString &block, const QString &state, bool redo = true);
@@ -410,5 +412,6 @@ private:
     QHash<QString, QString> m_details;
     double m_progress = 0;
     QString m_progressLabel, m_pdf;
+    QHash<QString, QByteArray> m_shotsTried;            // il testo di una lezione di cui si sono già rifatte le pagine in piccolo
     int m_errorCount = 0, m_openDoubts = 0, m_openDeclared = 0, m_openFigures = 0, m_openLayout = 0, m_changeCount = 0;
 };

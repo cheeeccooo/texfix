@@ -37,11 +37,15 @@ Rectangle {
         items = Workspace.layoutItems()
         if (current >= moves.length)
             current = -1
+        // pagine in piccolo fatte da un'altra lezione: si rifanno subito (la lezione non si tocca)
+        if (items.some(i => i.oldShots) && !Workspace.busy)
+            Qt.callLater(Workspace.refreshShots)
     }
     Component.onCompleted: reload()
     onVisibleChanged: if (visible) reload()
     Connections { target: Workspace; function onFilesChanged() { if (root.visible) root.reload() } }
     Connections { target: Workspace; function onTreeChanged() { if (root.visible) root.reload() } }
+    Connections { target: Workspace; function onBusyChanged() { if (root.visible && !Workspace.busy) root.reload() } }
 
     function showLesson(lesson) { current = -1 }       // dall'albero: la panoramica
     function showShots() { if (moves.length > 0) current = 0 }   // per le prove: la prima scheda

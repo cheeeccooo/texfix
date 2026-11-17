@@ -1170,6 +1170,38 @@ void Workspace::paginateLesson(const QString &file)
     paginateLessons({file}, QStringLiteral("Impagino %1").arg(QFileInfo(file).fileName()));
 }
 
+// Le pagine in piccolo del «dopo» sono sempre quelle della lezione com'è: se è cambiata (a mano, con la cronologia) si
+// rifanno, compilando la lezione una volta. La lezione non si tocca. Una volta per testo: se non compila non si ritenta
+// finché non cambia ancora.
+void Workspace::refreshShots()
+{
+    if (!hasProject() || busy())
+        return;
+    QList<QPair<QString, QStringList>> work;
+    for (const QString &file : m_project.inputs()) {
+        if (!QFileInfo::exists(m_project.path(file)))
+            continue;
+        const QStringList blocks = layout::oldShots(m_project, file);
+        const QByteArray hash = QCryptographicHash::hash(files::read(m_project.path(file)).toUtf8(), QCryptographicHash::Sha1);
+        if (blocks.isEmpty() || m_shotsTried.value(file) == hash)
+            continue;
+        m_shotsTried.insert(file, hash);
+        work << qMakePair(file, blocks);
+    }
+    if (work.isEmpty())
+        return;
+    startJob(QStringLiteral("Rifaccio le pagine in piccolo"), [this, work, project = m_project, style = m_style](JobControl *control) {
+        try {
+            for (int i = 0; i < work.size(); ++i) {
+                control->progress(double(i) / work.size(), QFileInfo(work[i].first).fileName());
+                layout::retake(project, style, work[i].first, work[i].second, control);
+            }
+        } catch (const Stopped &) {
+        }
+        return std::function<void()>([this] { refreshTree(); });
+    });
+}
+
 void Workspace::paginateLessons(const QStringList &lessons, const QString &title)
 {
     checkpoint(QStringLiteral("Modifiche a mano"));
@@ -1254,6 +1286,7 @@ QVariantList Workspace::layoutItems() const
         // la lezione è cambiata da quando è stata misurata: le mosse dal punto cambiato in giù guardavano una pagina che non
         // c'è più. Restano visibili, «da rifare», senza pagine in piccolo, finché la rimpaginazione non le rifà.
         const QStringList stale = layout::changedBlocks(m_project, lesson.file);
+        const QStringList oldShots = layout::oldShots(m_project, lesson.file);   // le pagine del dopo non sono più vere
         QList<layout::Move> ordered;                   // in ordine di documento: l'ordine conta
         QList<layout::Move> staleMoves;
         for (const layout::Move &m : moves)
@@ -1277,7 +1310,8 @@ QVariantList Workspace::layoutItems() const
             out << QVariantMap{{"type", "move"}, {"lesson", m.lesson}, {"block", m.block}, {"what", m.what}, {"state", m.state}, {"locked", locked}, {"role", role}, {"undo", undo}, {"origin", m.origin}, {"same", m.same},
                                {"byHand", QFileInfo::exists(manualFile(m_project, m.lesson, m.block))},
                                {"hole", qRound(m.hole * 100)}, {"line", m.line},
-                               {"before", shotList(m_project, m, "prima")}, {"after", shotList(m_project, m, "dopo")}};
+                               {"before", shotList(m_project, m, "prima")}, {"after", oldShots.contains(m.block) ? QVariantList() : shotList(m_project, m, "dopo")},
+                               {"oldShots", oldShots.contains(m.block)}};
         }
         for (const layout::Move &m : std::as_const(staleMoves))
             out << QVariantMap{{"type", "move"}, {"lesson", m.lesson}, {"block", m.block}, {"what", m.what}, {"state", m.state}, {"locked", true}, {"role", "rifare"}, {"undo", QString()}, {"origin", m.origin}, {"same", false},

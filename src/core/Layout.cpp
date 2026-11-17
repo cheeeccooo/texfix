@@ -62,6 +62,12 @@ void stamp(const Project &project, const QString &file, QJsonObject *entry, cons
         QFile::remove(dir.filePath(all[i]));
 }
 
+// L'impronta della lezione così com'è, mosse comprese: le pagine in piccolo del «dopo» si fanno da questo testo.
+QString textHash(const QString &text)
+{
+    return QString::fromLatin1(QCryptographicHash::hash(text.toUtf8(), QCryptographicHash::Sha1).toHex().left(16));
+}
+
 blocks::Units unitsOf(const Style &style) { return {style.boxes(), {style.figureWrapper(), "figure"}}; }
 
 // La riga in cui mettere l'a capo pagina per portare il blocco in cima: prima del suo marcatore e dei titoli che lo aprono.
@@ -446,6 +452,7 @@ void snap(const Project &project, const Style &style, const QString &file, const
         list.append(QJsonObject{{"x", x0 / g.pageWidth}, {"y", (p.top - 3) / pageHeight}, {"w", (x1 - x0) / g.pageWidth}, {"h", (p.bottom - p.top + 7) / pageHeight}});
         rects[QString::number(p.page - page)] = list;
     }
+    rects["testo"] = textHash(files::read(project.path(file)));       // da quale lezione sono fatte
     files::write(base + ".json", QString::fromUtf8(QJsonDocument(rects).toJson()));
 }
 // Le pagine in piccolo del prima e del dopo sono la stessa immagine: la mossa non ha cambiato ciò che si vede.
@@ -1268,8 +1275,34 @@ QList<Shot> shots(const Project &project, const QString &file, const QString &bl
 namespace tx::layout {
 void retake(const Project &project, const Style &style, const QString &file, const QString &block, JobControl *control)
 {
-    if (!Compiler::compileSync(project, file, control).hasErrors())
+    retake(project, style, file, QStringList{block}, control);
+}
+
+bool retake(const Project &project, const Style &style, const QString &file, const QStringList &blocks, JobControl *control)
+{
+    if (Compiler::compileSync(project, file, control).hasErrors())
+        return false;
+    for (const QString &block : blocks) {
+        if (control)
+            control->check();
         snap(project, style, file, block, "dopo");
+    }
+    return true;
+}
+
+QStringList oldShots(const Project &project, const QString &file)
+{
+    const QString now = textHash(files::read(project.path(file)));
+    const QStringList changed = changedBlocks(project, file);          // quelle «cambiata» non hanno pagine: si rifanno
+    QStringList out;
+    for (const Move &m : moves(project, file)) {
+        const QString json = shotBase(project, file, m.block, "dopo") + ".json";
+        if (changed.contains(m.block) || !QFileInfo::exists(json))
+            continue;
+        if (QJsonDocument::fromJson(files::read(json).toUtf8()).object().value("testo").toString() != now)
+            out << m.block;
+    }
+    return out;
 }
 
 // Toglie delle mosse: la loro riga dalla lezione, la voce dal registro, le pagine in piccolo.
