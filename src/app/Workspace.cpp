@@ -1207,15 +1207,6 @@ QString manualFile(const Project &project, const QString &lesson, const QString 
 {
     return project.path(QStringLiteral("build/impaginazione/%1/%2-prima-della-modifica.json").arg(QFileInfo(lesson).completeBaseName(), block));
 }
-// La lezione senza le righe dell'impaginazione: per capire se, a parte le mosse, è ancora quella.
-QString withoutMoves(const QString &text)
-{
-    QStringList out;
-    for (const QString &line : text.split('\n'))
-        if (!line.trimmed().endsWith(QLatin1String("% impaginazione")) && !line.trimmed().isEmpty())
-            out << line;
-    return out.join('\n');
-}
 }
 
 void Workspace::keepManual(const QString &lesson, const QString &block, const QString &text, const QString &registry)
@@ -1223,7 +1214,7 @@ void Workspace::keepManual(const QString &lesson, const QString &block, const QS
     if (!hasProject())
         return;
     const QJsonValue entry = QJsonDocument::fromJson(registry.toUtf8()).object().value(lesson);
-    files::write(manualFile(m_project, lesson, block), QString::fromUtf8(QJsonDocument(QJsonObject{{"testo", text}, {"mosse", entry}, {"applicata", withoutMoves(files::read(m_project.path(lesson)))}}).toJson()));
+    files::write(manualFile(m_project, lesson, block), QString::fromUtf8(QJsonDocument(QJsonObject{{"testo", text}, {"mosse", entry}, {"applicata", layout::written(files::read(m_project.path(lesson)))}}).toJson()));
 }
 
 QVariantList Workspace::layoutItems() const
@@ -1312,7 +1303,7 @@ void Workspace::reopenMove(const QString &lesson, const QString &block)
     const QJsonObject saved = QJsonDocument::fromJson(files::read(kept).toUtf8()).object();
     QFile::remove(kept);
     // solo se, a parte le mosse, la lezione è ancora quella della modifica: ciò che è stato scritto dopo non si butta
-    if (saved.contains("testo") && saved.value("applicata").toString() != withoutMoves(textBefore)) {
+    if (saved.contains("testo") && saved.value("applicata").toString() != layout::written(textBefore)) {
         say(QStringLiteral("La lezione è cambiata dopo la modifica a mano: annullo la scelta, il testo resta com'è."));
     } else if (saved.contains("testo")) {
         const QString registryPath = m_project.path("salvataggi/impaginazione.json");

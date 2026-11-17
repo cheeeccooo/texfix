@@ -59,6 +59,9 @@ int dropAfter(const Project &project, const QString &file, const QString &block)
 // Toglie da una lezione tutte le mosse dell'impaginazione (le righe «% impaginazione», il registro, le pagine in piccolo):
 // torna da impaginare. Restituisce quante erano.
 int reset(const Project &project, const QString &file);
+// Ciò che in una lezione è scritto da chi la scrive: senza le righe dell'impaginazione, i marcatori dei blocchi (che
+// l'impaginazione aggiunge a un testo nuovo) e le righe vuote. Per capire se, a parte quelle, la lezione è ancora la stessa.
+QString written(const QString &text);
 // Annulla la scelta dell'utente su una mossa: torna com'era quando il programma l'ha fatta, proposta o segnalata (la sua
 // riga torna nella lezione, o ne esce). Vuoto se è andata.
 QString reopen(const Project &project, const QString &file, const QString &block);

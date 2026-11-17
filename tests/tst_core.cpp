@@ -655,6 +655,17 @@ private slots:
     // L'impaginazione sistema anche una formula rimasta in fondo senza la frase che la commenta (passa oltre con il suo
     // paragrafo) e un elenco che lascia una voce sola dall'altra parte (la penultima la raggiunge): un a capo che, lasciato
     // com'era, se ne va senza lasciare traccia.
+    // La × su una mossa sistemata a mano rimette la lezione com'era solo se dopo non è stato scritto altro: il marcatore
+    // che l'impaginazione dà al testo aggiunto a mano, e le sue mosse, non sono «altro».
+    void layoutWritten()
+    {
+        const QString applied = "% @L5.16\nprima\n\n\\newpage\ntesto nuovo\n\n% @L5.17 · fonte p.2\ndopo\n";
+        const QString later = "% @L5.16\nprima\n\n\\newpage\n% @L5.28\ntesto nuovo\n\n\\newpage % impaginazione\n% @L5.17 · fonte p.2\ndopo\n";
+        QCOMPARE(layout::written(later), layout::written(applied));
+        QVERIFY(layout::written(later + "una riga in più\n") != layout::written(applied));
+        QVERIFY(layout::written(later).contains("\\newpage"));    // un a capo scritto a mano è testo
+    }
+
     void layoutFormulaAndList()
     {
         if (!hasLatexmk())

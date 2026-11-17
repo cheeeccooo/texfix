@@ -1304,6 +1304,18 @@ int reset(const Project &project, const QString &file)
 }
 
 namespace tx::layout {
+QString written(const QString &text)
+{
+    static const QRegularExpression marker(R"(^\s*%\s*@L\d+\.\d+)");
+    QStringList out;
+    for (const QString &line : text.split('\n'))
+        if (!line.trimmed().isEmpty() && !line.trimmed().endsWith(QLatin1String("% impaginazione")) && !marker.match(line).hasMatch())
+            out << line;
+    return out.join('\n');
+}
+}
+
+namespace tx::layout {
 QString reopen(const Project &project, const QString &file, const QString &block)
 {
     QString origin;
