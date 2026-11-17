@@ -86,7 +86,8 @@ void retake(const Project &project, const Style &style, const QString &file, con
 // Le stesse, per più mosse con una compilazione sola (falso se la lezione non compila).
 bool retake(const Project &project, const Style &style, const QString &file, const QStringList &blocks, JobControl *control = nullptr);
 // Le mosse il cui «dopo» è stato fatto da un'altra lezione (cambiata dopo, o tornata indietro con la cronologia): le
-// pagine in piccolo non sono più quelle vere e vanno rifatte. Non quelle «cambiata», che non ne hanno.
+// pagine in piccolo non sono più quelle vere e vanno rifatte; e quelle che dovrebbero averlo e non l'hanno. Non quelle
+// «cambiata», che non ne hanno.
 QStringList oldShots(const Project &project, const QString &file);
 
 }

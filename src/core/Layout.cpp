@@ -1296,16 +1296,19 @@ QStringList oldShots(const Project &project, const QString &file)
     const QStringList changed = changedBlocks(project, file);          // quelle «cambiata» non hanno pagine: si rifanno
     QStringList out;
     for (const Move &m : moves(project, file)) {
-        const QString json = shotBase(project, file, m.block, "dopo") + ".json";
-        if (changed.contains(m.block) || !QFileInfo::exists(json))
+        if (changed.contains(m.block))
             continue;
-        if (QJsonDocument::fromJson(files::read(json).toUtf8()).object().value("testo").toString() != now)
+        const QString json = shotBase(project, file, m.block, "dopo") + ".json";
+        // una mossa che il programma ha fatto, o che è stata applicata, ha un «dopo»: se manca (perso, o la mossa è tornata
+        // con la cronologia) si rifà
+        const bool owed = m.origin == "fatta" || m.state == "accettata" || m.state == "risolta";
+        if (!QFileInfo::exists(json) ? owed : QJsonDocument::fromJson(files::read(json).toUtf8()).object().value("testo").toString() != now)
             out << m.block;
     }
     return out;
 }
 
-// Toglie delle mosse: la loro riga dalla lezione, la voce dal registro, le pagine in piccolo.
+// Toglie delle mosse: la loro riga dalla lezione, la voce dal registro.
 static void drop(const Project &project, const QString &file, const QStringList &blocks)
 {
     for (const QString &block : blocks)
@@ -1319,10 +1322,7 @@ static void drop(const Project &project, const QString &file, const QStringList 
     entry["mosse"] = kept;
     all[file] = entry;
     saveRegistry(project, all);
-    const QDir dir(project.path("build/impaginazione/" + QFileInfo(file).completeBaseName()));
-    for (const QString &block : blocks)
-        for (const QString &name : dir.entryList({block + "-prima*", block + "-dopo*"}, QDir::Files))
-            QFile::remove(dir.filePath(name));
+    // le pagine in piccolo restano: rifacendo la mossa si sovrascrivono, e se la mossa torna (⌘Z) servono ancora
 }
 
 int dropAfter(const Project &project, const QString &file, const QString &block, bool edited)
