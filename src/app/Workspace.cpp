@@ -794,11 +794,11 @@ QVariantList Workspace::convertSources() const
         return out;
     for (const Convert::Source &s : Convert::queue(m_project)) {
         const bool can = s.kind != "altro";
-        const auto [path, date] = texsource::parseSpec(s.file);
+        const texsource::Ref ref = texsource::parseSpec(s.file);
         const QString detail = s.kind == "pagine" ? plural(s.size, "pagina", "pagine")
                                : s.kind == "testo" ? plural(s.size, "riga", "righe")
                                : s.kind == "tex" ? plural(s.size, "riga", "righe") : QStringLiteral("non si converte");
-        out << QVariantMap{{"file", s.file}, {"name", QFileInfo(path).fileName() + (date.isValid() ? QStringLiteral(" · lezione del %1").arg(date.toString("dd/MM/yyyy")) : QString())}, {"detail", detail}, {"convertible", can}};
+        out << QVariantMap{{"file", s.file}, {"name", QFileInfo(ref.path).fileName() + (ref.date.isValid() ? " · " + texsource::label(ref) : QString())}, {"detail", detail}, {"convertible", can}};
     }
     return out;
 }
@@ -2212,8 +2212,9 @@ QVariantList Workspace::texAlreadyThere() const
     const QDir dir(m_project.path("fonti/coda"));
     for (const QString &name : dir.entryList({"*.tex"}, QDir::Files, QDir::Name)) {
         QStringList dates;
-        for (const texsource::Lesson &lesson : texsource::lessons(files::read(dir.filePath(name))))
-            if (have.contains(lesson.date.toString("dd/MM/yyyy")))
+        const QList<texsource::Lesson> lessons = texsource::lessons(files::read(dir.filePath(name))), missing = texsource::missing(lessons, have);
+        for (const texsource::Lesson &lesson : lessons)
+            if (!std::any_of(missing.begin(), missing.end(), [&](const texsource::Lesson &m) { return m.date == lesson.date && m.nth == lesson.nth; }))
                 dates << lesson.date.toString("dd/MM/yyyy");
         if (!dates.isEmpty())
             out << QVariantMap{{"file", "fonti/coda/" + name}, {"name", name}, {"count", int(dates.size())}, {"dates", dates}};

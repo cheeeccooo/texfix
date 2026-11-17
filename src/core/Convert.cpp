@@ -62,6 +62,7 @@ struct Convert::Work {
     QString path;                                      // il file della fonte, relativo alla radice (senza «@data»)
     bool isTex = false;                                // un .tex di un altro autore: niente pagine, blocchi di righe
     QDate texDate;                                     // la lezione del .tex, se il file ne ha più d'una
+    int texNth = 1;                                    // la prima, la seconda… lezione di quel giorno
 };
 
 int Convert::Result::written() const
@@ -97,9 +98,8 @@ QList<Convert::Source> Convert::queue(const Project &project)
             QStringList have;
             for (const tx::Lesson &lesson : project.lessons())
                 have << lesson.date;
-            for (const texsource::Lesson &lesson : lessons)
-                if (!have.contains(lesson.date.toString("dd/MM/yyyy")))
-                    out << Source{texsource::spec("fonti/coda/" + name, lesson.date), kind, lesson.lines};
+            for (const texsource::Lesson &lesson : texsource::missing(lessons, have))
+                out << Source{texsource::spec("fonti/coda/" + name, lesson.date, lesson.nth), kind, lesson.lines};
             if (lessons.isEmpty())
                 out << Source{"fonti/coda/" + name, kind, Pages::size(dir.filePath(name))};
             continue;
@@ -123,7 +123,7 @@ QStringList Convert::interrupted(const Project &project)
 {
     QStringList out;
     for (const QJsonValue &v : readJson(project.path(RUNNING)).value("fonti").toArray())
-        if (QFileInfo::exists(project.path(texsource::parseSpec(v.toString()).first)))
+        if (QFileInfo::exists(project.path(texsource::parseSpec(v.toString()).path)))
             out << v.toString();
     return out;
 }
@@ -452,7 +452,8 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
         // le pagine e la scaletta di ogni fonte, insieme
         progress(0, QStringLiteral("leggo le fonti"));
         for (const QString &source : sources) {
-            const auto [path, date] = texsource::parseSpec(source);
+            const texsource::Ref ref = texsource::parseSpec(source);
+            const QString path = ref.path;
             Work work;
             work.source = source;
             work.path = path;
@@ -466,19 +467,20 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
             }
             // un .tex: una lezione per ogni \section{Lezione del …}, o il documento intero
             work.isTex = true;
-            QList<QDate> dates{date};
-            if (!date.isValid()) {
-                dates.clear();
+            QList<texsource::Ref> refs{ref};
+            if (!ref.date.isValid()) {
+                refs.clear();
                 for (const texsource::Lesson &lesson : texsource::lessons(files::read(m_project.path(path))))
-                    dates << lesson.date;
-                if (dates.isEmpty())
-                    dates << QDate();
+                    refs << texsource::Ref{path, lesson.date, lesson.nth};
+                if (refs.isEmpty())
+                    refs << ref;
             }
-            for (const QDate &d : std::as_const(dates)) {
-                work.texDate = d;
-                work.source = texsource::spec(path, d);
-                if (d.isValid())
-                    work.lesson.source = QStringLiteral("%1 · lezione del %2").arg(QFileInfo(path).fileName(), d.toString("dd/MM/yyyy"));
+            for (const texsource::Ref &r : std::as_const(refs)) {
+                work.texDate = r.date;
+                work.texNth = r.nth;
+                work.source = texsource::spec(path, r.date, r.nth);
+                if (r.date.isValid())
+                    work.lesson.source = QStringLiteral("%1 · %2").arg(QFileInfo(path).fileName(), texsource::label(r));
                 works << work;
             }
         }
@@ -493,7 +495,7 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
                         throw std::runtime_error("non riesco a leggere la fonte");
                     if (work.isTex) {
                         work.pages.isText = true;
-                        work.pages.text = texsource::workerText(QString::fromUtf8(file.readAll()), work.texDate);
+                        work.pages.text = texsource::workerText(QString::fromUtf8(file.readAll()), work.texDate, work.texNth);
                         work.key = hash(work.pages.text.toUtf8());
                     } else {
                         work.key = hash(file.readAll());
@@ -680,7 +682,7 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
                 continue;
             bool left = false;                         // restano lezioni di quel file ancora da convertire?
             for (const Source &s : queue(m_project))
-                left = left || texsource::parseSpec(s.file).first == it.key();
+                left = left || texsource::parseSpec(s.file).path == it.key();
             if (!left) {
                 QDir().mkpath(m_project.path("fonti/usate/più lezioni"));
                 QFile::rename(m_project.path(it.key()), files::freeName(m_project.path("fonti/usate/più lezioni/" + QFileInfo(it.key()).fileName())));

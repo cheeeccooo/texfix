@@ -4,6 +4,7 @@
 #include "core/Files.h"
 #include "core/Model.h"
 #include "core/Pages.h"
+#include "core/TexSource.h"
 #include "core/Tools.h"
 #include <QDirIterator>
 #include <QFile>
@@ -106,13 +107,26 @@ QStringList settle(const Project &project, const QStringList &boxes, const QStri
         did << QStringLiteral("lezione aggiunta al documento");
     }
     const QString used = project.path(QStringLiteral("fonti/usate/lezione %1").arg(info.number));
+    QStringList have;                                  // le date del corso, con la lezione appena aggiunta
+    for (const Lesson &lesson : project.lessons())
+        have << lesson.date;
     for (const QString &source : sources) {
-        const QString from = project.path(source);
-        if (!source.startsWith("fonti/coda/") || !QFileInfo::exists(from))
+        const QString file = texsource::parseSpec(source).path, from = project.path(file), name = QFileInfo(file).fileName();
+        if (!file.startsWith("fonti/coda/") || !QFileInfo::exists(from))
             continue;
-        QDir().mkpath(used);
-        if (QFile::rename(from, files::freeName(used + '/' + QFileInfo(source).fileName())))
-            did << QStringLiteral("%1 portata fra le fonti usate").arg(QFileInfo(source).fileName());
+        QString to = used;
+        if (Pages::kindOf(file) == "tex") {            // un .tex con più lezioni resta finché il corso non le ha tutte
+            const QList<texsource::Lesson> lessons = texsource::lessons(files::read(from));
+            if (!texsource::missing(lessons, have).isEmpty()) {
+                did << QStringLiteral("%1 resta fra le fonti da convertire: ha altre lezioni").arg(name);
+                continue;
+            }
+            if (lessons.size() > 1)
+                to = project.path("fonti/usate/più lezioni");
+        }
+        QDir().mkpath(to);
+        if (QFile::rename(from, files::freeName(to + '/' + name)))
+            did << QStringLiteral("%1 portata fra le fonti usate").arg(name);
     }
     return did.isEmpty() ? QStringList{QStringLiteral("era già tutto a posto")} : did;
 }

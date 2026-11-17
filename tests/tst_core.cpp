@@ -1193,6 +1193,70 @@ private slots:
         qunsetenv("TEXFIX_CLAUDE");
     }
 
+    // Aggiungi materiale con un .tex di un altro autore: le sue lezioni, senza quelle che il corso ha già, sono le «pagine».
+    void sortTex()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        files::write(p.path("src/src1.tex"), "\\section{Limiti}\n\\lezione{1}{01/10/2026}\n");
+        files::write(p.path("fonti/coda/C.tex"), "\\begin{document}\n\\section{Lezione del 1 ottobre 2026}\nGià nel corso.\n"
+                                                  "\\section{Lezione del 5 ottobre 2026}\nSerie.\n\\subsection{Criteri}\nx\n"
+                                                  "\\section{Lezione del 6 ottobre 2026}\nAncora limiti.\n\\section{Lezione del 6 ottobre 2026}\nDerivate.\n\\end{document}\n");
+        files::write(p.path("fonti/coda/D.tex"), "\\begin{document}\n\\section{Lezione del 1 ottobre 2026}\nGià nel corso.\n\\end{document}\n");
+        const QJsonObject answer{{"groups", QJsonArray{
+            QJsonObject{{"dest", "new"}, {"date", "05/10/2026"}, {"title", "Serie"}, {"pieces", QJsonArray{QJsonObject{{"file", "C.tex"}, {"from", 1}, {"to", 1}}}}},
+            QJsonObject{{"dest", "lesson"}, {"lesson", 1}, {"pieces", QJsonArray{QJsonObject{{"file", "C.tex"}, {"from", 2}, {"to", 2}}}}},
+            QJsonObject{{"dest", "new"}, {"date", ""}, {"title", "Derivate"}, {"pieces", QJsonArray{QJsonObject{{"file", "C.tex"}, {"from", 3}, {"to", 3}}}}}}}};
+        const QJsonObject line{{"type", "result"}, {"result", QString::fromUtf8(QJsonDocument(answer).toJson())}, {"total_cost_usd", 0.01}};
+        files::writeBytes(dir.filePath("risposta.json"), QJsonDocument(line).toJson(QJsonDocument::Compact) + '\n');
+        files::write(dir.filePath("claude"), QString("#!/bin/sh\ncat > '%1/richiesta'\ncat '%1/risposta.json'\n").arg(dir.path()));
+        QFile(dir.filePath("claude")).setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
+
+        JobControl control;
+        sort::Outcome o = sort::plan(p, Settings(), {"fonti/coda/D.tex"}, &control);
+        QVERIFY(o.failure.startsWith("Il corso ha già tutte le lezioni di D.tex"));
+        o = sort::plan(p, Settings(), {"fonti/coda/C.tex", "fonti/coda/D.tex"}, &control);
+        qunsetenv("TEXFIX_CLAUDE");
+        QCOMPARE(o.failure, QString());
+        const QString request = QJsonDocument::fromJson(files::read(dir.filePath("richiesta")).toUtf8()).object()
+                                    .value("message").toObject().value("content").toArray().first().toObject().value("text").toString();
+        QVERIFY(request.contains("FILE C.tex (LaTeX notes by another author: 3 lectures"));
+        QVERIFY(request.contains("- P1: date 05/10/2026, \"Lezione del 5 ottobre 2026\". Sections: Criteri. Beginning: Serie."));
+        QVERIFY(request.contains("- P3: date 06/10/2026, \"Lezione del 6 ottobre 2026\". Sections: . Beginning: Derivate."));
+        QVERIFY(!request.contains("Già nel corso"));
+        const QJsonObject plan = plans::load(p, o.plan);
+        const QJsonArray sections = plan.value("sezioni").toArray();
+        QCOMPARE(sections.size(), 3);
+        QCOMPARE(sections[2].toObject().value("voci").toArray().first().toObject().value("testo").toString(), "C.tex · seconda lezione del 06/10/2026");
+        QVERIFY(sort::previousPlan(plan).contains("- C.tex lectures 3-3"));
+
+        // «Avvia»: una lezione del .tex sola si converte, con il numero, e la data del file se il piano non la dice;
+        // quella da portare in una lezione va all'agente con la sua \section
+        const sort::Prepared prepared = sort::prepare(p, plan);
+        QCOMPARE(prepared.failure, QString());
+        QCOMPARE(prepared.sources, (QStringList{"fonti/coda/C.tex@2026-10-05", "fonti/coda/C.tex@2026-10-06.2"}));
+        QCOMPARE(prepared.wanted.value("fonti/coda/C.tex@2026-10-05").number, 2);
+        QCOMPARE(prepared.wanted.value("fonti/coda/C.tex@2026-10-06.2").number, 3);
+        QCOMPARE(prepared.wanted.value("fonti/coda/C.tex@2026-10-06.2").date, "06/10/2026");
+        QCOMPARE(prepared.agent.size(), 1);
+        QVERIFY(prepared.agent.first().startsWith("Integra in `src/src1.tex` queste fonti nuove: `fonti/coda/C.tex` (solo la parte `\\section{Lezione del 6 ottobre 2026}`)."));
+
+        // l'agente chiude una lezione con il .tex: il file resta finché il corso non ha tutte le sue lezioni
+        const QStringList did = newlesson::settle(p, Style::classic().boxes(), Style::classic().figureWrapper(), "src/src1.tex", {"fonti/coda/C.tex"});
+        QVERIFY(did.join(";").contains("C.tex resta fra le fonti da convertire"));
+        QVERIFY(QFileInfo::exists(p.path("fonti/coda/C.tex")));
+        files::write(p.path("fonti/coda/E.tex"), "\\begin{document}\n\\section{Lezione del 1 ottobre 2026}\nx\n\\section{Lezione del 1 ottobre 2026}\ny\n\\end{document}\n");
+        newlesson::settle(p, Style::classic().boxes(), Style::classic().figureWrapper(), "src/src1.tex", {"fonti/coda/E.tex@2026-10-01.2"});
+        QVERIFY(QFileInfo::exists(p.path("fonti/coda/E.tex")));                       // il corso ha una lezione del 1/10, non due
+        newlesson::settle(p, Style::classic().boxes(), Style::classic().figureWrapper(), "src/src1.tex", {"fonti/coda/D.tex"});
+        QVERIFY(QFileInfo::exists(p.path("fonti/usate/lezione 1/D.tex")));
+    }
+
     // Version control: modifiche, differenze, commit, cronologia.
     void versionControl()
     {
@@ -1318,8 +1382,29 @@ private slots:
         QCOMPARE(texsource::macros(texsource::preamble(doc)), QStringList{"\\newcommand{\\RR}{\\mathbb{R}}"});
         QVERIFY(texsource::workerText(doc, QDate(2026, 10, 22)).endsWith("% \\newcommand{\\RR}{\\mathbb{R}}\n\nSeconda. $\\RR$"));
         QVERIFY(texsource::lessons("\\begin{document}\\section{Introduzione}x\\end{document}").isEmpty());   // non è diviso in lezioni
-        QCOMPARE(texsource::parseSpec("fonti/coda/a.tex@2026-10-20"), (std::pair<QString, QDate>{"fonti/coda/a.tex", QDate(2026, 10, 20)}));
-        QCOMPARE(texsource::parseSpec("fonti/coda/a@b.tex").first, "fonti/coda/a@b.tex");
+        QCOMPARE(texsource::parseSpec("fonti/coda/a.tex@2026-10-20").path, "fonti/coda/a.tex");
+        QCOMPARE(texsource::parseSpec("fonti/coda/a.tex@2026-10-20").date, QDate(2026, 10, 20));
+        QCOMPARE(texsource::parseSpec("fonti/coda/a@b.tex").path, "fonti/coda/a@b.tex");
+
+        // due lezioni lo stesso giorno: la seconda è «@data.2», e il corso che ne ha una sola non ha la seconda
+        const QString twice = "\\begin{document}\n\\section{Lezione del 10 novembre 2026}\nFiltri.\n\\section{Lezione dell'11 novembre 2026}\nAltro.\n"
+                              "\\section{Lezione del 10 novembre 2026}\nPorte logiche.\n\\end{document}\n";
+        const QList<texsource::Lesson> both = texsource::lessons(twice);
+        QCOMPARE(both.size(), 3);
+        QCOMPARE(both[1].nth, 2);
+        QCOMPARE(both[1].text, "Porte logiche.");
+        QCOMPARE(both[2].date, QDate(2026, 11, 11));
+        QCOMPARE(texsource::spec("a.tex", both[1].date, both[1].nth), "a.tex@2026-11-10.2");
+        const texsource::Ref second = texsource::parseSpec("a.tex@2026-11-10.2");
+        QCOMPARE(second.path, "a.tex");
+        QCOMPARE(second.nth, 2);
+        QCOMPARE(texsource::label(second), "seconda lezione del 10/11/2026");
+        QCOMPARE(texsource::workerText(twice, second.date, second.nth), "Porte logiche.");
+        QCOMPARE(texsource::workerText(twice, second.date), "Filtri.");
+        const QList<texsource::Lesson> left = texsource::missing(both, {"10/11/2026"});
+        QCOMPARE(left.size(), 2);
+        QCOMPARE(left[0].nth, 2);
+        QCOMPARE(left[1].date, QDate(2026, 11, 11));
 
         QTemporaryDir dir;
         const QString root = dir.filePath("prova");

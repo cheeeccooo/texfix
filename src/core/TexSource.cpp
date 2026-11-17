@@ -55,6 +55,18 @@ QList<Lesson> lessons(const QString &document)
         out << lesson;
     }
     std::stable_sort(out.begin(), out.end(), [](const Lesson &a, const Lesson &b) { return a.date < b.date; });   // in ordine di calendario
+    for (qsizetype i = 1; i < out.size(); ++i)        // lo stesso giorno: nell'ordine del file
+        if (out[i].date == out[i - 1].date)
+            out[i].nth = out[i - 1].nth + 1;
+    return out;
+}
+
+QList<Lesson> missing(const QList<Lesson> &all, const QStringList &have)
+{
+    QList<Lesson> out;
+    for (const Lesson &lesson : all)
+        if (have.count(lesson.date.toString("dd/MM/yyyy")) < lesson.nth)
+            out << lesson;
     return out;
 }
 
@@ -67,22 +79,37 @@ QStringList macros(const QString &preambleText)
     return out;
 }
 
-QString spec(const QString &file, const QDate &date) { return date.isValid() ? file + '@' + date.toString(Qt::ISODate) : file; }
-
-std::pair<QString, QDate> parseSpec(const QString &specText)
+QString spec(const QString &file, const QDate &date, int nth)
 {
-    const qsizetype at = specText.lastIndexOf('@');
-    if (at < 0)
-        return {specText, {}};
-    const QDate date = QDate::fromString(specText.mid(at + 1), Qt::ISODate);
-    return date.isValid() ? std::pair{specText.left(at), date} : std::pair{specText, QDate()};
+    if (!date.isValid())
+        return file;
+    return file + '@' + date.toString(Qt::ISODate) + (nth > 1 ? QStringLiteral(".%1").arg(nth) : QString());
 }
 
-QString workerText(const QString &document, const QDate &date)
+Ref parseSpec(const QString &specText)
+{
+    static const RE tail(R"(@(\d{4}-\d{2}-\d{2})(?:\.(\d+))?$)");
+    const auto m = tail.match(specText);
+    const QDate date = m.hasMatch() ? QDate::fromString(m.captured(1), Qt::ISODate) : QDate();
+    if (!date.isValid())
+        return {specText, {}, 1};
+    return {specText.left(m.capturedStart()), date, m.captured(2).isEmpty() ? 1 : m.captured(2).toInt()};
+}
+
+QString label(const Ref &ref)
+{
+    static const QStringList order{"", "", "seconda ", "terza ", "quarta ", "quinta "};
+    if (!ref.date.isValid())
+        return {};
+    const QString which = ref.nth < order.size() ? order[ref.nth] : QStringLiteral("%1ª ").arg(ref.nth);
+    return QStringLiteral("%1lezione del %2").arg(which, ref.date.toString("dd/MM/yyyy"));
+}
+
+QString workerText(const QString &document, const QDate &date, int nth)
 {
     QString text = body(document);
     for (const Lesson &lesson : lessons(document))
-        if (lesson.date == date)
+        if (lesson.date == date && lesson.nth == nth)
             text = lesson.text;
     QStringList head;
     for (const QString &macro : macros(preamble(document)))
