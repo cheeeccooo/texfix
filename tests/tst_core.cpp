@@ -550,6 +550,62 @@ private slots:
         QCOMPARE(figures::authored(p, Settings(), Style::classic(), model, "src/src1.tex", "autore.tex").fitted, 0);   // di nuovo: niente da fare
     }
 
+    // Rivedi figure: le figure scritte fuori da Converti entrano nel registro con il loro segno (una volta), con la
+    // didascalia per descrizione; il ritaglio copre le zone del cancellino e tiene il disegno che c'era, per tornarci.
+    void reviewFigures()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        const Style style = Style::classic();
+        const QString drawn = "\\begin{tikzpicture}\n\\draw (0,0) -- (1,1);\n\\end{tikzpicture}";
+        files::write(p.path("src/src1.tex"), "\\section{S}\n\\begin{figure}\n    \\centering\n    " + QString(drawn).replace("\n", "\n    ")
+                                                 + "\n    \\caption{Una retta,\n    $y = x$.}\n\\end{figure}\nTesto.\n\\begin{center}\nSolo testo.\n\\end{center}\n");
+        QCOMPARE(figures::unadopted(p, style), 1);                                     // il testo centrato non è una figura
+        QCOMPARE(figures::adopt(p, style), 1);
+        QCOMPARE(figures::adopt(p, style), 0);                                         // una volta sola
+        QVERIFY(files::read(p.path("src/src1.tex")).contains("\\begin{figure} % img src1-01\n"));
+        QCOMPARE(figures::find(p, "src1-01").state, "scritta");
+        QCOMPARE(figures::caption(p, style, "src1-01"), "Una retta, $y = x$.");
+        QVERIFY(figures::code(p, "src1-01").startsWith("\\centering\n\\begin{tikzpicture}"));   // senza il rientro
+        QVERIFY(figures::origin(p, figures::find(p, "src1-01")).isEmpty());
+        figures::decide(p, "src1-01", true);
+        QCOMPARE(figures::find(p, "src1-01").decision, "accettata");
+
+        // la figura viene da una pagina: disegnata, poi ritagliata con il cancellino, poi di nuovo il disegno
+        QVERIFY(figures::place(p, "src1-01", drawn).isEmpty());
+        figures::Figure f = figures::find(p, "src1-01");
+        f.state = "disegnata";
+        f.source = "appunti.pdf";
+        f.page = 1;
+        f.box = {0.1, 0.1, 0.5, 0.5};
+        f.boxChosen = true;
+        f.erase = {{0.1, 0.1, 0.3, 0.3}};
+        figures::save(p, f);
+        QCOMPARE(figures::origin(p, f), "fonte");
+        QImage page(100, 100, QImage::Format_RGB32);
+        page.fill(Qt::black);
+        const QString pagePath = dir.filePath("pagina.png");
+        QVERIFY(page.save(pagePath));
+        QVERIFY(figures::crop(p, f, pagePath).isEmpty());
+        const QImage cut(p.path("imgs/src1-01.png"));
+        QCOMPARE(cut.size(), QSize(40, 40));                                           // esatto: il riquadro scelto
+        QCOMPARE(qGray(cut.pixel(5, 5)), 255);                                         // coperto dal cancellino
+        QCOMPARE(qGray(cut.pixel(30, 30)), 0);
+        QCOMPARE(figures::find(p, "src1-01").state, "ritagliata");
+        QVERIFY(figures::find(p, "src1-01").decision.isEmpty());                       // cambiata: di nuovo da rivedere
+        QVERIFY(files::read(p.path("src/src1.tex")).contains("\\includegraphics"));
+        QCOMPARE(figures::drawing(p, "src1-01"), drawn);                               // il disegno resta
+        QVERIFY(figures::original(p, figures::find(p, "src1-01"), pagePath));
+        QVERIFY(!figures::originalPath(p, figures::find(p, "src1-01")).isEmpty());
+        QVERIFY(figures::useDrawing(p, "src1-01").isEmpty());
+        QCOMPARE(figures::code(p, "src1-01"), drawn);
+        QCOMPARE(figures::find(p, "src1-01").state, "disegnata");
+    }
+
     // Il cambio di stile oltre gli ambienti: ciò che non ha un corrispondente è una domanda; una macro dello stile di
     // prima che il nuovo non ha cambia nome (stesso significato) o la sua definizione passa in texfix.sty; la
     // descrizione segue il .sty quando cambia; la libreria tiene gli stili dell'utente.

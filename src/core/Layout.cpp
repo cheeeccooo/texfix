@@ -27,12 +27,15 @@ const char *const REGISTRY = "salvataggi/impaginazione.json";
 QJsonObject registry(const Project &project) { return QJsonDocument::fromJson(files::read(project.path(REGISTRY)).toUtf8()).object(); }
 void saveRegistry(const Project &project, const QJsonObject &o) { files::write(project.path(REGISTRY), QString::fromUtf8(QJsonDocument(o).toJson())); }
 
+// La lezione senza ciò che vi scrive il programma per ricordare: le righe dell'impaginazione, e il segno di una figura
+// («% img src4-02» in fondo alla riga del suo \begin). Così dare il segno alle figure non cambia la lezione da impaginare.
 QStringList withoutSigns(const QStringList &lines)
 {
+    static const QRegularExpression figure(R"(\s*% img [\w.-]+\s*$)");
     QStringList out;
     for (const QString &line : lines)
         if (!line.trimmed().endsWith(QLatin1String("% impaginazione")))
-            out << line;
+            out << QString(line).remove(figure);
     return out;
 }
 // L'impronta della lezione senza le mosse dell'impaginazione: cambia solo se cambia il contenuto.

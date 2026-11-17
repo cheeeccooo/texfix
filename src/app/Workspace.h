@@ -163,7 +163,17 @@ public:
     // Rivedi figure: tutte le figure del progetto, lezione per lezione (type lesson | figure). redoFigure la ridisegna
     // (how: ridisegna) o la ritaglia dalla fonte (ritaglia): un lavoro, un passo della cronologia.
     Q_INVOKABLE QVariantList figureItems() const;
-    Q_INVOKABLE void redoFigure(const QString &id, const QString &how);
+    Q_INVOKABLE void redoFigure(const QString &id, const QString &how, const QString &instruction = {});
+    // Rivedi figure: le figure scritte fuori da Converti (quante, e metterle nel registro); la resa e l'originale di
+    // quelle che non li hanno ancora (un lavoro); accettare; tornare al disegno; ritagliare con riquadro e cancellino
+    // (frazioni della pagina); la pagina della fonte, se è già resa.
+    Q_INVOKABLE int unadoptedFigures() const;
+    Q_INVOKABLE void adoptFigures();
+    Q_INVOKABLE void renderFigures();
+    Q_INVOKABLE void acceptFigure(const QString &id, bool accepted);
+    Q_INVOKABLE void useDrawing(const QString &id);
+    Q_INVOKABLE void cropFigure(const QString &id, const QVariantList &box, const QVariantList &erase);
+    Q_INVOKABLE QString figurePage(const QString &id) const;
     // «Ricontrolla con le fonti»: l'agente rilegge le fonti e propone un piano.
     Q_INVOKABLE void recheckFigures();
     // Le lezioni di un .tex in coda che il corso ha già (file, name, count, dates); integrateTex le affida all'agente, con un piano.
@@ -413,5 +423,6 @@ private:
     double m_progress = 0;
     QString m_progressLabel, m_pdf;
     QHash<QString, QByteArray> m_shotsTried;            // il testo di una lezione di cui si sono già rifatte le pagine in piccolo
+    QSet<QString> m_figuresTried;                       // le figure (nome e codice) di cui si è già provata la resa
     int m_errorCount = 0, m_openDoubts = 0, m_openDeclared = 0, m_openFigures = 0, m_openLayout = 0, m_changeCount = 0;
 };

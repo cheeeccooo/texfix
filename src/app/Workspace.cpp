@@ -244,6 +244,7 @@ void Workspace::refreshTree()
     QVariantList lessons, others;
     QStringList inMain;
     m_openDoubts = m_openDeclared = m_openFigures = m_openLayout = 0;
+    m_openFigures = figures::unadopted(m_project, m_style);      // le figure scritte fuori, non ancora nel registro
     // le fonti usate, e di chi sono: della lezione che le nomina nei suoi marcatori, o della cartella «lezione N»
     struct Used { QString file, name, bare, folder; bool taken = false; };
     QList<Used> used;
@@ -1028,6 +1029,31 @@ void Workspace::restoreDeclared(const QString &lesson, const QString &hash)
     decided(lesson, QStringLiteral("Aggiunta rimessa"), review::restore(m_project, lesson, hash));
 }
 
+namespace {
+// La pagina della fonte da cui viene una figura, in immagine (la si rende se `make`; altrimenti vuoto se non c'è ancora).
+QString pageImageOf(const Project &project, const figures::Figure &figure, bool make)
+{
+    if (figure.source.isEmpty() || figure.page <= 0)
+        return {};
+    const QString dir = project.path("build/lavori/figure/pagine/" + figure.source);
+    if (!make) {
+        const QString full = dir + "/full-" + QString::number(figure.page) + ".png";
+        if (QFileInfo::exists(full))
+            return full;
+        for (const QString &name : QDir(dir).entryList({"full-*.png"}, QDir::Files, QDir::Name))   // pdftoppm: full-01, full-001
+            if (name.section('-', -1).section('.', 0, 0).toInt() == figure.page)
+                return dir + "/" + name;
+        return {};
+    }
+    QString source;
+    for (QDirIterator it(project.path("fonti"), {figure.source}, QDir::Files, QDirIterator::Subdirectories); it.hasNext();)
+        source = it.next();
+    if (source.isEmpty())
+        return {};
+    return Pages::read(source, dir).full.value(figure.page - 1);
+}
+}
+
 QVariantList Workspace::figureItems() const
 {
     QVariantList out;
@@ -1042,9 +1068,21 @@ QVariantList Workspace::figureItems() const
             const qsizetype at = text.indexOf("% img " + f.id);
             if (at < 0)
                 continue;
+            // di che cosa si tratta: la didascalia, o ciò che ne ha detto la conversione
+            const QString caption = figures::caption(m_project, m_style, f.id);
+            const QString origin = figures::origin(m_project, f);
+            QVariantList box, erase;
+            for (const double v : f.box)
+                box << v;
+            for (const QList<double> &z : f.erase)
+                erase << QVariant(QVariantList{z[0], z[1], z[2], z[3]});
             rows << QVariantMap{{"type", "figure"}, {"id", f.id}, {"lesson", lesson.file}, {"name", QStringLiteral("Figura %1").arg(++n)},
-                                {"description", f.description}, {"state", f.state}, {"note", f.note}, {"source", f.source}, {"page", f.page},
-                                {"line", int(text.left(at).count('\n')) + 1}, {"preview", figures::preview(m_project, f)}};
+                                {"description", caption.isEmpty() ? f.description : caption}, {"state", f.state}, {"note", f.note},
+                                {"source", f.source}, {"page", f.page}, {"decision", f.decision}, {"origin", origin},
+                                {"line", int(text.left(at).count('\n')) + 1}, {"render", figures::rendered(m_project, f.id)},
+                                {"original", figures::originalPath(m_project, f)}, {"pageImage", origin == "fonte" ? pageImageOf(m_project, f, false) : QString()},
+                                {"hasDrawing", f.state == "disegnata" || !figures::drawing(m_project, f.id).isEmpty()},
+                                {"box", box}, {"erase", erase}};
         }
         if (rows.isEmpty())
             continue;
@@ -1055,7 +1093,7 @@ QVariantList Workspace::figureItems() const
     return out;
 }
 
-void Workspace::redoFigure(const QString &id, const QString &how)
+void Workspace::redoFigure(const QString &id, const QString &how, const QString &instruction)
 {
     if (!hasProject())
         return;
@@ -1064,20 +1102,18 @@ void Workspace::redoFigure(const QString &id, const QString &how)
     checkpoint(QStringLiteral("Modifiche a mano"));
     const bool crop = how == "ritaglia";
     startJob(crop ? QStringLiteral("Ritaglio la figura") : QStringLiteral("Ridisegno la figura"),
-             [this, id, crop, project = m_project, settings = m_settings, style = m_style](JobControl *control) {
+             [this, id, crop, instruction, project = m_project, settings = m_settings, style = m_style](JobControl *control) {
                  QString error;
                  double cost = 0;
                  try {
                      const figures::Figure figure = figures::find(project, id);
-                     // la pagina della fonte, dalle fonti usate
-                     QString source;
-                     for (QDirIterator it(project.path("fonti"), {figure.source}, QDir::Files, QDirIterator::Subdirectories); it.hasNext();)
-                         source = it.next();
-                     QString page;
-                     if (!source.isEmpty())
-                         page = Pages::read(source, project.path("build/lavori/figure/pagine/" + figure.source)).full.value(figure.page - 1);
+                     // la pagina della fonte, dalle fonti usate; per una figura dell'autore, la resa del suo codice
+                     QString page = pageImageOf(project, figure, true);
+                     if (figures::origin(project, figure) == "autore" && figures::original(project, figure, {}))
+                         page = figures::originalPath(project, figure);
                      Model model(settings.quality, project.root(), control);
-                     error = crop ? figures::crop(project, figure, page) : figures::draw(project, settings, style, model, figure, page);
+                     error = crop ? figures::crop(project, figure, page) : figures::draw(project, settings, style, model, figure, page, instruction);
+                     figures::render(project, id);           // com'è venuta, per Rivedi figure
                      cost = model.cost();
                  } catch (const Stopped &) {
                      error = QStringLiteral("Lavoro fermato.");
@@ -1093,6 +1129,112 @@ void Workspace::redoFigure(const QString &id, const QString &how)
                      say(error.isEmpty() ? QStringLiteral("Figura inserita.") + paid : QStringLiteral("La figura non è stata inserita: %1").arg(error) + paid);
                  });
              });
+}
+
+int Workspace::unadoptedFigures() const { return hasProject() ? figures::unadopted(m_project, m_style) : 0; }
+
+// Le figure scritte fuori da Converti entrano nel registro: il loro segno va nelle lezioni.
+void Workspace::adoptFigures()
+{
+    if (!hasProject() || busy())
+        return;
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    const int n = figures::adopt(m_project, m_style);
+    if (n == 0)
+        return;
+    checkpoint(QStringLiteral("Figure nel registro"));
+    refreshTree();
+    emit filesChanged();
+}
+
+// Rivedi figure mostra ogni figura com'è nella lezione e accanto il suo originale: si fanno qui, in un lavoro, quelle che
+// mancano (una compilazione per figura). Una volta per codice: se una non compila non si ritenta finché non cambia.
+void Workspace::renderFigures()
+{
+    if (!hasProject() || busy())
+        return;
+    QList<figures::Figure> todo;
+    for (const figures::Figure &f : figures::all(m_project)) {
+        if (figures::lessonOf(m_project, f.id).isEmpty())
+            continue;
+        const bool missing = figures::rendered(m_project, f.id).isEmpty()
+                             || (!figures::origin(m_project, f).isEmpty() && figures::originalPath(m_project, f).isEmpty());
+        const QString key = f.id + '\n' + figures::code(m_project, f.id);
+        if (missing && !m_figuresTried.contains(key)) {
+            m_figuresTried.insert(key);
+            todo << f;
+        }
+    }
+    if (todo.isEmpty())
+        return;
+    startJob(QStringLiteral("Preparo le figure"), [this, todo, project = m_project](JobControl *control) {
+        try {
+            for (int i = 0; i < todo.size(); ++i) {
+                control->check();
+                control->progress(double(i) / todo.size(), todo[i].id);
+                figures::render(project, todo[i].id);
+                if (!figures::origin(project, todo[i]).isEmpty()) {
+                    QString page;
+                    try {
+                        page = pageImageOf(project, todo[i], true);
+                    } catch (const std::exception &) {
+                    }
+                    figures::original(project, todo[i], page);
+                }
+            }
+        } catch (const Stopped &) {
+        }
+        return std::function<void()>([this] { refreshTree(); });
+    });
+}
+
+void Workspace::acceptFigure(const QString &id, bool accepted)
+{
+    if (!hasProject())
+        return;
+    figures::decide(m_project, id, accepted);
+    refreshTree();
+}
+
+// Disegno o ritaglio, per una figura che viene da una fonte: si torna all'ultimo disegno senza rifarlo.
+void Workspace::useDrawing(const QString &id)
+{
+    if (!hasProject() || busy())
+        return;
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    const QString error = figures::useDrawing(m_project, id);
+    if (!error.isEmpty())
+        return say(error);
+    checkpoint(QStringLiteral("Figura: di nuovo il disegno"));
+    refreshTree();
+    emit filesChanged();
+}
+
+// Il ritaglio scelto a mano: riquadro e cancellino (in frazioni della pagina), poi si ritaglia di nuovo.
+void Workspace::cropFigure(const QString &id, const QVariantList &box, const QVariantList &erase)
+{
+    if (!hasProject() || busy())
+        return;
+    figures::Figure f = figures::find(m_project, id);
+    if (f.id.isEmpty() || box.size() != 4)
+        return;
+    f.box.clear();
+    for (const QVariant &v : box)
+        f.box << v.toDouble();
+    f.erase.clear();
+    for (const QVariant &z : erase) {
+        const QVariantList zone = z.toList();
+        if (zone.size() == 4)
+            f.erase << QList<double>{zone[0].toDouble(), zone[1].toDouble(), zone[2].toDouble(), zone[3].toDouble()};
+    }
+    f.boxChosen = true;
+    figures::save(m_project, f);
+    redoFigure(id, "ritaglia");
+}
+
+QString Workspace::figurePage(const QString &id) const
+{
+    return hasProject() ? pageImageOf(m_project, figures::find(m_project, id), false) : QString();
 }
 
 void Workspace::fixAll(const QString &only)

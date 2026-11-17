@@ -16,6 +16,7 @@ Rectangle {
     signal tabClosed(string file)
     signal manualAsked(string lesson, string block, int line, string what)
     signal paginateAsked(string lesson)
+    signal adoptFiguresAsked()
 
     // Che cosa si apre in una scheda: text, pdf, image; il resto (vuoto) lo apre un altro programma.
     function kindOf(file) {
@@ -75,6 +76,11 @@ Rectangle {
         const s = page.item.selection()
         s.file = page.file
         return s
+    }
+    function cropFigure(id) {                          // per le prove: apre il ritaglio di una figura
+        const page = current >= 0 ? editors.itemAt(current) : null
+        if (page && page.item && page.item.cropById)
+            page.item.cropById(id)
     }
     function showShots() {                              // per le prove: apre le miniature della prima mossa
         const page = current >= 0 ? editors.itemAt(current) : null
@@ -241,6 +247,14 @@ Rectangle {
                         function onChatAsked() { root.chatAsked() }
                         function onManualAsked(lesson, block, line, what) { root.manualAsked(lesson, block, line, what) }
                         function onPaginateAsked(lesson) { root.paginateAsked(lesson) }
+                        function onAdoptAsked() { root.adoptFiguresAsked() }
+                        // solo nell'anteprima: il .tex non si apre. La riga del \\begin spesso non lascia segno: la prima che lo lascia
+                        function onFigureAsked(file, line) {
+                            for (let l = line; l < line + 60; ++l)
+                                if (Workspace.toPdf(file, l).ok)
+                                    return root.jumpAsked(file, l)
+                            root.jumpAsked(file, line)
+                        }
                         function onLineAsked(file, line) { root.openFile(file, line) }
                     }
                     Connections {

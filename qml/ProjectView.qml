@@ -260,6 +260,8 @@ Item {
             } else if (name === "scegli") {
                 const a = argument.split(" ")
                 Workspace.chooseReading(a[0], a[1], parseInt(a[2]))
+            } else if (name === "ritaglio") {             // apre il ritaglio di una figura in Rivedi figure
+                editor.cropFigure(argument)
             } else if (name === "figura") {
                 Workspace.redoFigure(argument.split(" ")[0], argument.split(" ")[1])
             } else if (name === "risolvi") {
@@ -554,6 +556,8 @@ Item {
                         onManualAsked: (lesson, block, line, what) => root.startManual(lesson, block, line, what)
                         // «Impagina di nuovo»: prima si salvano le schede, perché la lezione si misura com'è
                         onPaginateAsked: lesson => { editor.saveAll(); Workspace.paginateLesson(lesson) }
+                        // Rivedi figure: le figure scritte fuori entrano nel registro (il segno va nelle lezioni: prima si salva)
+                        onAdoptFiguresAsked: { if (!root.manual && !Workspace.busy) { editor.saveAll(); Workspace.adoptFigures() } }
                         // chiudere la lezione dall'editor è lasciare la modifica a mano
                         onCurrentFileChanged: root.syncReview()
                         onTabClosed: file => { if (root.manual && file === root.manual.lesson) root.endManual(false) }

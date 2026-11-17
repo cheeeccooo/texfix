@@ -51,7 +51,7 @@ Due parti, un processo solo.
 | `core/Convert` | Converti: scaletta, blocchi trascritti e verificati insieme, assemblaggio, lezione nel main, fonte in `fonti/usate/lezione N/`, dubbi in `salvataggi/dubbi/<nome>.json`; cache in `build/lavori/converti/` |
 | `core/Snippets` | la resa compilata di piccoli pezzi (domande, letture, aggiunte) per i pannelli Rivedi: immagini trasparenti in `build/resa/` |
 | `core/Review` | ciò che resta da decidere: i dubbi (`salvataggi/dubbi/`: scegli una lettura, riapri, annulla la modifica) e le aggiunte e correzioni dichiarate (`salvataggi/correzioni.json`: tieni, togli, rimetti); i conti per lezione |
-| `core/Figures` | il registro delle figure (`salvataggi/figure.json`); il segno `% img <lezione>-NN` nella lezione; «Ridisegna» (TikZ: disegno, prova con `pdflatex`, revisione sulla resa) e «Ritaglia dalla fonte» (`imgs/<nome>.png`); i pacchetti chiesti dai disegni vanno in `progetto.json` e da lì in `texfix.sty` |
+| `core/Figures` | il registro delle figure (`salvataggi/figure.json`), anche di quelle scritte fuori (`adopt`); didascalia, resa e originale per Rivedi figure; il segno `% img <lezione>-NN` nella lezione; «Ridisegna» (TikZ: disegno, prova con `pdflatex`, revisione sulla resa) e «Ritaglia dalla fonte» (`imgs/<nome>.png`); i pacchetti chiesti dai disegni vanno in `progetto.json` e da lì in `texfix.sty` |
 | `core/Fix` | errori e righe fuori misura di una lezione: gli errori al modello (sostituzioni esatte), le righe prima spezzando il paragrafo a una fine di frase poi con varianti del modello; ogni mossa resta solo se, compilata (`Compiler::compileSync`), migliora |
 | `core/Layout` | l'impaginazione, con qualunque stile: dove cade ogni blocco nel PDF (SyncTeX, e l'area del testo scritta nel log da `texfix.sty`); un'unità a cavallo di due pagine (o colonne) va a pagina nuova (`\newpage % impaginazione` prima del marcatore) se il vuoto è al più il 25%; altrimenti, o se è più lunga di una colonna, si spezza in un punto scelto: il comando dello stile (`comando_spezza`: `\tcbbreak` per `styles`, `\pagebreak` senza stile) sull'ultima cucitura fra due paragrafi prima del punto in cui passerebbe alla colonna dopo (se le pagine in piccolo del prima e del dopo sono uguali la mossa ha il segno «invariata»: `same`, `invariata` nel registro); se nessuna mossa regge resta proposta; registro `salvataggi/impaginazione.json` |
 | `core/AgentTools` | gli strumenti che l'app dà all'agente (`stato_progetto`, `compila_lezione`, `compila_documento`, `dubbi`, `impagina`), il protocollo a righe (MCP) e il prompt di sistema dell'agente |
@@ -115,7 +115,7 @@ rileggere gli editor senza modifiche in sospeso; una rilettura svuota la pila de
 
 `--gesti`, separati da «;»: `apri FILE [RIGA]`, `compila`, `tutto`, `salta` (⌘J), `sorgente PAGINA X Y`, `divisore 0|1|2`,
 `avvisi`, `progetto chiuso`, `annulla`, `ripeti`, `passo TITOLO`, `scrivi FILE TESTO`, `fatta FILE`, `impostazioni`,
-`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `converti` (tutta la coda), `converti finestra`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `lezione N DATA FILE…` (crea una lezione), `nuova-lezione` (apre la finestra), `materiale FILE…` (fa il piano dello smistamento), `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`, `rinomina FILE NOME`, `console`, `argomenti` (propone la scaletta), `applica-argomenti`, `per-data`, `salva-profilo NOME`, `nuovo CARTELLA [PROFILO]`, `correggo LEZIONE DUBBIO`, `decidi LEZIONE [DUBBIO…]` (costa), `tag [no]` (mostra o nasconde i tag di provenienza), `libreria STILE`, `avvia-piano`, `archivia`, `a-mano` (la prima mossa, a mano), `risolta`, `mossa STATO` (decide la mossa attuale), `annulla-mossa`, `elimina-impaginazioni`, `chiudi-scheda`, `inserisci TESTO`, `miniature`, `ramo LEZIONE` (apre la lezione nell'albero), `pannello PANNELLO LEZIONE`, `cita` (⌘L), `allega FILE`, `foto editor|pdf|finestra`, `invia`, `storico`, `chat`, `attivita`, `versione si|no`, `fonti-lezione FILE…`. Ogni gesto parte quando niente lavora; poi la foto.
+`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `converti` (tutta la coda), `converti finestra`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `ritaglio NOME` (apre il ritaglio a mano), `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `lezione N DATA FILE…` (crea una lezione), `nuova-lezione` (apre la finestra), `materiale FILE…` (fa il piano dello smistamento), `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`, `rinomina FILE NOME`, `console`, `argomenti` (propone la scaletta), `applica-argomenti`, `per-data`, `salva-profilo NOME`, `nuovo CARTELLA [PROFILO]`, `correggo LEZIONE DUBBIO`, `decidi LEZIONE [DUBBIO…]` (costa), `tag [no]` (mostra o nasconde i tag di provenienza), `libreria STILE`, `avvia-piano`, `archivia`, `a-mano` (la prima mossa, a mano), `risolta`, `mossa STATO` (decide la mossa attuale), `annulla-mossa`, `elimina-impaginazioni`, `chiudi-scheda`, `inserisci TESTO`, `miniature`, `ramo LEZIONE` (apre la lezione nell'albero), `pannello PANNELLO LEZIONE`, `cita` (⌘L), `allega FILE`, `foto editor|pdf|finestra`, `invia`, `storico`, `chat`, `attivita`, `versione si|no`, `fonti-lezione FILE…`. Ogni gesto parte quando niente lavora; poi la foto.
 
 ## Regole e stile (SPEC §4)
 
@@ -169,8 +169,20 @@ dell'ultima compilazione, con «Sistema» (`fixAll(lezione)`). Dopo «Riorganizz
 passo nel file che lo contiene. La lista si rilegge ma cambia solo ciò che è cambiato (`ReviewView.reload`: una riga
 uguale a prima resta la stessa, e le schede restano finché il numero delle righe non cambia).
 
-**§3.8 Figure.** Registro unico, «Ridisegna», «Ritaglia dalla fonte», Rivedi figure, «Ricontrolla con le fonti»
-(l'agente rilegge le fonti e propone un piano).
+**§3.8 Figure.** Registro unico, «Ridisegna», «Ritaglia dalla fonte», «Ricontrolla con le fonti» (l'agente rilegge le
+fonti e propone un piano). Rivedi figure (`qml/FiguresView.qml`) ha tutte le figure delle lezioni: quelle scritte fuori da
+Converti (a mano, dall'agente, portate da fuori) entrano nel registro quando lo si apre (`figures::adopt`: il segno
+`% img <lezione>-NN` sulla riga del `\begin`, stato «scritta»; l'impaginazione non lo conta come una modifica). Di ogni
+figura: la didascalia come nel PDF (`figures::caption`: il comando dello stile, anche se la descrizione lo dice con un
+esempio, o `\caption`; altrimenti la descrizione della conversione), la resa com'è nella lezione (`figures::render`,
+compilata da sola con il preambolo di `main.tex` e rifatta quando cambia il codice, un'immagine inclusa o uno stile) e,
+se viene da un'altra, l'originale accanto (il pezzo della pagina della fonte, o la resa del codice dell'autore, tenuto in
+`salvataggi/figure/<nome>-autore.tex`). Rese e originali che mancano si fanno in un lavoro, «Preparo le figure». «Vai
+alla figura» la mostra nell'anteprima del documento (non apre il `.tex`). Si accetta (`decisione` nel registro; le figure
+non accettate contano fra quelle da rivedere), si rigenera con un commento facoltativo per il disegnatore (vede anche
+il disegno com'è; senza fonte rifà quello) e, se viene da una fonte, si passa fra l'ultimo disegno
+(`salvataggi/figure/<nome>.tex`, che resta anche passando al ritaglio) e il ritaglio, che si sistema a mano: riquadro e
+cancellino sulla pagina (`cancellino`, `riquadro_scelto`: esatto, senza margine).
 
 **§3.9 Impaginazione.** L'impaginazione non usa il modello: ogni mossa si misura compilando la lezione (una lezione con molte figure
 costa 7-10 secondi a compilazione, ed è lì che va il tempo). L'ordine conta: in ogni lezione c'è una mossa attuale, la prima ancora da rivedere
@@ -247,7 +259,7 @@ A confronto con la vecchia app sulle stesse pagine (`../prova-texfix`, src4.pdf 
 riquadri, stesso numero di definizioni e di figure; la nuova dà titoli alle sezioni, mette in un riquadro
 un'osservazione che la vecchia lasciava in prosa, e non va a capo nel sorgente. Simili, non uguali.
 
-**§5 Prove.** `./build.sh prove` (47 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
+**§5 Prove.** `./build.sh prove` (48 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
 spesso, contro `tests/misure.txt`; `--scrivi` li riscrive). Dei riferimenti della vecchia app sono portate le formule in display vere (`tests/dati/display.json`), per la mossa
 sulle formule; il resto dipende da prompt e stile, che qui sono cambiati per scelta.
 
