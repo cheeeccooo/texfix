@@ -11,7 +11,7 @@ Rectangle {
     color: Theme.window
     signal lineAsked(string file, int line)
     signal manualAsked(string lesson, string block, int line, string what)
-    signal refreshAsked()                              // ciò che è cambiato va rimpaginato: lo fa ProjectView
+    signal paginateAsked(string lesson)                // «Impagina di nuovo»: lo fa ProjectView, salvate le schede
 
     property var items: []
     property int current: -1                           // la scheda aperta (fra le mosse); -1: la panoramica
@@ -37,15 +37,11 @@ Rectangle {
         items = Workspace.layoutItems()
         if (current >= moves.length)
             current = -1
-        // una lezione già impaginata e poi cambiata: si rimpagina da sé, appena niente lavora
-        if (items.some(i => i.type === "todo" && !i.fresh) && !Workspace.busy)
-            Qt.callLater(root.refreshAsked)
     }
     Component.onCompleted: reload()
     onVisibleChanged: if (visible) reload()
     Connections { target: Workspace; function onFilesChanged() { if (root.visible) root.reload() } }
     Connections { target: Workspace; function onTreeChanged() { if (root.visible) root.reload() } }
-    Connections { target: Workspace; function onBusyChanged() { if (root.visible && !Workspace.busy) root.reload() } }
 
     function showLesson(lesson) { current = -1 }       // dall'albero: la panoramica
     function showShots() { if (moves.length > 0) current = 0 }   // per le prove: la prima scheda
@@ -62,7 +58,7 @@ Rectangle {
     }
     function badgeOf(row) {
         if (row.role === "rifare")
-            return { text: Workspace.jobRunning ? "la rifaccio…" : "da rifare: la lezione è cambiata", color: Theme.idle }
+            return { text: "cambiata", color: Theme.idle }
         if (row.role === "attesa")
             return { text: "aspetta le mosse prima", color: Theme.idle }
         return ({ fatta: { text: "da rivedere", color: Theme.warn }, proposta: { text: "da rivedere", color: Theme.warn },
@@ -213,6 +209,13 @@ Rectangle {
                                 font.pixelSize: Theme.smallSize
                             }
                             TxButton {
+                                visible: lessonGroup.modelData.todo && !lessonGroup.modelData.fresh
+                                text: "Impagina di nuovo"
+                                hint: "Rimpagina la lezione dal punto cambiato in giù: ciò che sta sopra resta deciso"
+                                enabled: !Workspace.busy
+                                onClicked: root.paginateAsked(lessonGroup.modelData.lesson)
+                            }
+                            TxButton {
                                 visible: lessonGroup.canRest
                                 text: "Accetta le restanti"
                                 hint: "Accetta tutte le mosse fatte da sole in questa lezione"
@@ -223,9 +226,7 @@ Rectangle {
                         TxLabel {
                             visible: lessonGroup.modelData.todo
                             width: parent.width
-                            text: lessonGroup.modelData.fresh ? "Non ancora impaginata: «Impagina ciò che è nuovo»."
-                                  : Workspace.jobRunning ? "Cambiata: la rimpagino dal punto cambiato in giù…"
-                                  : "Cambiata dopo l'ultima impaginazione: si rimpagina dal punto cambiato in giù appena niente lavora."
+                            text: lessonGroup.modelData.fresh ? "Non ancora impaginata: «Impagina ciò che è nuovo»." : "Cambiata."
                             color: Theme.warn
                         }
                         Flow {

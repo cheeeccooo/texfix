@@ -1157,29 +1157,17 @@ void Workspace::paginate()
     paginateLessons(lessons, QStringLiteral("Impagino"));
 }
 
-namespace {
-QByteArray textHash(const QString &text) { return QCryptographicHash::hash(text.toUtf8(), QCryptographicHash::Sha1); }
-}
-
-// Rivedi impaginazione è sempre quella della lezione com'è: una lezione già impaginata e poi cambiata si rimpagina da sé
-// dal punto cambiato in giù (ciò che sta sopra resta deciso). Una volta per testo: se non riesce (ha errori) non si
-// ritenta finché la lezione non cambia ancora.
-void Workspace::refreshLayout()
+// «Impagina di nuovo» su una lezione cambiata dopo l'ultima impaginazione: dal punto cambiato in giù (ciò che sta sopra
+// resta deciso).
+void Workspace::paginateLesson(const QString &file)
 {
-    if (!hasProject() || busy())
+    if (!hasProject())
         return;
-    QStringList lessons;
-    for (const QString &file : m_project.inputs()) {
-        if (m_settings.isDone(file) || !QFileInfo::exists(m_project.path(file)) || !layout::known(m_project, file) || !layout::needed(m_project, file))
-            continue;
-        const QByteArray hash = textHash(files::read(m_project.path(file)));
-        if (m_layoutTried.value(file) == hash)
-            continue;
-        m_layoutTried.insert(file, hash);
-        lessons << file;
-    }
-    if (!lessons.isEmpty())
-        paginateLessons(lessons, QStringLiteral("Rimpagino ciò che è cambiato"));
+    if (busy())
+        return say(QStringLiteral("C'è già un lavoro in corso."));
+    if (!layout::needed(m_project, file))
+        return say(QStringLiteral("Niente di nuovo da impaginare."));
+    paginateLessons({file}, QStringLiteral("Impagino %1").arg(QFileInfo(file).fileName()));
 }
 
 void Workspace::paginateLessons(const QStringList &lessons, const QString &title)

@@ -15,7 +15,7 @@ Rectangle {
     signal chatAsked()
     signal tabClosed(string file)
     signal manualAsked(string lesson, string block, int line, string what)
-    signal layoutRefreshAsked()
+    signal paginateAsked(string lesson)
 
     // Che cosa si apre in una scheda: text, pdf, image; il resto (vuoto) lo apre un altro programma.
     function kindOf(file) {
@@ -240,7 +240,7 @@ Rectangle {
                         function onCloseAsked() { root.closeTab(page.index) }
                         function onChatAsked() { root.chatAsked() }
                         function onManualAsked(lesson, block, line, what) { root.manualAsked(lesson, block, line, what) }
-                        function onRefreshAsked() { root.layoutRefreshAsked() }
+                        function onPaginateAsked(lesson) { root.paginateAsked(lesson) }
                         function onLineAsked(file, line) { root.openFile(file, line) }
                     }
                     Connections {
