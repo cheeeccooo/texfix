@@ -13,6 +13,7 @@
 #include <QGuiApplication>
 #include <QLocalServer>
 #include <QLocalSocket>
+#include <QMouseEvent>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
 #include <QQuickWindow>
@@ -65,6 +66,14 @@ void runHandsFree(QQuickWindow *window, QStringList gestures, const QString &pho
             return;
         if (!gestures.isEmpty()) {
             const QString gesture = gestures.takeFirst().trimmed();
+            if (gesture.startsWith("clic ")) {         // un clic vero del mouse, nel punto X Y della finestra (in punti)
+                const QPointF at(gesture.section(' ', 1, 1).toDouble(), gesture.section(' ', 2, 2).toDouble());
+                QMouseEvent press(QEvent::MouseButtonPress, at, window->mapToGlobal(at), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+                QCoreApplication::sendEvent(window, &press);
+                QMouseEvent release(QEvent::MouseButtonRelease, at, window->mapToGlobal(at), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+                QCoreApplication::sendEvent(window, &release);
+                return;
+            }
             emit Workspace::instance()->gesture(gesture.section(' ', 0, 0), gesture.section(' ', 1));
             return;
         }

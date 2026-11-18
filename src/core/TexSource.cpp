@@ -108,6 +108,35 @@ QString workerText(const QString &document, const QDate &date, int nth)
     return head.isEmpty() ? text : "% Macro dell'autore (non si copiano: si scrive nella notazione del progetto)\n" + head.join('\n') + "\n\n" + text;
 }
 
+QStringList gist(const QString &latex, int chars)
+{
+    static const RE comment(R"((?<!\\)%[^\n]*)"), floats(R"(\\begin\{(figure|table|circuitikz|tikzpicture)\*?\}.*?\\end\{\1\*?\})",
+                                                         RE::DotMatchesEverythingOption),
+        noise(R"(\\(section|lezione\s*\{[^}]*\}|label|caption|cref|Cref|ref|eqref|tagref|centering|noindent|hfill|vspace|hspace)\*?(\[[^\]]*\])?(\{[^}]*\})?)"),
+        frame(R"(\\(begin|end)\{[^}]*\}(\[[^\]]*\])?(\{[^}]*\})?)"), sub(R"(\\subsection\*?\s*\{([^}]*)\})");
+    QString text = latex;
+    static const RE empty(R"(\(\s*\))");               // ciò che resta di un rimando tolto
+    text.remove(comment).remove(floats).remove(noise).remove(frame).remove(empty);
+    QStringList out;
+    auto add = [&](const QString &title, const QString &body) {
+        QString prose = body.simplified();
+        if (prose.size() > chars)
+            prose = prose.left(chars).section(' ', 0, -2) + "…";
+        if (!title.isEmpty() || !prose.isEmpty())
+            out << (title.isEmpty() ? QStringLiteral("(inizio)") : title) + (prose.isEmpty() ? QString() : ": " + prose);
+    };
+    qsizetype last = 0;
+    QString title;
+    for (auto it = sub.globalMatch(text); it.hasNext();) {
+        const auto m = it.next();
+        add(title, text.mid(last, m.capturedStart() - last));
+        title = m.captured(1).simplified();
+        last = m.capturedEnd();
+    }
+    add(title, text.mid(last));
+    return out;
+}
+
 QSet<QString> shingles(const QString &latex)
 {
     static const RE comment(R"((?<!\\)%[^\n]*)"), math(R"(\$[^$]*\$)"), command(R"(\\[a-zA-Z]+\*?)"), word(R"(\p{L}{3,})");

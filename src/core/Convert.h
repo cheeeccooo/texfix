@@ -50,6 +50,7 @@ public:
         QString date;
         // in un progetto per argomento: in fondo all'argomento `topic`, o un argomento nuovo `title` dopo `after`
         QString topic, title, after;
+        QString note;                                  // ciò che il corso spiega già: si richiama, non si riscrive
         bool byTopic() const { return !topic.isEmpty() || !title.isEmpty(); }
     };
     Result run(const QStringList &sources, const QHash<QString, Wanted> &wanted = {});

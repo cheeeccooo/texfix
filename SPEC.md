@@ -145,6 +145,9 @@ Una porta sola per il materiale nuovo. Non ci sono più Nuova lezione, il tasto 
     nuovo», «Salta»;
   - *si sovrappone alla lezione N* (o all'argomento): scelte «Fondi nella lezione N» (l'agente, con un suo piano),
     «Lezione a parte», «Salta»;
+  - *lezione nuova che riprende in parte la lezione N*: un ripasso, la stessa derivazione, gli stessi esempi. È una
+    domanda, senza risposta già scelta: «Lezione nuova, con tutto», «Lezione nuova, senza ripetere: rimanda alla lezione N»
+    (chi la scrive richiama in una frase ciò che la N spiega già e scrive per intero solo il nuovo), «Fondi nella lezione N»;
   - *lezione nuova* (o argomento nuovo), con data e titolo;
   - *da saltare*: pagine bianche, copertine, indici, doppioni.
 - **[S]** **Ruoli delle fonti**, proposti dal modello e confermati nel piano (una domanda per fonte):

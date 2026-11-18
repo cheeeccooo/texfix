@@ -37,7 +37,7 @@ Say also the role of every file:
 - "exercises": exercise sheets: they go with the unit whose topic they practise, or into a new unit of exercises.
 Return only a JSON object:
 {"roles": {"<file name>": "main|supplementary|exercises"},
- "groups": [{"dest": "new", "date": "<GG/MM/AAAA or empty>", "title": "<Italian, at most 40 characters>", "after": <topic number, only in a course by topics>, "pieces": [{"file": "<name>", "from": <first page>, "to": <last page>}], "overlap": <only for a group with pieces of more than one file: true if they tell the same things twice (two sets of notes of the same lecture), false if they are parts that follow each other; when unsure, true>, "why": "<Italian, at most 15 words>"},
+ "groups": [{"dest": "new", "date": "<GG/MM/AAAA or empty>", "title": "<Italian, at most 40 characters>", "after": <topic number, only in a course by topics>, "pieces": [{"file": "<name>", "from": <first page>, "to": <last page>}], "overlap": <only for a group with pieces of more than one file: true if they tell the same things twice (two sets of notes of the same lecture), false if they are parts that follow each other; when unsure, true>, "repeats": [{"unit": <number of an existing unit that this new one explains again, in part: a recap, the same derivation, the same definitions or examples, even if it then goes further; not a unit it merely continues>, "what": "<Italian, what it explains again, at most 12 words>"}], "why": "<Italian, at most 15 words>"},
             {"dest": "unit", "unit": <number of the existing unit>, "pieces": [...], "why": "..."}],
  "skip": [{"file": "<name>", "from": <k>, "to": <k>, "why": "..."}]}
 Rules: every page of every file is in exactly one piece of one group or in skip; pieces are ranges of consecutive pages of one file; a text file is one piece with "from": 1, "to": 1. A lecture of LaTeX notes is never split, and two of them go in the same group only if they are the same lecture (two lectures on the same day are usually two lectures). Groups of new lectures in calendar order; inside a group, pieces in reading order. The roles under USER ROLES are fixed by the user: keep them and sort accordingly.
@@ -128,7 +128,6 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
     const bool byTopic = settings.byTopic();
     try {
         // il corso com'è: le sue unità (lezioni, o argomenti), con il testo per riconoscere ciò che c'è già
-        static const QRegularExpression sub(R"(\\subsection\*?\{([^}]*)\})");
         const QList<Lesson> lessons = project.lessons();
         QStringList course;
         QHash<int, QString> unitFile;                  // il numero che vede il modello → il file
@@ -138,16 +137,14 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
         for (qsizetype i = 0; i < lessons.size(); ++i) {
             const Lesson &lesson = lessons[i];
             const QString text = files::read(project.path(lesson.file));
-            QStringList sections;
-            for (auto it = sub.globalMatch(text); it.hasNext();)
-                sections << it.next().captured(1);
+            const QStringList sections = texsource::gist(text);   // il titolo e l'inizio di ogni sezione
             const int n = byTopic ? int(i + 1) : lesson.number;
             unitFile.insert(n, lesson.file);
             unitNumber.insert(lesson.file, n);
             unitLabel.insert(lesson.file, byTopic ? QStringLiteral("argomento «%1»").arg(lesson.title) : QStringLiteral("lezione %1 · %2").arg(lesson.number).arg(lesson.title));
             unitWords.insert(lesson.file, texsource::shingles(text));
-            course << (byTopic ? QStringLiteral("- topic %1, \"%2\". Sections: %3").arg(n).arg(lesson.title, sections.join("; "))
-                               : QStringLiteral("- lecture %1, date %2, \"%3\". Sections: %4").arg(n).arg(lesson.date.isEmpty() ? "?" : lesson.date, lesson.title, sections.join("; ")));
+            course << (byTopic ? QStringLiteral("- topic %1, \"%2\". Sections: %3").arg(n).arg(lesson.title, sections.join(" | "))
+                               : QStringLiteral("- lecture %1, date %2, \"%3\". Sections: %4").arg(n).arg(lesson.date.isEmpty() ? "?" : lesson.date, lesson.title, sections.join(" | ")));
         }
         // con la preposizione giusta: «alla lezione 3 · Titolo», «nell'argomento «Titolo»»
         auto with = [&](const QString &preposition, const QString &file) {
@@ -171,6 +168,13 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
         for (const QJsonValue &q : previous.value("domande").toArray())
             if (q.toObject().value("chiave").toString() == "ruolo" && ROLE_NAMES.contains(q.toObject().value("risposta").toString()))
                 userRoles.insert(q.toObject().value("file").toString(), q.toObject().value("risposta").toString());
+        QHash<QString, QString> answered;              // le risposte già date su ciò che una lezione nuova riprende
+        for (const QJsonValue &s : previous.value("sezioni").toArray()) {
+            const QJsonObject crossing = s.toObject().value("intreccio").toObject();
+            if (!crossing.value("valore").toString().isEmpty())
+                answered.insert(crossing.value("unita").toString() + '|' + s.toObject().value("voci").toArray().first().toObject().value("testo").toString(),
+                                crossing.value("valore").toString());
+        }
         QSet<QString> asNew;
         for (const QJsonValue &s : previous.value("sezioni").toArray())
             if (s.toObject().value("gruppo").toObject().value("dest").toString() == "version" && s.toObject().value("scelta").toObject().value("valore").toString() == "nuovo")
@@ -220,7 +224,6 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
                     material << QStringLiteral("FILE %1 (LaTeX notes, one piece)\n%2").arg(name, texsource::body(document).left(1200));
                     continue;
                 }
-                static const QRegularExpression heading(R"(\\(?:sub)*section\*?\{([^}]*)\})");
                 QStringList described;
                 QJsonArray specs;
                 int count = 0, size = 0;
@@ -231,13 +234,8 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
                                            QJsonObject{{"file", name}, {"lezioni", QJsonArray{t.spec}}, {"in", t.in}}, false));
                         continue;
                     }
-                    QStringList sections;
-                    for (auto it = heading.globalMatch(t.lesson.text); it.hasNext();)
-                        sections << it.next().captured(1);
-                    const qsizetype first = t.lesson.text.indexOf("\\sub");
-                    const QString start = t.lesson.text.left(first < 0 ? 400 : qMin<qsizetype>(400, first)).simplified();
-                    described << QStringLiteral("- P%1: date %2, \"%3\". Sections: %4. Beginning: %5")
-                                     .arg(++count).arg(t.lesson.date.toString("dd/MM/yyyy"), t.lesson.heading, sections.join("; "), start);
+                    described << QStringLiteral("- P%1: date %2, \"%3\". Sections: %4")
+                                     .arg(++count).arg(t.lesson.date.toString("dd/MM/yyyy"), t.lesson.heading, texsource::gist(t.lesson.text).join(" | "));
                     if (!t.sameDate.isEmpty())
                         described.last() += QStringLiteral(" (the course has unit %1 on the same day, not written from this one)").arg(unitNumber.value(t.sameDate));
                     specs << t.spec;
@@ -431,6 +429,35 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
                 const bool repeat = group.value("overlap").toBool(true);   // se non lo dice: il percorso sicuro
                 section["scelta"] = choice({"Unisci e converti, in quest'ordine", "Fai fondere all'agente"}, {"unisci", "fondi"}, repeat ? "fondi" : "unisci");
                 section["titolo"] = title + (repeat ? QStringLiteral(" · si ripetono") : QStringLiteral(" · si seguono"));
+            }
+            // riprende in parte lezioni che ci sono: si chiede che cosa farne, senza una risposta già scelta
+            QStringList again, known;
+            QString first;
+            for (const QJsonValue &r : group.value("repeats").toArray()) {
+                const QString unit = unitFile.value(r.toObject().value("unit").toInt());
+                const QString what = r.toObject().value("what").toString().trimmed();
+                if (unit.isEmpty() || what.isEmpty())
+                    continue;
+                if (first.isEmpty())
+                    first = unit;
+                again << QStringLiteral("%1%2 (%3)").arg(byTopic ? "l'" : "la ", unitLabel.value(unit), what);
+                known << QStringLiteral("%1 \"%2\" (%3): %4").arg(byTopic ? "topic" : QStringLiteral("lecture %1").arg(unitNumber.value(unit)),
+                                                                  Project::lessonOf(unit, files::read(project.path(unit))).title, unit, what);
+            }
+            if (!first.isEmpty()) {
+                const QString shortName = byTopic ? unitLabel.value(first) : QStringLiteral("lezione %1").arg(unitNumber.value(first));
+                const QString fresh = byTopic ? QStringLiteral("Argomento nuovo") : QStringLiteral("Lezione nuova");
+                QJsonObject crossing = choice({fresh + ", con tutto", fresh + ", senza ripetere: rimanda " + (byTopic ? "all'" : "alla ") + shortName,
+                                               "Fondi " + QString(byTopic ? "nell'" : "nella ") + shortName},
+                                              {"tieni", "rimanda", "fondi"}, answered.value(first + '|' + entries.first().toObject().value("testo").toString()));
+                crossing["testo"] = QStringLiteral("Riprende in parte %1. Che cosa ne faccio?").arg(again.join("; "));
+                crossing["unita"] = first;
+                crossing["nota"] = known.join("; ");
+                section["intreccio"] = crossing;
+                QString titled = section.value("titolo").toString();   // prima del perché del modello, se c'è
+                const qsizetype dash = titled.indexOf(" — ");
+                titled.insert(dash < 0 ? titled.size() : dash, QStringLiteral(" · riprende ") + (byTopic ? "l'" : "la ") + unitLabel.value(first));
+                section["titolo"] = titled;
             }
             sections.append(section);
         }
@@ -659,12 +686,25 @@ Prepared prepare(const Project &project, const QJsonObject &document)
             out.agent << withNotes(newlesson::integrateMessage(unit, named), notes);
             continue;
         }
+        // una lezione nuova che riprende in parte una che c'è: con tutto, senza ripetere (rimanda), o fusa in quella
+        const QJsonObject crossing = s.toObject().value("intreccio").toObject();
+        const QString crossed = crossing.value("valore").toString();
+        if (crossed == "fondi") {
+            out.agent << withNotes(newlesson::integrateMessage(crossing.value("unita").toString(), named), notes);
+            continue;
+        }
         const int n = number++;
         QString date = group.value("date").toString();
         if (const texsource::Ref ref = texsource::parseSpec(sources.first()); date.isEmpty() && ref.date.isValid())
             date = ref.date.toString("dd/MM/yyyy");
         // dove va, per argomento: in fondo a un argomento che c'è («a parte»), o un argomento nuovo dopo un altro
         Convert::Wanted where{n, date};
+        QString remind;                                // per l'agente: ciò che non si riscrive
+        if (crossed == "rimanda") {
+            where.note = crossing.value("nota").toString();
+            remind = QStringLiteral("il corso spiega già %1: non riscriverlo, richiamalo in una frase con un rimando a quella lezione; scrivi per intero solo ciò che è nuovo")
+                         .arg(crossing.value("nota").toString());
+        }
         if (byTopic && dest == "unit") {
             where.topic = unit;
         } else if (byTopic) {
@@ -698,7 +738,7 @@ Prepared prepare(const Project &project, const QJsonObject &document)
                 else
                     mixed = true;
             }
-            fuses << Fuse{named, notes, n, date, where, mixed ? main : QStringList()};
+            fuses << Fuse{named, remind.isEmpty() ? notes : notes + QStringList{remind}, n, date, where, mixed ? main : QStringList()};
         }
     }
     // i file che scrive l'agente vengono dopo quelli della conversione, che li prende per primi; sono sempre lezioni,

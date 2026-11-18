@@ -207,14 +207,19 @@ public:
     Q_INVOKABLE QVariantMap moveSpot(const QString &lesson, const QString &block) const;
     Q_INVOKABLE bool showsLesson(const QString &file) const;
 
-    // I lavori con un piano. jobs: quelli aperti (id, title, state). plan: il piano com'è; savePlan lo salva subito.
+    // I lavori con un piano. jobs: quelli aperti (id, title, state). plan: il piano com'è. Ogni modifica dell'utente è una
+    // chiamata sua, salvata subito: la spunta o l'istruzione di una voce (key: fare, nota), la scelta di una sezione (il
+    // valore), la risposta a una domanda, il commento.
     // planMessage: ciò che si dice all'agente per avviarlo (how: avvia) o rifarlo (rivedi). planReady: l'agente ha
     // consegnato un piano o un esito.
     Q_PROPERTY(QVariantList jobs READ jobs NOTIFY treeChanged)
 public:
     QVariantList jobs() const { return m_jobs; }
     Q_INVOKABLE QVariantMap plan(const QString &id) const;
-    Q_INVOKABLE void savePlan(const QString &id, const QVariantMap &plan);
+    Q_INVOKABLE void setPlanEntry(const QString &id, int section, int entry, const QString &key, const QVariant &value);
+    Q_INVOKABLE void setPlanChoice(const QString &id, int section, const QString &field, const QString &value);   // field: scelta, intreccio
+    Q_INVOKABLE void setPlanAnswer(const QString &id, int question, const QString &answer);
+    Q_INVOKABLE void setPlanComment(const QString &id, const QString &text);
     Q_INVOKABLE bool planHasInstructions(const QString &id) const;
     Q_INVOKABLE QString planMessage(const QString &id, const QString &how);
     Q_INVOKABLE void discardPlan(const QString &id);
@@ -354,6 +359,7 @@ signals:
     void busyChanged();
     void outcomeReady(const QVariantMap &outcome);
     void planReady(const QString &id);
+    void planEdited(const QString &id);                // una modifica dell'utente al piano, già salvata
     void consoleChanged();
     void tagsChanged();
     void snippetsReady();

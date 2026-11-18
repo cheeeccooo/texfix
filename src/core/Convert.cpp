@@ -65,6 +65,7 @@ struct Convert::Work {
     bool isTex = false;                                // un .tex di un altro autore: niente pagine, blocchi di righe
     QDate texDate;                                     // la lezione del .tex, se il file ne ha più d'una
     int texNth = 1;                                    // la prima, la seconda… lezione di quel giorno
+    QString note;                                      // dal piano: ciò che il corso spiega già e non si riscrive
 };
 
 int Convert::Result::written() const
@@ -129,7 +130,7 @@ QStringList Convert::interrupted(const Project &project, QHash<QString, Wanted> 
         out << v.toString();
         if (const QJsonObject w = chosen.value(v.toString()).toObject(); wanted && !w.isEmpty())
             wanted->insert(v.toString(), Wanted{w.value("numero").toInt(), w.value("data").toString(), w.value("argomento").toString(),
-                                                w.value("titolo").toString(), w.value("dopo").toString()});
+                                                w.value("titolo").toString(), w.value("dopo").toString(), w.value("nota").toString()});
     }
     return out;
 }
@@ -266,8 +267,13 @@ QJsonObject Convert::chunk(const Work &work, int k, Model &model) const
         else
             for (const QJsonValue &p : spec.value("pages").toArray())
                 out << QStringLiteral("P%1").arg(p.toInt()) << work.pages.full.value(p.toInt() - 1);
+        // ciò che il corso spiega già (dal piano): chi scrive non lo riscrive, chi verifica non lo cerca
+        const QString known = work.note.isEmpty() ? QString()
+            : QStringLiteral("\n\nTHE COURSE ALREADY EXPLAINS: %1\nWhere this source repeats those things, do not write them again: one sentence that "
+                             "recalls them and a reference to that lecture; write in full only what is new. When checking, these omissions are "
+                             "not missing content.").arg(work.note);
         out << QStringLiteral("Lecture: %1\nPlan of the whole file:\n%2\n\nYou are chunk %3: pages %4.\n%5")
-                   .arg(work.outline.value("title").toString(), planLines.join('\n')).arg(k + 1).arg(pageList(spec.value("pages").toArray()), request);
+                   .arg(work.outline.value("title").toString(), planLines.join('\n')).arg(k + 1).arg(pageList(spec.value("pages").toArray()), request) + known;
         return out;
     };
     const QString system = prompts::transcribe(work.file, m_settings, m_style) + (work.isTex ? prompts::texSource(m_style) : QString());
@@ -449,7 +455,7 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
     Model model(m_settings.quality, m_project.root(), m_control);
     QJsonObject chosen;                                // numero, data e argomento scelti nel piano: valgono anche alla ripresa
     for (auto it = wanted.begin(); it != wanted.end(); ++it)
-        chosen.insert(it.key(), QJsonObject{{"numero", it->number}, {"data", it->date}, {"argomento", it->topic}, {"titolo", it->title}, {"dopo", it->after}});
+        chosen.insert(it.key(), QJsonObject{{"numero", it->number}, {"data", it->date}, {"argomento", it->topic}, {"titolo", it->title}, {"dopo", it->after}, {"nota", it->note}});
     writeJson(m_project.path(RUNNING), QJsonObject{{"fonti", QJsonArray::fromStringList(sources)}, {"scelte", chosen}});
     auto progress = [&](double fraction, const QString &label) {
         if (m_control)
@@ -550,6 +556,7 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
             work.file = QStringLiteral("src/%1.tex").arg(work.name);
             const int written = work.outline.value("lesson").toString().toInt();
             const QString writtenDate = work.outline.value("date").toString().trimmed();
+            work.note = wanted.value(work.source).note;
             if (const Wanted chosen = wanted.value(work.source); chosen.number > 0) {
                 work.lesson.number = chosen.number;    // scelti dall'utente, non dedotti
                 work.lesson.date = chosen.date;

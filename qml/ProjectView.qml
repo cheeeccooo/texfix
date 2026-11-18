@@ -574,11 +574,12 @@ Item {
                         onTagClicked: (path, sourcePage) => path !== "" ? root.openFile(path, sourcePage) : Workspace.say("La fonte di questo blocco non è più nel progetto.")
                     }
                     }
-                    // la capsula sul divisore: PDF pieno, alla pari, editor pieno
+                    // la capsula sul divisore: PDF pieno, alla pari, editor pieno. Sta in alto, all'altezza delle schede
+                    // (che le lasciano posto): in basso copriva i tasti delle viste, come «Avvia» di un piano
                     Rectangle {
                         z: 10
                         x: Math.max(4, Math.min(editor.width - width / 2, sideBySide.width - width - 4))
-                        y: sideBySide.height - height - Theme.gap
+                        y: (Theme.rowHeight + 6 - height) / 2
                         width: capsule.implicitWidth + 4
                         height: Theme.rowHeight - 4
                         radius: height / 2

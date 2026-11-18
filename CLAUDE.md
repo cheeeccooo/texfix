@@ -61,7 +61,7 @@ Due parti, un processo solo.
 | `core/Git` | il version control dell'utente: modifiche, differenze, commit di tutto, cronologia (chiama `git`) |
 | `core/Reorganize` | Riorganizza: le sezioni del corso (fra un `\subsection` e il successivo), gli argomenti proposti dal modello, la scrittura di un file per argomento e il ritorno a un file per lezione, tutti e due del programma; resta uguale il contenuto riga per riga, o non si tocca niente. `startByTopic` (un progetto che nasce per argomento) e `place` (una lezione nuova in un argomento, con `\lezione{N}{data}` davanti) |
 
-| `core/TexSource` | le fonti `.tex` di altri autori: le lezioni per data (`\section{Lezione del …}`), le macro dell'autore, il testo per il modello; una lezione si indica con `file.tex@AAAA-MM-GG` (la seconda dello stesso giorno `@AAAA-MM-GG.2`); `shingles` e `contained`: quanto del testo di una lezione sta in un'altra, senza modello |
+| `core/TexSource` | le fonti `.tex` di altri autori: le lezioni per data (`\section{Lezione del …}`), le macro dell'autore, il testo per il modello; una lezione si indica con `file.tex@AAAA-MM-GG` (la seconda dello stesso giorno `@AAAA-MM-GG.2`); `shingles` e `contained`: quanto del testo di una lezione sta in un'altra, senza modello; `gist`: il titolo e l'inizio di ogni sezione, quello che il modello dello smistamento vede del corso e delle lezioni dei `.tex` |
 | `core/Profiles` | i profili di partenza: stile (il `.sty` e la descrizione), impostazioni e regole del progetto salvati con un nome fra i dati del programma (`profili/<nome>/`); un progetto nuovo può partire da lì |
 | `core/Provenance` | i tag di provenienza (D5): le fonti con la loro sigla e, per ogni blocco con una fonte nel marcatore, dove cade nel PDF (SyncTeX). Niente nel documento: li disegna la vista del PDF |
 | `app/Chat` | la chat: il CLI `claude` chiuso nel progetto (file sì, shell no, nessuna impostazione dell'utente), messaggi in streaming, strumenti eseguiti dal motore in un thread; `Texfix --strumenti <nome>` è il passacarte fra il CLI e il programma, su un canale locale; storico in `salvataggi/chat/` |
@@ -114,7 +114,7 @@ rileggere gli editor senza modifiche in sospeso; una rilettura svuota la pila de
 
 ## Prove senza mani
 
-`--gesti`, separati da «;»: `apri FILE [RIGA]`, `compila`, `tutto`, `salta` (⌘J), `sorgente PAGINA X Y`, `divisore 0|1|2`,
+`--gesti`, separati da «;»: `clic X Y` (un clic vero del mouse, in punti della finestra), `apri FILE [RIGA]`, `compila`, `tutto`, `salta` (⌘J), `sorgente PAGINA X Y`, `divisore 0|1|2`,
 `avvisi`, `progetto chiuso`, `annulla`, `ripeti`, `passo TITOLO`, `scrivi FILE TESTO`, `fatta FILE`, `impostazioni`,
 `preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `ritaglio NOME` (apre il ritaglio a mano), `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `materiale FILE…` (aggiunge e riconosce: il piano), `materiale-lezione LEZIONE FILE…`, `smista` (riconosce ciò che è in arrivo), `versione-nuova USATA FILE`, `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`, `rinomina FILE NOME`, `console`, `argomenti` (propone la scaletta), `applica-argomenti`, `per-data`, `salva-profilo NOME`, `nuovo CARTELLA [PROFILO]`, `nuovo-argomenti CARTELLA [PROFILO]`, `correggo LEZIONE DUBBIO`, `decidi LEZIONE [DUBBIO…]` (costa), `tag [no]` (mostra o nasconde i tag di provenienza), `libreria STILE`, `avvia-piano`, `archivia`, `a-mano` (la prima mossa, a mano), `risolta`, `mossa STATO` (decide la mossa attuale), `annulla-mossa`, `elimina-impaginazioni`, `chiudi-scheda`, `inserisci TESTO`, `miniature`, `ramo LEZIONE` (apre la lezione nell'albero), `pannello PANNELLO LEZIONE`, `cita` (⌘L), `allega FILE`, `foto editor|pdf|finestra`, `invia`, `storico`, `chat`, `attivita`. Ogni gesto parte quando niente lavora; poi la foto.
 
@@ -149,7 +149,7 @@ l'ha messo), «Carica una versione nuova…» (il file arriva con il nome della 
 Non ci sono più Nuova lezione, il tasto Converti, «Smista in lezioni», «Fai il piano» né la finestra delle versioni.
 Ogni volta `sort::plan` riconosce e c'è sempre un piano: già nel corso (doppione, lezione di un `.tex` o testo che il
 corso contiene, `texsource::contained`), versione nuova (Porta le differenze · Smistala come materiale nuovo · Salta),
-si sovrappone (Fondi · Lezione a parte · Salta, la `scelta` della sezione), lezione nuova (senza data: in fondo),
+si sovrappone (Fondi · Lezione a parte · Salta, la `scelta` della sezione), lezione nuova (senza data: in fondo), lezione nuova che riprende in parte una che c'è (l'`intreccio` della sezione: una domanda senza risposta già scelta, «con tutto», «senza ripetere: rimanda», «Fondi»; «senza ripetere» passa a chi scrive una nota, `Convert::Wanted::note`, con ciò che il corso spiega già),
 argomento nuovo dopo un altro. Una domanda per fonte sul ruolo (principale, integrativa, esercizi): cambiarla, o
 scegliere «Smistala come materiale nuovo», rifà il piano (`plans::hasInstructions`). In fondo al piano le impostazioni,
 la stima e «Cambia». «Avvia» (`sort::prepare`): una fonte sola → la conversione (con numero, data e, per argomento, dove
@@ -167,7 +167,10 @@ riconosciute, le due del 10/11 separate; e con un finto modello muto. Una lezion
 dice se si seguono o si ripetono (nel dubbio: si ripetono), e unire è `newlesson::unite`. Quando l'agente fonde fonti di
 ruoli diversi, le principali danno la struttura (`fuseMessage`, `main`). Per argomento le lezioni che scrive l'agente
 sono lezioni (`src/srcN.tex`): la loro collocazione aspetta in `salvataggi/procedure.json` e `settle` le mette al loro
-posto con `reorganize::place`; i nomi nuovi tengono conto anche dei file che gli argomenti ricordano (`lastFile`).
+posto con `reorganize::place`; i nomi nuovi tengono conto anche dei file che gli argomenti ricordano (`lastFile`). Nel
+piano ogni modifica passa da `Workspace::setPlanEntry|Choice|Answer|Comment` e la vista si rilegge dopo il gestore del clic
+(`Qt.callLater`): rileggere dentro il gestore distrugge la riga che ha ricevuto il clic. La capsula del divisore (PDF
+pieno, alla pari, editor pieno) sta in alto, all'altezza delle schede: in basso copriva «Avvia».
 
 **§3.6 La conversione.** Scansioni, PDF, immagini, documenti di testo, `.tex` di altri autori. Esito corto con
 «Resoconto completo» (la Console), «Ferma», «Riprendi» (le scelte del piano restano in `build/lavori/converti/in-corso.json`).
@@ -274,7 +277,7 @@ A confronto con la vecchia app sulle stesse pagine (`../prova-texfix`, src4.pdf 
 riquadri, stesso numero di definizioni e di figure; la nuova dà titoli alle sezioni, mette in un riquadro
 un'osservazione che la vecchia lasciava in prosa, e non va a capo nel sorgente. Simili, non uguali.
 
-**§5 Prove.** `./build.sh prove` (54 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
+**§5 Prove.** `./build.sh prove` (55 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
 spesso, contro `tests/misure.txt`; `--scrivi` li riscrive). Dei riferimenti della vecchia app sono portate le formule in display vere (`tests/dati/display.json`), per la mossa
 sulle formule; il resto dipende da prompt e stile, che qui sono cambiati per scelta.
 

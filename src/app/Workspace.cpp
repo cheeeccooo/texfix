@@ -1633,10 +1633,62 @@ void Workspace::agentTurnDone()
 
 QVariantMap Workspace::plan(const QString &id) const { return plans::load(m_project, id).toVariantMap(); }
 
-void Workspace::savePlan(const QString &id, const QVariantMap &plan)
+// Le modifiche al piano, una per una sul file: QML non tocca il piano annidato (gli elenchi che riceve sono copie).
+void Workspace::setPlanEntry(const QString &id, int section, int entry, const QString &key, const QVariant &value)
 {
-    if (hasProject() && !id.isEmpty())
-        plans::save(m_project, id, QJsonObject::fromVariantMap(plan));
+    QJsonObject plan = plans::load(m_project, id);
+    QJsonArray sections = plan.value("sezioni").toArray();
+    QJsonObject s = sections.at(section).toObject();
+    QJsonArray entries = s.value("voci").toArray();
+    if (!hasProject() || (key != "fare" && key != "nota") || entry < 0 || entry >= entries.size())
+        return;
+    QJsonObject e = entries.at(entry).toObject();
+    e[key] = QJsonValue::fromVariant(value);
+    entries[entry] = e;
+    s["voci"] = entries;
+    sections[section] = s;
+    plan["sezioni"] = sections;
+    plans::save(m_project, id, plan);
+    if (key == "fare")                                 // un'istruzione si scrive: rileggere il piano a ogni tasto toglierebbe il cursore
+        emit planEdited(id);
+}
+
+void Workspace::setPlanChoice(const QString &id, int section, const QString &field, const QString &value)
+{
+    QJsonObject plan = plans::load(m_project, id);
+    QJsonArray sections = plan.value("sezioni").toArray();
+    QJsonObject s = sections.at(section).toObject(), choice = s.value(field).toObject();
+    if (!hasProject() || (field != "scelta" && field != "intreccio") || !choice.value("valori").toArray().contains(value))
+        return;
+    choice["valore"] = value;
+    s[field] = choice;
+    sections[section] = s;
+    plan["sezioni"] = sections;
+    plans::save(m_project, id, plan);
+    emit planEdited(id);
+}
+
+void Workspace::setPlanAnswer(const QString &id, int question, const QString &answer)
+{
+    QJsonObject plan = plans::load(m_project, id);
+    QJsonArray questions = plan.value("domande").toArray();
+    QJsonObject q = questions.at(question).toObject();
+    if (!hasProject() || !q.value("opzioni").toArray().contains(answer))
+        return;
+    q["risposta"] = answer;
+    questions[question] = q;
+    plan["domande"] = questions;
+    plans::save(m_project, id, plan);
+    emit planEdited(id);
+}
+
+void Workspace::setPlanComment(const QString &id, const QString &text)
+{
+    QJsonObject plan = plans::load(m_project, id);
+    if (!hasProject() || plan.isEmpty())
+        return;
+    plan["commento"] = text;
+    plans::save(m_project, id, plan);
 }
 
 bool Workspace::planHasInstructions(const QString &id) const { return plans::hasInstructions(plans::load(m_project, id)); }

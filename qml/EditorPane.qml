@@ -146,6 +146,7 @@ Rectangle {
             ListView {
                 id: tabBar
                 anchors.fill: parent
+                anchors.rightMargin: 44                // la metà della capsula del divisore, che sta qui sopra
                 orientation: ListView.Horizontal
                 boundsBehavior: Flickable.StopAtBounds
                 clip: true

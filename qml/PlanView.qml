@@ -19,16 +19,58 @@ Rectangle {
         plan = Workspace.plan(planId)
         instructions = Workspace.planHasInstructions(planId)
     }
-    function store() {
-        Workspace.savePlan(planId, plan)
-        instructions = Workspace.planHasInstructions(planId)
-    }
-    function setEntry(s, v, key, value) { plan.sezioni[s].voci[v][key] = value; store() }
+    // ogni modifica passa da Workspace, che la salva sul piano: qui il piano si rilegge e basta
+    function setEntry(s, v, key, value) { Workspace.setPlanEntry(planId, s, v, key, value); instructions = Workspace.planHasInstructions(planId) }
     Component.onCompleted: reload()
     onVisibleChanged: if (visible) reload()
-    Connections { target: Workspace; function onPlanReady(id) { if (id === root.planId) root.reload() } }
+    Connections {
+        target: Workspace
+        function onPlanReady(id) { if (id === root.planId) Qt.callLater(root.reload) }
+        // dopo il gestore del clic: rileggere ricrea le righe, anche quella che ha ricevuto il clic
+        function onPlanEdited(id) { if (id === root.planId) Qt.callLater(root.reload) }
+    }
 
     readonly property bool editable: plan.stato === "piano"
+    // le domande senza risposta: quelle del piano, e ciò che una lezione nuova riprende (se la sua voce resta)
+    readonly property bool answered: (plan.domande || []).every(q => (q.risposta || "") !== "")
+                                     && (plan.sezioni || []).every(s => !s.intreccio || s.intreccio.valore !== "" || !(s.voci || []).some(v => v.fare))
+
+    // una scelta di una sezione: un testo, se ha una domanda, e un tasto per opzione
+    component SectionChoice: ColumnLayout {
+        id: sectionChoice
+        property string field
+        property int section
+        property var choice
+        Layout.fillWidth: true
+        visible: !!choice
+        spacing: 4
+        TxLabel {
+            Layout.fillWidth: true
+            visible: !!sectionChoice.choice && !!sectionChoice.choice.testo
+            text: sectionChoice.choice && sectionChoice.choice.testo ? sectionChoice.choice.testo : ""
+            color: sectionChoice.choice && sectionChoice.choice.valore === "" ? Theme.warn : Theme.text
+            wrapMode: Text.WordWrap
+            elide: Text.ElideNone
+        }
+        Flow {
+            Layout.fillWidth: true
+            spacing: Theme.gap
+            Repeater {
+                model: sectionChoice.choice ? sectionChoice.choice.opzioni : []
+                TxButton {
+                    required property string modelData
+                    required property int index
+                    readonly property string value: sectionChoice.choice.valori[index]
+                    readonly property bool on: sectionChoice.choice.valore === value
+                    text: (on ? "✓ " : "") + modelData
+                    primary: on
+                    enabled: root.editable
+                    width: Math.min(implicitWidth, column.width)
+                    onClicked: Workspace.setPlanChoice(root.planId, sectionChoice.section, sectionChoice.field, value)
+                }
+            }
+        }
+    }
 
     TxScroll {
         anchors.fill: parent
@@ -78,26 +120,10 @@ Rectangle {
                     Layout.fillWidth: true
                     spacing: 6
                     TxLabel { Layout.fillWidth: true; Layout.topMargin: Theme.gap; text: section.modelData.titolo || ""; font.weight: Font.DemiBold; wrapMode: Text.WordWrap; elide: Text.ElideNone }
-                    // una scelta per tutta la sezione (una sovrapposizione, una versione): un tasto per opzione
-                    Flow {
-                        Layout.fillWidth: true
-                        visible: !!section.modelData.scelta
-                        spacing: Theme.gap
-                        Repeater {
-                            model: section.modelData.scelta ? section.modelData.scelta.opzioni : []
-                            TxButton {
-                                required property string modelData
-                                required property int index
-                                readonly property string value: section.modelData.scelta.valori[index]
-                                readonly property bool on: section.modelData.scelta.valore === value
-                                text: (on ? "✓ " : "") + modelData
-                                primary: on
-                                enabled: root.editable
-                                width: Math.min(implicitWidth, column.width)
-                                onClicked: { root.plan.sezioni[section.index].scelta.valore = value; root.store(); root.reload() }
-                            }
-                        }
-                    }
+                    // una scelta per tutta la sezione (una sovrapposizione, una versione, pezzi da unire)
+                    SectionChoice { field: "scelta"; section: section.index; choice: section.modelData.scelta }
+                    // ciò che una lezione nuova riprende di una che c'è: una domanda, senza risposta già scelta
+                    SectionChoice { field: "intreccio"; section: section.index; choice: section.modelData.intreccio }
                     Repeater {
                         model: section.modelData.voci
                         ColumnLayout {
@@ -116,7 +142,7 @@ Rectangle {
                                     border.width: 1
                                     border.color: entry.modelData.fare ? Theme.accent : Theme.border
                                     Text { anchors.centerIn: parent; visible: entry.modelData.fare; text: "✓"; color: Theme.onAccent; font.pixelSize: 12; font.weight: Font.Bold }
-                                    MouseArea { anchors.fill: parent; enabled: root.editable; onClicked: { root.setEntry(section.index, entry.index, "fare", !entry.modelData.fare); root.reload() } }
+                                    MouseArea { anchors.fill: parent; enabled: root.editable; onClicked: root.setEntry(section.index, entry.index, "fare", !entry.modelData.fare) }
                                 }
                                 TxLabel { Layout.fillWidth: true; text: entry.modelData.testo; wrapMode: Text.WordWrap; elide: Text.ElideNone; opacity: entry.modelData.fare ? 1 : 0.5 }
                             }
@@ -159,7 +185,7 @@ Rectangle {
                                 primary: question.modelData.risposta === modelData
                                 enabled: root.editable
                                 width: Math.min(implicitWidth, column.width)
-                                onClicked: { root.plan.domande[question.index].risposta = modelData; root.store(); root.reload() }
+                                onClicked: Workspace.setPlanAnswer(root.planId, question.index, modelData)
                             }
                         }
                     }
@@ -178,7 +204,7 @@ Rectangle {
                     elide: Text.ElideNone
                     color: Theme.textMuted
                     font.pixelSize: Theme.smallSize
-                    text: (root.plan.impostazioni || "") + (root.plan.stima > 0 ? "\nCosto stimato per scrivere le lezioni nuove: circa " + Number(root.plan.stima).toLocaleString(Qt.locale("it_IT"), "f", 2)
+                    text: (root.plan.impostazioni || "") + (root.plan.stima >= 0.01 ? "\nCosto stimato per scrivere le lezioni nuove: circa " + Number(root.plan.stima).toLocaleString(Qt.locale("it_IT"), "f", 2)
                                                                                   + " $, più il lavoro dell'agente dove si fonde." : "")
                 }
                 TxButton { text: "Cambia"; hint: "Le impostazioni del progetto (⌘,)"; onClicked: Workspace.askSettings() }
@@ -190,7 +216,7 @@ Rectangle {
                 visible: root.editable
                 placeholder: "Che cosa cambieresti nel piano?"
                 Component.onCompleted: text = root.plan.commento || ""
-                onEdited: { root.plan.commento = text; root.store() }
+                onEdited: { Workspace.setPlanComment(root.planId, text); root.instructions = Workspace.planHasInstructions(root.planId) }
             }
 
             RowLayout {
@@ -207,15 +233,20 @@ Rectangle {
                         root.closeAsked()
                     }
                 }
-                Item { Layout.fillWidth: true }
+                TxLabel {                              // perché il tasto è spento, in vista e non solo nel suggerimento
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignRight
+                    color: Theme.warn
+                    font.pixelSize: Theme.smallSize
+                    text: !root.editable ? "" : Workspace.busy ? "Aspetta che finisca il lavoro in corso" : !root.instructions && !root.answered ? "Rispondi alle domande in giallo" : ""
+                }
                 TxButton {
                     visible: root.editable
                     text: root.instructions ? "Rivedi piano" : "Avvia"
                     primary: true
                     // un piano con una domanda senza risposta non parte: l'agente si fermerebbe a chiederla
-                    readonly property bool answered: (root.plan.domande || []).every(q => (q.risposta || "") !== "")
-                    enabled: !Workspace.busy && (root.instructions || answered)
-                    hint: enabled || Workspace.busy ? "" : "Rispondi prima alle domande del piano"
+                    enabled: !Workspace.busy && (root.instructions || root.answered)
+                    hint: Workspace.busy ? "Aspetta che finisca il lavoro in corso" : enabled ? "" : "Rispondi prima alle domande del piano"
                     onClicked: {
                         if (root.plan.tipo === "materiale") {     // un piano di Texfix, non dell'agente
                             if (root.instructions)
