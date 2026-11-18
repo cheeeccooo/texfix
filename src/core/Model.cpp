@@ -129,6 +129,7 @@ QString Model::ask(const QString &stage, const QString &system, const QStringLis
     timer.start();
     QJsonObject result;
     bool got = false;
+    QString reason;                                    // perché non ha risposto, se non risponde
     for (int attempt = 0; attempt < 3 && !(got && !result.value("is_error").toBool()); ++attempt) {
         if (m_control)
             m_control->check();
@@ -176,6 +177,14 @@ QString Model::ask(const QString &stage, const QString &system, const QStringLis
             throw LimitReached(text.trimmed().toStdString());
         if (text.isEmpty())
             got = false;
+        const QStringList errors = QString::fromUtf8(process.readAllStandardError()).trimmed().split('\n', Qt::SkipEmptyParts);
+        if (got && result.value("is_error").toBool() && !text.trimmed().isEmpty())
+            reason = text.trimmed().left(200);
+        else if (!errors.isEmpty())
+            reason = errors.last().trimmed().left(200);
+        else if (!got)
+            reason = process.exitStatus() == QProcess::CrashExit ? QStringLiteral("il programma si è chiuso da sé")
+                                                                  : QStringLiteral("il programma è uscito senza risposta (codice %1)").arg(process.exitCode());
     }
     const QJsonObject usage = result.value("usage").toObject();
     Call call{stage, tag, model, effort, timer.elapsed() / 1000.0, result.value("total_cost_usd").toDouble(),
@@ -186,7 +195,7 @@ QString Model::ask(const QString &stage, const QString &system, const QStringLis
         m_calls << call;
     }
     if (!call.ok)
-        throw std::runtime_error(QStringLiteral("il modello non ha risposto (%1 %2)").arg(stage, tag).toStdString());
+        throw std::runtime_error(QStringLiteral("Il modello non ha risposto%1").arg(reason.isEmpty() ? QStringLiteral(".") : ": " + reason).toStdString());
     return result.value("result").toString();
 }
 

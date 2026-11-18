@@ -10,8 +10,6 @@ Item {
     property bool bottomOpen: false
     property bool chatOpen: false
     property int leftTab: 0
-    signal convertAsked()
-    signal newLessonAsked()
     signal materialAsked()
     signal sourcesAsked(string lesson)
     signal newVersionAsked(string used)
@@ -278,13 +276,13 @@ Item {
                 Chat.mode = argument
             } else if (name === "rispondi") {
                 Chat.answer(argument === "si")
-            } else if (name === "lezione") {
-                const a = argument.split(" ")
-                Workspace.say(Workspace.createLesson(parseInt(a[0]), a[1], a.slice(2)))
-            } else if (name === "nuova-lezione") {
-                root.newLessonAsked()
             } else if (name === "materiale") {
-                Workspace.sortMaterial(Workspace.addSources(argument.split(" ")))
+                Workspace.addMaterial(argument.split(" "))
+            } else if (name === "materiale-lezione") {
+                const a = argument.split(" ")
+                Workspace.addMaterial(a.slice(1), a[0])
+            } else if (name === "smista") {
+                Workspace.sortMaterial(Workspace.queue.map(q => q.file))
             } else if (name === "avvia-materiale") {
                 if (Workspace.jobs.length > 0)
                     Workspace.startSortPlan(Workspace.jobs[0].id)
@@ -397,7 +395,6 @@ Item {
                 }
                 TxButton { text: "▶  File"; hint: "Compila il file aperto (⌘B)"; enabled: !Workspace.compiling; onClicked: root.compileFile() }
                 TxButton { text: "▶▶  Tutto"; hint: Workspace.jobRunning ? "Un lavoro sta usando il documento: aspetta che finisca" : "Compila tutto il documento (⇧⌘B)"; enabled: !Workspace.compiling && !Workspace.jobRunning; onClicked: root.compileDocument() }
-                TxButton { text: "Converti"; hint: "Le fonti da convertire diventano lezioni (⇧⌘K)"; enabled: !Workspace.jobRunning; onClicked: root.convertAsked() }
                 // i «Rivedi» ci sono solo quando c'è qualcosa da decidere
                 TxButton { visible: Workspace.openDoubts > 0; text: "Rivedi dubbi  " + Workspace.openDoubts; hint: "⇧⌘D"; onClicked: root.openFile("rivedi:dubbi") }
                 TxButton { visible: Workspace.openDeclared > 0; text: "Rivedi correzioni  " + Workspace.openDeclared; hint: "⇧⌘E"; onClicked: root.openFile("rivedi:correzioni") }
@@ -527,7 +524,6 @@ Item {
                 currentFile: editor.currentFile
                 onFileChosen: file => root.openFile(file)
                 onPanelAsked: (panel, lesson) => { root.openFile(panel); editor.showLesson(lesson) }
-                onNewLessonAsked: root.newLessonAsked()
                 onMaterialAsked: root.materialAsked()
                 onSourcesAsked: lesson => root.sourcesAsked(lesson)
                 onNewVersionAsked: used => root.newVersionAsked(used)

@@ -22,6 +22,31 @@ TxSheet {
     Connections { target: Workspace; function onSettingsChanged() { root.revision++ } }
     onAboutToShow: rules.text = Workspace.projectRules.join("\n")
 
+    // per data o per argomento: con delle lezioni il cambio passa da Riorganizza (la scaletta, o il ritorno per data)
+    TxLabel { Layout.fillWidth: true; text: "Organizzazione"; font.weight: Font.Medium }
+    TxSegmented {
+        Layout.fillWidth: true
+        choices: [{ value: "data", label: "Per data" }, { value: "argomento", label: "Per argomento" }]
+        value: root.revision >= 0 && Workspace.byTopic ? "argomento" : "data"
+        onChosen: value => {
+            if ((value === "argomento") === Workspace.byTopic)
+                return
+            if (Workspace.lessons.length > 0)
+                root.close()                           // si apre la scaletta, o si torna per data
+            Workspace.setByTopic(value === "argomento")
+        }
+    }
+    TxLabel {
+        Layout.fillWidth: true
+        text: Workspace.byTopic ? "Il materiale nuovo va negli argomenti. Tornare per data rimette un file per lezione; si annulla con ⌘Z."
+                                : "Il materiale nuovo diventa lezioni in ordine di calendario. Passare per argomento propone una scaletta da sistemare."
+        color: Theme.textMuted
+        font.pixelSize: Theme.smallSize
+        wrapMode: Text.WordWrap
+        elide: Text.ElideNone
+    }
+    Item { implicitHeight: 4 }
+
     Repeater {
         model: root.entries
         ColumnLayout {

@@ -44,22 +44,23 @@ Due parti, un processo solo.
 | `core/Style` | la descrizione di uno stile (ambienti con ruolo e colore, macro, rimandi, figure, convenzioni); `classic()`; `scan` di un `.sty` |
 | `core/StyleSwitch` | importare uno stile nel progetto; cambiare stile riscrivendo le lezioni secondo i ruoli |
 | `core/Job` | `JobControl`: «Ferma», avanzamento e registro di un lavoro che gira in un thread suo; `Stopped`, `LimitReached` |
-| `core/Model` | le chiamate al modello: `claude -p` senza strumenti, al più 6 insieme; modello e impegno per qualità e fase; costi. `TEXFIX_CLAUDE=<programma>` mette un finto modello (prove) |
+| `core/Model` | le chiamate al modello: `claude -p` senza strumenti, al più 6 insieme; modello e impegno per qualità e fase; costi; se non risponde lo dice con il motivo. `TEXFIX_CLAUDE=<programma>` mette un finto modello (prove) |
 | `core/Pages` | una fonte come la vede il modello: pagine in immagini (pdftoppm, sips) o testo |
 | `core/Blocks` | i marcatori dei blocchi `% @L6.3 · fonte p.2`: leggere, aggiungere quelli che mancano |
 | `core/Prompts` | i prompt, in tre parti: strutturale (qui), `rules::forPrompt`, `Style::forPrompt` |
-| `core/Convert` | Converti: scaletta, blocchi trascritti e verificati insieme, assemblaggio, lezione nel main, fonte in `fonti/usate/lezione N/`, dubbi in `salvataggi/dubbi/<nome>.json`; cache in `build/lavori/converti/` |
+| `core/Convert` | la conversione di una fonte in una lezione (da «Avvia» di Aggiungi materiale): scaletta, blocchi trascritti e verificati insieme, assemblaggio, lezione nel main (per argomento: `reorganize::place`), fonte in `fonti/usate/lezione N/`, dubbi in `salvataggi/dubbi/<nome>.json`; cache in `build/lavori/converti/`, con le scelte del piano per «Riprendi» |
 | `core/Snippets` | la resa compilata di piccoli pezzi (domande, letture, aggiunte) per i pannelli Rivedi: immagini trasparenti in `build/resa/` |
 | `core/Review` | ciò che resta da decidere: i dubbi (`salvataggi/dubbi/`: scegli una lettura, riapri, annulla la modifica) e le aggiunte e correzioni dichiarate (`salvataggi/correzioni.json`: tieni, togli, rimetti); i conti per lezione |
 | `core/Figures` | il registro delle figure (`salvataggi/figure.json`), anche di quelle scritte fuori (`adopt`); didascalia, resa e originale per Rivedi figure; il segno `% img <lezione>-NN` nella lezione; «Ridisegna» (TikZ: disegno, prova con `pdflatex`, revisione sulla resa) e «Ritaglia dalla fonte» (`imgs/<nome>.png`); i pacchetti chiesti dai disegni vanno in `progetto.json` e da lì in `texfix.sty` |
 | `core/Fix` | errori e righe fuori misura di una lezione: gli errori al modello (sostituzioni esatte), le righe prima spezzando il paragrafo a una fine di frase poi con varianti del modello; ogni mossa resta solo se, compilata (`Compiler::compileSync`), migliora |
 | `core/Layout` | l'impaginazione, con qualunque stile: dove cade ogni blocco nel PDF (SyncTeX, e l'area del testo scritta nel log da `texfix.sty`); un'unità a cavallo di due pagine (o colonne) va a pagina nuova (`\newpage % impaginazione` prima del marcatore) se il vuoto è al più il 25%; altrimenti, o se è più lunga di una colonna, si spezza in un punto scelto: il comando dello stile (`comando_spezza`: `\tcbbreak` per `styles`, `\pagebreak` senza stile) sull'ultima cucitura fra due paragrafi prima del punto in cui passerebbe alla colonna dopo (se le pagine in piccolo del prima e del dopo sono uguali la mossa ha il segno «invariata»: `same`, `invariata` nel registro); se nessuna mossa regge resta proposta; registro `salvataggi/impaginazione.json` |
 | `core/AgentTools` | gli strumenti che l'app dà all'agente (`stato_progetto`, `compila_lezione`, `compila_documento`, `dubbi`, `impagina`), il protocollo a righe (MCP) e il prompt di sistema dell'agente |
-| `core/Plans` | i lavori con un piano: `salvataggi/lavori/<nome>/piano.json` (voci con spunta e istruzioni, domande, commento, esito); l'agente consegna piano ed esito con gli strumenti `consegna_piano` e `consegna_esito`; l'archivio in `salvataggi/esiti/` |
-| `core/NewLesson` | numero e data proposti o letti dai nomi e dal testo delle fonti (senza modello); i file portati in `fonti/coda`; `settle` chiude una lezione scritta dall'agente (documento, marcatori, fonti usate: lo strumento `chiudi_lezione`); i messaggi delle procedure di fusione e integrazione; `texLectures`: le lezioni di un `.tex` rispetto al corso (contenute, per marcatori o per testo; dello stesso giorno; nuove), la regola unica di Converti, smistamento, «Fai il piano» e `settle`; `forAgent`: le fonti come le legge l'agente (copia in testo o PNG di .docx, .odt, .rtf, HEIC, TIFF in `build/lavori/leggibili/`) |
-| `core/Sort` | Aggiungi materiale: data e argomento di ogni pagina (una chiamata per file, tenuta in `build/lavori/smistamento/`; di un `.tex` le sue lezioni che il corso non ha, senza modello), poi una chiamata con le lezioni del corso; il piano (tipo «materiale») e `prepare`, che divide i PDF in pezzi (anche quelli tolti dal piano restano da convertire; l'originale va in `fonti/usate/divise/`) e dice che cosa si converte e che cosa passa dall'agente |
+| `core/Plans` | i lavori con un piano: `salvataggi/lavori/<nome>/piano.json` (voci con spunta e istruzioni, la scelta di una sezione, domande con la risposta proposta, commento, esito); l'agente consegna piano ed esito con gli strumenti `consegna_piano` e `consegna_esito`; l'archivio in `salvataggi/esiti/` |
+| `core/NewLesson` | numero e data proposti o letti dai nomi e dal testo delle fonti (senza modello); i file portati in `fonti/coda`; `settle` chiude una lezione scritta dall'agente (documento, marcatori, fonti usate: lo strumento `chiudi_lezione`); i messaggi delle procedure di fusione e integrazione; `texLectures`: le lezioni di un `.tex` rispetto al corso (contenute, per marcatori o per testo; dello stesso giorno; nuove), la regola unica della conversione, dello smistamento e di `settle`; `forAgent`: le fonti come le legge l'agente (copia in testo o PNG di .docx, .odt, .rtf, HEIC, TIFF in `build/lavori/leggibili/`) |
+| `core/Sort` | Aggiungi materiale, la porta sola: riconosce (già nel corso, versione nuova, si sovrappone, lezione o argomento nuovo, da saltare; senza modello dove si può, le pagine con una chiamata per file tenuta in `build/lavori/smistamento/`), poi una chiamata con il corso che dice anche il ruolo delle fonti; il piano (tipo «materiale») e `prepare`, che divide i PDF in pezzi (anche quelli tolti dal piano restano in arrivo; l'originale va in `fonti/usate/divise/`), toglie i doppioni, mette le versioni al loro posto e dice che cosa si converte e che cosa passa dall'agente |
 | `core/Git` | il version control dell'utente: modifiche, differenze, commit di tutto, cronologia (chiama `git`) |
-| `core/Reorganize` | Riorganizza: le sezioni del corso (fra un `\subsection` e il successivo), gli argomenti proposti dal modello, la scrittura di un file per argomento e il ritorno a un file per lezione, tutti e due del programma; resta uguale il contenuto riga per riga, o non si tocca niente |
+| `core/Reorganize` | Riorganizza: le sezioni del corso (fra un `\subsection` e il successivo), gli argomenti proposti dal modello, la scrittura di un file per argomento e il ritorno a un file per lezione, tutti e due del programma; resta uguale il contenuto riga per riga, o non si tocca niente. `startByTopic` (un progetto che nasce per argomento) e `place` (una lezione nuova in un argomento, con `\lezione{N}{data}` davanti) |
+
 | `core/TexSource` | le fonti `.tex` di altri autori: le lezioni per data (`\section{Lezione del …}`), le macro dell'autore, il testo per il modello; una lezione si indica con `file.tex@AAAA-MM-GG` (la seconda dello stesso giorno `@AAAA-MM-GG.2`); `shingles` e `contained`: quanto del testo di una lezione sta in un'altra, senza modello |
 | `core/Profiles` | i profili di partenza: stile (il `.sty` e la descrizione), impostazioni e regole del progetto salvati con un nome fra i dati del programma (`profili/<nome>/`); un progetto nuovo può partire da lì |
 | `core/Provenance` | i tag di provenienza (D5): le fonti con la loro sigla e, per ogni blocco con una fonte nel marcatore, dove cade nel PDF (SyncTeX). Niente nel documento: li disegna la vista del PDF |
@@ -115,7 +116,7 @@ rileggere gli editor senza modifiche in sospeso; una rilettura svuota la pila de
 
 `--gesti`, separati da «;»: `apri FILE [RIGA]`, `compila`, `tutto`, `salta` (⌘J), `sorgente PAGINA X Y`, `divisore 0|1|2`,
 `avvisi`, `progetto chiuso`, `annulla`, `ripeti`, `passo TITOLO`, `scrivi FILE TESTO`, `fatta FILE`, `impostazioni`,
-`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `converti` (tutta la coda), `converti finestra`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `ritaglio NOME` (apre il ritaglio a mano), `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `lezione N DATA FILE…` (crea una lezione), `nuova-lezione` (apre la finestra), `materiale FILE…` (fa il piano dello smistamento), `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`, `rinomina FILE NOME`, `console`, `argomenti` (propone la scaletta), `applica-argomenti`, `per-data`, `salva-profilo NOME`, `nuovo CARTELLA [PROFILO]`, `correggo LEZIONE DUBBIO`, `decidi LEZIONE [DUBBIO…]` (costa), `tag [no]` (mostra o nasconde i tag di provenienza), `libreria STILE`, `avvia-piano`, `archivia`, `a-mano` (la prima mossa, a mano), `risolta`, `mossa STATO` (decide la mossa attuale), `annulla-mossa`, `elimina-impaginazioni`, `chiudi-scheda`, `inserisci TESTO`, `miniature`, `ramo LEZIONE` (apre la lezione nell'albero), `pannello PANNELLO LEZIONE`, `cita` (⌘L), `allega FILE`, `foto editor|pdf|finestra`, `invia`, `storico`, `chat`, `attivita`, `versione si|no`, `fonti-lezione FILE…`. Ogni gesto parte quando niente lavora; poi la foto.
+`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `ritaglio NOME` (apre il ritaglio a mano), `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `materiale FILE…` (aggiunge e riconosce: il piano), `materiale-lezione LEZIONE FILE…`, `smista` (riconosce ciò che è in arrivo), `versione-nuova USATA FILE`, `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`, `rinomina FILE NOME`, `console`, `argomenti` (propone la scaletta), `applica-argomenti`, `per-data`, `salva-profilo NOME`, `nuovo CARTELLA [PROFILO]`, `nuovo-argomenti CARTELLA [PROFILO]`, `correggo LEZIONE DUBBIO`, `decidi LEZIONE [DUBBIO…]` (costa), `tag [no]` (mostra o nasconde i tag di provenienza), `libreria STILE`, `avvia-piano`, `archivia`, `a-mano` (la prima mossa, a mano), `risolta`, `mossa STATO` (decide la mossa attuale), `annulla-mossa`, `elimina-impaginazioni`, `chiudi-scheda`, `inserisci TESTO`, `miniature`, `ramo LEZIONE` (apre la lezione nell'albero), `pannello PANNELLO LEZIONE`, `cita` (⌘L), `allega FILE`, `foto editor|pdf|finestra`, `invia`, `storico`, `chat`, `attivita`. Ogni gesto parte quando niente lavora; poi la foto.
 
 ## Regole e stile (SPEC §4)
 
@@ -135,31 +136,41 @@ gesti e foto, o con il modello vero su un progetto di prova. Niente è stato pro
 **§3.1 Progetti, §3.2 Editor, PDF, compilazione, §3.14 Cronologia, §3.15 Impostazioni.** Fatti. Il primo passo della
 cronologia è «Modifiche fuori da Texfix» se i file sono cambiati dalla chiusura (`build/stato-alla-chiusura`).
 
-**§3.3 Albero.** Gruppi: Lavori, Lezioni (o Argomenti), Da convertire (con «Smista in lezioni»), Documento, Fonti senza
+**§3.3 Albero.** Gruppi: Lavori, Lezioni (o Argomenti), In arrivo (§3.4), Documento, Fonti senza
 lezione, Da consultare (ci si trascinano file: `Workspace::addDocuments`), Esiti, Immagini (con la lezione che le usa).
 Una lezione si apre con la freccia: dentro le righe Dubbi, Correzioni, Impaginazione, Figure con il conto (un clic
 apre il pannello su quella lezione: `showLesson`) e le sue fonti. Le fonti di una lezione sono quelle che i suoi
 marcatori nominano, più la cartella `fonti/usate/lezione N/`; i nomi si confrontano con `files::bare`, l'unico posto
 con quella regola. Il doppio clic apre con un'altra app ciò che non è testo.
 
-**§3.4 Nuova lezione.** Numero e data proposti, «Prendi dal file», l'avviso se le fonti dicono altro. Le fonti sono
-miniature (trascinate, dal disco, dalla coda); un clic apre il menu: apri, dai importanza, togli. Una fonte si
-converte. Più scansioni o PDF: una chiamata leggera (`newlesson::overlap`) dice se si sovrappongono; se no si uniscono
-in `fonti/coda/lezione N.pdf` nell'ordine giusto (`unite`: `pdfunite`, `sips` per le immagini) e si convertono, con una
-riga in testa all'esito; se sì, o se sono di tipo diverso, le fonde l'agente con un piano (le fonti importanti decidono
-dove le altre dicono altro). Versioni delle fonti (`versionOf`, `replaceVersion`): un file identico a una fonte usata
-non si aggiunge; uno diverso con lo stesso nome fa chiedere se è la versione nuova (`versionAsked`): la vecchia va in
-`precedenti/` con la data, la nuova prende il suo posto, una copia va in coda e l'agente porta nella lezione ciò che è
-cambiato. A mano: «Carica una versione nuova…» nel menu di una fonte usata.
+**§3.4 Aggiungi materiale, §3.5 Per data o per argomento.** Una porta sola (decisioni del 18/11/2026): «＋ Aggiungi
+materiale» (⇧⌘K), i file trascinati sul pannello, «Aggiungi materiale a questa lezione…» (il modello sa dove l'utente
+l'ha messo), «Carica una versione nuova…» (il file arriva con il nome della fonte usata: `Workspace::newVersion`).
+Non ci sono più Nuova lezione, il tasto Converti, «Smista in lezioni», «Fai il piano» né la finestra delle versioni.
+Ogni volta `sort::plan` riconosce e c'è sempre un piano: già nel corso (doppione, lezione di un `.tex` o testo che il
+corso contiene, `texsource::contained`), versione nuova (Porta le differenze · Smistala come materiale nuovo · Salta),
+si sovrappone (Fondi · Lezione a parte · Salta, la `scelta` della sezione), lezione nuova (senza data: in fondo),
+argomento nuovo dopo un altro. Una domanda per fonte sul ruolo (principale, integrativa, esercizi): cambiarla, o
+scegliere «Smistala come materiale nuovo», rifà il piano (`plans::hasInstructions`). In fondo al piano le impostazioni,
+la stima e «Cambia». «Avvia» (`sort::prepare`): una fonte sola → la conversione (con numero, data e, per argomento, dove
+va: `Convert::Wanted`, poi `reorganize::place`); il resto all'agente, una procedura alla volta, salvate in
+`salvataggi/procedure.json`. In arrivo (`fonti/coda/`): ogni riga ha uno stato (nel piano, in lavorazione, da
+riconoscere, non riconosciuto con il perché in `build/lavori/smistamento/non-riconosciuti.json`, da smistare) e il
+gruppo ha «Riprova» o «Smista»; aprire un progetto non riconosce niente da sé; mentre un lavoro gira il riconoscimento
+aspetta (`nextSort`). Il modello che non risponde lo dice con il motivo (`Model`: il testo d'errore o l'ultima riga del
+programma), in barra, in Attività e accanto ai file. Per argomento: scelto alla creazione (`ProfileSheet`,
+`reorganize::startByTopic`) e nelle impostazioni (`Workspace::setByTopic`: un progetto senza lezioni cambia e basta,
+gli altri passano da Riorganizza). L'agente riceve una copia leggibile di `.docx`, `.odt`, `.doc`, `.rtf`, HEIC e TIFF
+(`newlesson::forAgent`). Provato con il modello vero su una copia di labss: le cinque lezioni già nel corso
+riconosciute, le due del 10/11 separate; e con un finto modello muto. Più scansioni della stessa lezione le fonde
+sempre l'agente: `newlesson::overlap` e `unite` (unire senza modello quando non si sovrappongono) non sono più usati.
 
-**§3.5 Aggiungi materiale.** Il piano dello smistamento, «Avvia», «Rivedi piano», la coda delle procedure dell'agente. Anche «Smista in lezioni» sotto Da convertire. Un `.tex` di un altro autore si smista per lezioni (quelle che il corso ha già no): una lezione sola va a Converti, il resto all'agente con la sua `\section`; il file resta in coda finché il corso non ha tutte le sue lezioni (anche quando la chiude l'agente: `settle`). Una lezione del `.tex` che il corso contiene già (i marcatori nominano il file, o ne ha il testo) non si smista; una dello stesso giorno di una lezione del corso che non viene da lei sì, e il modello lo sa. Le procedure dell'agente in attesa restano in `salvataggi/procedure.json`. Provato con il modello vero su una copia di labss: nove lezioni nuove, le cinque già nel corso riconosciute, le due del 10/11 separate.
-
-**§3.6 Converti.** Scansioni, PDF, immagini, documenti di testo, `.tex` di altri autori. Stima, esito corto con
-«Resoconto completo» (la Console), «Ferma», «Riprendi». Dopo le figure sistema errori e righe, poi impagina. Le figure
+**§3.6 La conversione.** Scansioni, PDF, immagini, documenti di testo, `.tex` di altri autori. Esito corto con
+«Resoconto completo» (la Console), «Ferma», «Riprendi» (le scelte del piano restano in `build/lavori/converti/in-corso.json`).
+Dopo le figure sistema errori e righe, poi impagina. Le figure
 dei `.tex` (`figures::authored`): con «Tieni» il codice dell'autore resta, asciugato (via commenti e righe vuote) solo se la resa è identica, e
-un disegno più largo della colonna si restringe; con «Ridisegna» il disegnatore lo rifà guardando la resa del codice. Le lezioni di un `.tex` che il corso ha
-già: una riga le conta e «Fai il piano» le affida all'agente. Se c'è un piano di materiale da approvare, Converti apre
-quello. «Ridisegna» per i `.tex` è provato con il modello.
+un disegno più largo della colonna si restringe; con «Ridisegna» il disegnatore lo rifà guardando la resa del codice.
+«Ridisegna» per i `.tex` è provato con il modello.
 
 **§3.7 Rivedi dubbi e correzioni.** Hanno la forma di Rivedi impaginazione (`qml/ReviewDeck.qml`): la panoramica lezione per lezione con tutto (ciò che è deciso è oscurato; il riepilogo è la panoramica stessa) e la scheda con le scelte colorate e i tasti (le letture 1-9, A conferma o tiene, L toglie, M correggo io, S decide il modello o sistema, R riapre); prendono la finestra come lei, e Rivedi figure pure, ma con l'anteprima accanto. Scegli, «Correggo io», «Decidi tu», «Fai decidere al modello tutti i dubbi» (anche
 dal menu della lezione), «Ricorda come regola del progetto», riepilogo, «Riapri», «Annulla la modifica», «Riapri
@@ -259,7 +270,7 @@ A confronto con la vecchia app sulle stesse pagine (`../prova-texfix`, src4.pdf 
 riquadri, stesso numero di definizioni e di figure; la nuova dà titoli alle sezioni, mette in un riquadro
 un'osservazione che la vecchia lasciava in prosa, e non va a capo nel sorgente. Simili, non uguali.
 
-**§5 Prove.** `./build.sh prove` (51 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
+**§5 Prove.** `./build.sh prove` (53 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
 spesso, contro `tests/misure.txt`; `--scrivi` li riscrive). Dei riferimenti della vecchia app sono portate le formule in display vere (`tests/dati/display.json`), per la mossa
 sulle formule; il resto dipende da prompt e stile, che qui sono cambiati per scelta.
 

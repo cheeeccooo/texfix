@@ -281,4 +281,86 @@ QString toLessons(const Project &project)
     return {};
 }
 
+void startByTopic(const Project &project)
+{
+    Settings settings = Settings::load(project);
+    if (settings.byTopic())
+        return;
+    settings.topics = QJsonObject{{"lezioni", QJsonObject{}}};
+    settings.save(project);
+}
+
+QString place(const Project &project, const QString &lesson, const QString &topic, const QString &title, const QString &after)
+{
+    Settings settings = Settings::load(project);
+    if (!settings.byTopic())
+        return QStringLiteral("Il progetto non è per argomenti.");
+    const QString text = files::read(project.path(lesson));
+    const Lesson info = Project::lessonOf(lesson, text);
+    if (text.isEmpty())
+        return QStringLiteral("Non trovo %1.").arg(lesson);
+    // il contenuto: tutto ciò che segue il \section (la riga \lezione resta in testa, o la si scrive)
+    QStringList lines = text.split('\n');
+    const qsizetype head = std::find_if(lines.begin(), lines.end(), isSection) - lines.begin();
+    if (head < lines.size())
+        lines.remove(0, head + 1);
+    static const RE mark(R"(^\s*\\lezione\s*\{)");
+    if (!std::any_of(lines.begin(), lines.end(), [](const QString &l) { return mark.match(l).hasMatch(); }))
+        lines.prepend(QStringLiteral("\\lezione{%1}{%2}").arg(info.number).arg(info.date));
+    while (!lines.isEmpty() && lines.last().trimmed().isEmpty())
+        lines.removeLast();
+
+    QStringList main = files::read(project.path(Project::MAIN)).split('\n');
+    static const RE input(R"(\\input\{\s*(src/[^}\s]+)\s*\})");
+    auto inputAt = [&](const QString &file) -> qsizetype {
+        for (qsizetype i = 0; i < main.size(); ++i) {
+            const auto m = input.match(uncommented(main[i]).toString());
+            if (m.hasMatch() && (m.captured(1) == file || m.captured(1) + ".tex" == file))
+                return i;
+        }
+        return -1;
+    };
+    QString target = topic;
+    if (target.isEmpty()) {                            // un argomento nuovo, con il primo nome libero
+        int k = 1;
+        while (QFileInfo::exists(project.path(QStringLiteral("src/arg%1.tex").arg(k))))
+            ++k;
+        target = QStringLiteral("src/arg%1.tex").arg(k);
+        if (!files::write(project.path(target), QStringLiteral("\\section{%1}\n\n%2\n").arg(title.trimmed().isEmpty() ? info.title : title.trimmed(), lines.join('\n'))))
+            return QStringLiteral("Non riesco a scrivere %1.").arg(target);
+        const QStringList inputs = project.inputs();
+        qsizetype at = after.isEmpty() ? -1 : after == "^" ? (inputs.isEmpty() ? -1 : inputAt(inputs.first())) : inputAt(after);
+        if (after == "^" && at >= 0) {
+            // in testa: prima del primo argomento
+        } else if (at >= 0) {
+            ++at;
+            if (at < main.size() && main[at].trimmed() == "\\clearpage")
+                ++at;
+        } else {
+            at = std::find_if(main.begin(), main.end(), [](const QString &l) { return l.trimmed() == "\\end{document}"; }) - main.begin();
+        }
+        main.insert(at, QStringLiteral("\\input{%1}").arg(target));
+        main.insert(at + 1, QStringLiteral("\\clearpage"));
+    } else {
+        const QString existing = files::read(project.path(target));
+        if (existing.isEmpty())
+            return QStringLiteral("Non trovo l'argomento %1.").arg(target);
+        if (!files::write(project.path(target), existing.trimmed() + "\n\n" + lines.join('\n') + '\n'))
+            return QStringLiteral("Non riesco a scrivere %1.").arg(target);
+    }
+    // via la lezione dal documento
+    if (const qsizetype at = inputAt(lesson); at >= 0) {
+        main.removeAt(at);
+        if (at < main.size() && main[at].trimmed() == "\\clearpage")
+            main.removeAt(at);
+    }
+    files::write(project.path(Project::MAIN), main.join('\n'));
+    QFile::remove(project.path(lesson));
+    QJsonObject remembered = settings.topics.value("lezioni").toObject();
+    remembered.insert(QString::number(info.number), QJsonObject{{"file", lesson}, {"titolo", info.title}, {"data", info.date}});
+    settings.topics["lezioni"] = remembered;
+    settings.save(project);
+    return {};
+}
+
 }

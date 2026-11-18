@@ -30,22 +30,12 @@ ApplicationWindow {
             Workspace.proposeStyle(result.name)        // il modello legge lo stile e propone i ruoli: poi le domande
     }
 
-    function createProject(path, profile) {
-        const error = Workspace.newProject(path, profile)
+    function createProject(path, profile, byTopic) {
+        const error = Workspace.newProject(path, profile, byTopic === true)
         if (error !== "") {
             notice.text = error + " Per un progetto nuovo serve una cartella vuota; una cartella con dei file si apre con «Apri cartella»."
             notice.open()
         }
-    }
-
-    function askConvert() {
-        if (Workspace.jobRunning)
-            return Workspace.say("C'è già un lavoro in corso.")
-        // un piano di materiale da approvare: Converti apre quello
-        for (const job of Workspace.jobs)
-            if (job.kind === "materiale" && job.state === "piano")
-                return project.openFile("piano:" + job.id)
-        convertSheet.open()
     }
 
     function openFolder(path) {
@@ -152,7 +142,7 @@ ApplicationWindow {
     // Le scorciatoie arrivano sempre all'azione, che dice perché non può.
     Shortcut { sequence: "Ctrl+B"; onActivated: Workspace.hasProject ? project.compileFile() : Workspace.say("Apri prima un progetto.") }
     Shortcut { sequence: "Ctrl+Shift+B"; onActivated: Workspace.hasProject ? project.compileDocument() : Workspace.say("Apri prima un progetto.") }
-    Shortcut { sequence: "Ctrl+Shift+K"; onActivated: Workspace.hasProject ? window.askConvert() : Workspace.say("Apri prima un progetto.") }
+    Shortcut { sequence: "Ctrl+Shift+K"; onActivated: Workspace.hasProject ? materialDialog.open() : Workspace.say("Apri prima un progetto.") }
     Shortcut { sequence: "Ctrl+L"; onActivated: Workspace.hasProject ? project.quoteSelection() : Workspace.say("Apri prima un progetto.") }
     Shortcut { sequence: "Ctrl+Shift+D"; onActivated: Workspace.openDoubts > 0 ? project.openFile("rivedi:dubbi") : Workspace.say("Non ci sono dubbi da decidere.") }
     Shortcut { sequence: "Ctrl+Shift+E"; onActivated: Workspace.openDeclared > 0 ? project.openFile("rivedi:correzioni") : Workspace.say("Non ci sono aggiunte o correzioni da decidere.") }
@@ -170,8 +160,6 @@ ApplicationWindow {
     ProjectView {
         id: project
         anchors.fill: parent
-        onConvertAsked: window.askConvert()
-        onNewLessonAsked: newLessonSheet.open()
         onMaterialAsked: materialDialog.open()
         onRenameAsked: file => renameSheet.ask(file)
         onSourcesAsked: lesson => { sourcesDialog.lesson = lesson; sourcesDialog.open() }
@@ -182,7 +170,7 @@ ApplicationWindow {
     Connections {
         target: Workspace
         function onPrepareAsked(path) { prepare.path = path; prepare.open() }
-        function onVersionAsked(path, used) { versionSheet.path = path; versionSheet.used = used; versionSheet.open() }
+        function onSettingsAsked() { settingsSheet.open() }
     }
 
     FolderDialog {
@@ -195,39 +183,16 @@ ApplicationWindow {
         title: "Nuovo progetto: scegli o crea una cartella vuota"
         acceptLabel: "Crea qui"
         onAccepted: {
-            const path = Workspace.localPath(selectedFolder)
-            if (Workspace.profiles().length > 0)
-                profileSheet.ask(path)
-            else
-                window.createProject(path, "")
+            profileSheet.ask(Workspace.localPath(selectedFolder))   // per data o per argomento, e da quale profilo
         }
     }
 
-    // un file con il nome di una fonte già usata, ma diverso
-    TxSheet {
-        id: versionSheet
-        property string path
-        property string used
-        title: "È la versione nuova?"
-        TxLabel {
-            Layout.fillWidth: true
-            wrapMode: Text.WordWrap
-            elide: Text.ElideNone
-            text: "«" + versionSheet.path.substring(versionSheet.path.lastIndexOf("/") + 1) + "» ha il nome di una fonte già usata (" + versionSheet.used
-                  + ") ma è diversa. Se è la versione nuova, la vecchia va in «precedenti» con la data di oggi, e l'agente porta nella lezione le parti nuove e le correzioni, con un piano."
-        }
-        buttons: [
-            TxButton { text: "Annulla"; onClicked: versionSheet.close() },
-            TxButton { text: "No, è un'altra fonte"; onClicked: { versionSheet.close(); Workspace.acceptVersion(versionSheet.path, versionSheet.used, false) } },
-            TxButton { text: "Sì, è la versione nuova"; primary: true; onClicked: { versionSheet.close(); Workspace.acceptVersion(versionSheet.path, versionSheet.used, true) } }
-        ]
-    }
     FileDialog {
         id: versionDialog
         property string used
         title: "La versione nuova della fonte"
         fileMode: FileDialog.OpenFile
-        onAccepted: Workspace.acceptVersion(Workspace.localPaths([selectedFile])[0], used, true)
+        onAccepted: Workspace.newVersion(used, Workspace.localPaths([selectedFile])[0])
     }
     TxSheet {
         id: prepare
@@ -244,29 +209,23 @@ ApplicationWindow {
         TxLabel { Layout.fillWidth: true; wrapMode: Text.WordWrap; elide: Text.ElideNone; text: notice.text }
         buttons: TxButton { text: "Va bene"; primary: true; onClicked: notice.close() }
     }
-    ConvertSheet {
-        id: convertSheet
-        onSettingsAsked: settingsSheet.open()
-        onStarted: sources => { project.saveAll(); Workspace.convert(sources) }
-    }
     OutcomeSheet { id: outcomeSheet; onLogAsked: project.showConsole() }
-    NewLessonSheet { id: newLessonSheet }
     RenameSheet { id: renameSheet }
-    ProfileSheet { id: profileSheet; onChosen: (path, profile) => window.createProject(path, profile) }
+    ProfileSheet { id: profileSheet; onChosen: (path, profile, byTopic) => window.createProject(path, profile, byTopic) }
     OutlineSheet { id: outlineSheet }
     Connections { target: Workspace; function onOutlineReady(topics) { outlineSheet.show(topics) } }
     FileDialog {
         id: materialDialog
         title: "Aggiungi materiale"
         fileMode: FileDialog.OpenFiles
-        onAccepted: Workspace.sortMaterial(Workspace.addSources(Workspace.localPaths(selectedFiles)))
+        onAccepted: Workspace.addMaterial(Workspace.localPaths(selectedFiles))
     }
     FileDialog {
         id: sourcesDialog
         property string lesson
-        title: "Le fonti da aggiungere alla lezione"
+        title: "Il materiale da aggiungere alla lezione"
         fileMode: FileDialog.OpenFiles
-        onAccepted: Workspace.integrateSources(lesson, Workspace.localPaths(selectedFiles))
+        onAccepted: Workspace.addMaterial(Workspace.localPaths(selectedFiles), lesson)
     }
     Connections { target: Workspace; function onOutcomeReady(outcome) { outcomeSheet.show(outcome) } }
     SettingsSheet { id: settingsSheet; onImportAsked: styleDialog.open() }
@@ -287,14 +246,10 @@ ApplicationWindow {
     Connections {
         target: Workspace
         function onGesture(name, argument) {
-            if (name === "nuovo") {
-                window.createProject(argument.split(" ")[0], argument.split(" ").slice(1).join(" "))
-            } else if (name === "versione") {
-                versionSheet.close()
-                Workspace.acceptVersion(versionSheet.path, versionSheet.used, argument === "si")
-            } else if (name === "fonti-lezione") {
-                newLessonSheet.open()
-                newLessonSheet.add(argument.split(" "))
+            if (name === "nuovo" || name === "nuovo-argomenti") {
+                window.createProject(argument.split(" ")[0], argument.split(" ").slice(1).join(" "), name === "nuovo-argomenti")
+            } else if (name === "versione-nuova") {
+                Workspace.newVersion(argument.split(" ")[0], argument.split(" ")[1])
             } else if (name === "salva-profilo") {
                 Workspace.say(Workspace.saveProfile(argument))
             } else if (name === "argomenti") {
@@ -304,11 +259,6 @@ ApplicationWindow {
                 outlineSheet.close()
             } else if (name === "per-data") {
                 Workspace.backToLessons()
-            } else if (name === "converti") {
-                if (argument === "finestra")
-                    convertSheet.open()
-                else
-                    Workspace.convert(Workspace.convertSources().filter(s => s.convertible).map(s => s.file))
             } else if (name === "impostazioni")
                 settingsSheet.open()
             else if (name === "stile")

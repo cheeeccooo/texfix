@@ -43,6 +43,7 @@ using namespace tx;
 namespace {
 const char *const STATES = "build/stato-lezioni.json"; // lo stato dell'ultima compilazione di ogni lezione: si rifà
 const char *const PROCEDURES = "salvataggi/procedure.json";   // le procedure dell'agente che aspettano il turno: restano alla chiusura
+const char *const UNRECOGNIZED = "build/lavori/smistamento/non-riconosciuti.json";   // in arrivo, non riconosciuti: il perché
 
 QString plural(int n, const char *one, const char *many)
 {
@@ -63,6 +64,7 @@ Workspace::Workspace()
 
     connect(this, &Workspace::compilingChanged, this, &Workspace::busyChanged);
     connect(this, &Workspace::jobChanged, this, &Workspace::busyChanged);
+    connect(this, &Workspace::busyChanged, this, &Workspace::nextSort, Qt::QueuedConnection);   // prima il materiale che aspetta
     connect(this, &Workspace::busyChanged, this, &Workspace::nextProcedure, Qt::QueuedConnection);
     connect(this, &Workspace::pdfChanged, this, &Workspace::computeTags);
     connect(this, &Workspace::pdfRebuilt, this, &Workspace::computeTags);
@@ -141,13 +143,15 @@ void Workspace::prepareFolder(const QString &path)
         say(QStringLiteral("Cartella preparata: ciò che c'era è in «Da consultare» (%1).").arg(plural(moved.size(), "elemento", "elementi")));
 }
 
-QString Workspace::newProject(const QString &path, const QString &profile)
+QString Workspace::newProject(const QString &path, const QString &profile, bool byTopic)
 {
     if (const QString error = Project::create(path); !error.isEmpty())
         return error;
     QString problem;
     if (!profile.isEmpty())
         problem = profiles::apply(Project(path), profile);
+    if (byTopic)
+        reorganize::startByTopic(Project(path));
     open(path);
     if (!problem.isEmpty())
         say(problem);
@@ -180,6 +184,9 @@ void Workspace::open(const QString &path)
     loadSettings();
     for (const QJsonValue &v : QJsonDocument::fromJson(files::read(m_project.path(PROCEDURES)).toUtf8()).object().value("in_attesa").toArray())
         m_agentQueue << v.toString();
+    const QJsonObject unrecognized = QJsonDocument::fromJson(files::read(m_project.path(UNRECOGNIZED)).toUtf8()).object();
+    for (auto it = unrecognized.begin(); it != unrecognized.end(); ++it)
+        m_unrecognized.insert(it.key(), it.value().toString());
 
     const QJsonObject saved = QJsonDocument::fromJson(files::read(m_project.path(STATES)).toUtf8()).object();
     for (auto it = saved.begin(); it != saved.end(); ++it) {
@@ -211,7 +218,10 @@ void Workspace::closeProject()
         m_watcher.removePaths(m_watcher.files());
     if (!m_watcher.directories().isEmpty())
         m_watcher.removePaths(m_watcher.directories());
-    m_agentQueue.clear();                              // sono del progetto: restano nel suo file
+    m_agentQueue.clear();                              // sono del progetto: restano nei suoi file
+    m_unrecognized.clear();
+    m_sortWaiting.clear();
+    m_converting.clear();
     m_project = Project();
     m_compiler.setProject(m_project);
     m_lessons.clear();
@@ -360,7 +370,48 @@ void Workspace::refreshTree()
     for (const Used &u : used)
         if (!u.taken)
             strays << QVariantMap{{"file", u.file}, {"name", u.name}};
-    const QVariantList queue = listing("fonti/coda"), documents = listing("docs");
+    const QVariantList documents = listing("docs");
+    // in arrivo: ogni file ha uno stato (state: piano, lavoro, attesa, errore, smistare) e il suo perché
+    QHash<QString, QString> inPlan;                    // file → il piano che lo contiene
+    for (const plans::Info &info : plans::open(m_project)) {
+        const QJsonObject plan = plans::load(m_project, info.id);
+        if (plan.value("tipo").toString() == "materiale" && info.state == "piano")
+            for (const QJsonValue &f : plan.value("file").toArray())
+                inPlan.insert(f.toString(), info.id);
+    }
+    QSet<QString> waiting;
+    for (const auto &[files, lesson] : std::as_const(m_sortWaiting))
+        for (const QString &f : files)
+            waiting.insert(f);
+    QVariantList queue = listing("fonti/coda");
+    for (QVariant &v : queue) {
+        QVariantMap entry = v.toMap();
+        const QString file = entry.value("file").toString();
+        bool working = false;
+        for (const QString &source : std::as_const(m_converting))
+            working = working || texsource::parseSpec(source).path == file;
+        for (const QString &message : std::as_const(m_agentQueue))
+            working = working || message.contains(file);
+        if (working) {
+            entry["state"] = "lavoro";
+            entry["detail"] = QStringLiteral("in lavorazione");
+        } else if (inPlan.contains(file)) {
+            entry["state"] = "piano";
+            entry["plan"] = inPlan.value(file);
+            entry["detail"] = QStringLiteral("nel piano");
+        } else if (waiting.contains(file) || (m_jobTitle == QStringLiteral("Riconosco il materiale") && jobRunning())) {
+            entry["state"] = "attesa";
+            entry["detail"] = QStringLiteral("da riconoscere");
+        } else if (m_unrecognized.contains(file)) {
+            entry["state"] = "errore";
+            entry["detail"] = QStringLiteral("non riconosciuto");
+            entry["why"] = m_unrecognized.value(file);
+        } else {
+            entry["state"] = "smistare";
+            entry["detail"] = QStringLiteral("da smistare");
+        }
+        v = entry;
+    }
     QVariantList images = listing("imgs");             // di ogni immagine, la lezione che la usa
     const QList<Lesson> known = m_project.lessons();
     for (QVariant &v : images) {
@@ -791,39 +842,22 @@ QString Workspace::addStyleToLibrary(const QString &styPath) { return styleswitc
 
 void Workspace::removeLibraryStyle(const QString &name) { styleswitch::removeFromLibrary(name); }
 
-QVariantList Workspace::convertSources() const
+void Workspace::resume()
 {
-    QVariantList out;
-    if (!hasProject())
-        return out;
-    for (const Convert::Source &s : Convert::queue(m_project)) {
-        const bool can = s.kind != "altro";
-        const texsource::Ref ref = texsource::parseSpec(s.file);
-        const QString detail = s.kind == "pagine" ? plural(s.size, "pagina", "pagine")
-                               : s.kind == "testo" ? plural(s.size, "riga", "righe")
-                               : s.kind == "tex" ? plural(s.size, "riga", "righe") : QStringLiteral("non si converte");
-        out << QVariantMap{{"file", s.file}, {"name", QFileInfo(ref.path).fileName() + (ref.date.isValid() ? " · " + texsource::label(ref) : QString())}, {"detail", detail}, {"convertible", can}};
-    }
-    return out;
+    QHash<QString, Convert::Wanted> wanted;                       // con numero, data e argomento scelti nel piano
+    const QStringList sources = Convert::interrupted(m_project, &wanted);
+    convert(sources, wanted);
 }
-
-double Workspace::convertEstimate() const
-{
-    return hasProject() ? Convert::estimate(m_settings.quality, Convert::queue(m_project)) : 0;
-}
-
-void Workspace::resume() { convert(Convert::interrupted(m_project)); }
-
-void Workspace::convert(const QStringList &sources) { convert(sources, {}); }
 
 void Workspace::convert(const QStringList &sources, const QHash<QString, Convert::Wanted> &wanted)
 {
     if (!hasProject() || sources.isEmpty())
-        return say(QStringLiteral("Non c'è niente da convertire."));
+        return say(QStringLiteral("Non c'è niente da scrivere."));
     if (busy())
         return say(QStringLiteral("C'è già un lavoro in corso."));
     checkpoint(QStringLiteral("Modifiche a mano"));
-    startJob(QStringLiteral("Converti"), [this, project = m_project, settings = m_settings, style = m_style, sources, wanted](JobControl *control) {
+    m_converting = sources;
+    startJob(QStringLiteral("Scrivo le lezioni"), [this, project = m_project, settings = m_settings, style = m_style, sources, wanted](JobControl *control) {
         const Convert::Result result = Convert(project, settings, style, control).run(sources, wanted);
         return std::function<void()>([this, result] { convertFinished(result); });
     });
@@ -876,7 +910,8 @@ void Workspace::startJob(const QString &title, std::function<std::function<void(
 
 void Workspace::convertFinished(const Convert::Result &result)
 {
-    checkpoint(QStringLiteral("Converti"));            // tutto il lavoro è un passo solo
+    m_converting.clear();
+    checkpoint(QStringLiteral("Aggiungi materiale"));  // tutto il lavoro è un passo solo
     loadSettings();                                    // i pacchetti chiesti dalle figure
     refreshTree();
     emit filesChanged();
@@ -911,11 +946,11 @@ void Workspace::convertFinished(const Convert::Result &result)
     if (!m_outcomeHead.isEmpty())                      // una riga in testa: che cosa si è fatto delle fonti
         lines.prepend(m_outcomeHead);
     m_outcomeHead.clear();
-    emit outcomeReady(QVariantMap{{"title", result.stopped ? QStringLiteral("Converti: fermato") : QStringLiteral("Converti: esito")},
+    emit outcomeReady(QVariantMap{{"title", result.stopped ? QStringLiteral("Aggiungi materiale: fermato") : QStringLiteral("Aggiungi materiale: esito")},
                                   {"lines", lines},
                                   {"cost", QStringLiteral("%1 $").arg(italian.toString(result.cost, 'f', 2))},
                                   {"minutes", italian.toString(result.minutes, 'f', 1)}});
-    say(QStringLiteral("Converti: %1.").arg(plural(result.written(), "lezione scritta", "lezioni scritte")));
+    say(QStringLiteral("Aggiungi materiale: %1.").arg(plural(result.written(), "lezione scritta", "lezioni scritte")));
     if (result.written() > 0)
         m_compiler.compileDocument();                  // dà lo stato alle lezioni nuove
 }
@@ -1642,28 +1677,32 @@ QStringList Workspace::localPaths(const QList<QUrl> &urls)
     return out;
 }
 
-QStringList Workspace::addSources(const QStringList &paths)
+void Workspace::addMaterial(const QStringList &paths, const QString &lesson)
 {
     if (!hasProject() || paths.isEmpty())
-        return {};
-    // un file con il nome di una fonte già usata: identico non si aggiunge; diverso, si chiede se è la versione nuova
-    QStringList fresh;
-    for (const QString &path : paths) {
-        const newlesson::Version version = newlesson::versionOf(m_project, path);
-        if (version.used.isEmpty())
-            fresh << path;
-        else if (version.identical)
-            say(QStringLiteral("«%1» è già fra le fonti usate, identica: non la aggiungo.").arg(QFileInfo(path).fileName()));
-        else
-            emit versionAsked(path, version.used);
-    }
-    if (fresh.isEmpty())
-        return {};
+        return;
     checkpoint(QStringLiteral("Modifiche a mano"));
-    const QStringList added = newlesson::toQueue(m_project, fresh);
-    checkpoint(QStringLiteral("Fonti aggiunte"));
+    const QStringList added = newlesson::toQueue(m_project, paths);
+    if (added.isEmpty())
+        return say(QStringLiteral("Non riesco a copiare i file nel progetto."));
+    checkpoint(QStringLiteral("Materiale aggiunto"));
     refreshTree();
-    return added;
+    sortMaterial(added, lesson);                       // ogni volta che entra materiale si riconosce, e c'è un piano
+}
+
+void Workspace::newVersion(const QString &used, const QString &path)
+{
+    if (!hasProject() || !QFileInfo(path).isFile())
+        return;
+    // arriva con il nome della fonte usata: il piano la riconosce come sua versione nuova
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    QDir().mkpath(m_project.path("fonti/coda"));
+    const QString target = files::freeName(m_project.path("fonti/coda/" + QFileInfo(used).completeBaseName() + '.' + QFileInfo(path).suffix()));
+    if (!QFile::copy(path, target))
+        return say(QStringLiteral("Non riesco a copiare il file nel progetto."));
+    checkpoint(QStringLiteral("Materiale aggiunto"));
+    refreshTree();
+    sortMaterial({m_project.relative(target)});
 }
 
 void Workspace::addDocuments(const QStringList &paths)
@@ -1677,149 +1716,73 @@ void Workspace::addDocuments(const QStringList &paths)
     say(n == 1 ? QStringLiteral("Un file aggiunto fra quelli da consultare.") : QStringLiteral("%1 file aggiunti fra quelli da consultare.").arg(n));
 }
 
-QVariantMap Workspace::lessonMarks(const QStringList &paths) const
-{
-    const newlesson::Marks marks = newlesson::read(paths);
-    return {{"number", marks.number}, {"date", marks.date}, {"conflict", marks.conflict}, {"next", newlesson::nextNumber(m_project)},
-            {"today", QDate::currentDate().toString("dd/MM/yyyy")}};
-}
-
-void Workspace::acceptVersion(const QString &path, const QString &used, bool isNew)
-{
-    if (!hasProject())
-        return;
-    if (busy())
-        return say(QStringLiteral("Aspetta la fine del lavoro in corso."));
-    checkpoint(QStringLiteral("Modifiche a mano"));
-    if (!isNew) {                                      // un'altra fonte con lo stesso nome: va fra quelle da convertire
-        const QStringList added = newlesson::toQueue(m_project, {path});
-        checkpoint(QStringLiteral("Fonti aggiunte"));
-        refreshTree();
-        if (!added.isEmpty())
-            sortMaterial(added);
-        return;
-    }
-    QString lesson;                                    // la lezione che ha quella fonte
-    for (const QVariant &v : m_lessons)
-        for (const QVariant &s : v.toMap().value("sources").toList())
-            if (s.toMap().value("file").toString() == used)
-                lesson = v.toMap().value("file").toString();
-    const QString copy = newlesson::replaceVersion(m_project, used, path);
-    if (copy.isEmpty())
-        return say(QStringLiteral("Non riesco a mettere la versione nuova al posto della vecchia."));
-    checkpoint(QStringLiteral("Versione nuova di una fonte"));
-    refreshTree();
-    const QString previous = QFileInfo(used).path() + "/precedenti/";
-    if (lesson.isEmpty())
-        sortMaterial({copy});
-    else
-        emit agentAsked(newlesson::updateMessage(lesson, newlesson::forAgent(m_project, {copy}).first(), previous), QStringLiteral("Versione nuova di %1").arg(QFileInfo(used).fileName()));
-}
-
-QString Workspace::createLesson(int number, const QString &date, const QStringList &paths, const QStringList &important)
-{
-    if (!hasProject())
-        return QStringLiteral("Apri prima un progetto.");
-    if (busy())
-        return QStringLiteral("C'è già un lavoro in corso.");
-    if (number <= 0)
-        return QStringLiteral("Serve il numero della lezione.");
-    for (const Lesson &lesson : m_project.lessons())
-        if (lesson.number == number)
-            return QStringLiteral("La lezione %1 c'è già: «%2».").arg(number).arg(lesson.title);
-    if (paths.isEmpty())
-        return QStringLiteral("Serve almeno una fonte.");
-    const QStringList sources = addSources(paths);
-    if (sources.isEmpty())
-        return QStringLiteral("Non riesco a leggere le fonti.");
-    if (sources.size() == 1 && Pages::kindOf(sources.first()) != "tex" && Pages::kindOf(sources.first()) != "altro") {
-        convert(sources, {{sources.first(), Convert::Wanted{number, date}}});
-        return {};
-    }
-    // più fonti: le fonde l'agente, sempre con un piano da approvare
-    static const QRegularExpression numbered(R"(^src(\d+)$)");
-    int last = 0;
-    for (const QString &name : QDir(m_project.path("src")).entryList({"*.tex"}, QDir::Files))
-        last = qMax(last, numbered.match(QFileInfo(name).completeBaseName()).captured(1).toInt());
-    QStringList weighty;                               // le fonti importanti, con il nome che hanno nel progetto
-    for (const QString &path : important)
-        for (const QString &source : sources)
-            if (files::bare(QFileInfo(path).fileName()) == files::bare(QFileInfo(source).fileName()))
-                weighty << source;
-    const QString fuse = newlesson::fuseMessage(QStringLiteral("src/src%1.tex").arg(last + 1), number, date, newlesson::forAgent(m_project, sources), weighty);
-    const QString title = QStringLiteral("Lezione %1: fusione delle fonti").arg(number);
-    bool pages = sources.size() > 1;
-    for (const QString &source : sources)
-        pages = pages && Pages::kindOf(source) == "pagine";
-    if (!pages) {                                      // tipi diversi: le fonde l'agente
-        emit agentAsked(fuse, title);
-        return {};
-    }
-    // più scansioni o PDF: una chiamata leggera dice se si sovrappongono. Se no, si uniscono e si convertono.
-    startJob(QStringLiteral("Guardo le fonti"), [=, this, project = m_project, quality = m_settings.quality](JobControl *control) {
-        newlesson::Overlap seen;
-        QString united;
-        try {
-            control->progress(0.2, QStringLiteral("che cosa hanno in comune"));
-            seen = newlesson::overlap(project, quality, sources, control);
-            if (seen.known && !seen.overlap)
-                united = newlesson::unite(project, sources, seen.order, number);
-        } catch (const Stopped &) {
-            return std::function<void()>([this] { say(QStringLiteral("Lavoro fermato: le fonti restano fra quelle da convertire.")); refreshTree(); });
-        }
-        return std::function<void()>([=, this] {
-            refreshTree();
-            if (united.isEmpty()) {                    // si sovrappongono (o non si sa): le fonde l'agente, con un piano
-                QTimer::singleShot(0, this, [=, this] { emit agentAsked(fuse, title); });
-                return;
-            }
-            QStringList names;
-            for (int i : seen.order)
-                names << QFileInfo(sources.value(i)).fileName();
-            m_outcomeHead = QStringLiteral("Fonti unite in quest'ordine: %1. %2").arg(names.join(", "), seen.why);
-            QTimer::singleShot(0, this, [=, this] { convert({united}, {{united, Convert::Wanted{number, date}}}); });
-        });
-    });
-    return {};
-}
-
-void Workspace::integrateSources(const QString &lesson, const QStringList &paths)
-{
-    if (busy())
-        return say(QStringLiteral("C'è già un lavoro in corso."));
-    const QStringList sources = addSources(paths);
-    if (!sources.isEmpty())
-        emit agentAsked(newlesson::integrateMessage(lesson, newlesson::forAgent(m_project, sources)), QStringLiteral("Fonti aggiunte a %1").arg(QFileInfo(lesson).completeBaseName()));
-}
-
-void Workspace::sortMaterial(const QStringList &sources) { sortJob(sources, {}, {}); }
+void Workspace::sortMaterial(const QStringList &sources, const QString &lesson) { sortJob(sources, {}, {}, lesson); }
 
 void Workspace::reviseSortPlan(const QString &id)
 {
     const QJsonObject plan = plans::load(m_project, id);
     QStringList sources;
     for (const QJsonValue &f : plan.value("file").toArray())
-        sources << f.toString();
-    sortJob(sources, sort::previousPlan(plan), id);
+        if (QFileInfo::exists(m_project.path(f.toString())))
+            sources << f.toString();
+    sortJob(sources, plan, id, plan.value("lezione_scelta").toString());
 }
 
-void Workspace::sortJob(const QStringList &sources, const QString &previous, const QString &replaces)
+void Workspace::sortJob(const QStringList &sources, const QJsonObject &previous, const QString &replaces, const QString &lesson)
 {
     if (!hasProject() || sources.isEmpty())
         return;
-    if (busy())
-        return say(QStringLiteral("C'è già un lavoro in corso."));
-    startJob(QStringLiteral("Smisto il materiale"), [this, sources, previous, replaces, project = m_project, settings = m_settings](JobControl *control) {
-        const sort::Outcome outcome = sort::plan(project, settings, sources, control, previous);
-        return std::function<void()>([this, outcome, replaces, project] {
-            if (outcome.plan.isEmpty())
-                return say(outcome.failure.isEmpty() ? QStringLiteral("Non sono riuscito a fare il piano.") : outcome.failure);
+    if (busy()) {                                      // si riconosce appena niente lavora: intanto la riga lo dice
+        m_sortWaiting.append({sources, lesson});
+        refreshTree();
+        return say(QStringLiteral("Riconosco il materiale appena finisce il lavoro in corso."));
+    }
+    for (const QString &source : sources)
+        m_unrecognized.remove(source);
+    startJob(QStringLiteral("Riconosco il materiale"), [this, sources, previous, replaces, lesson, project = m_project, settings = m_settings](JobControl *control) {
+        const sort::Outcome outcome = sort::plan(project, settings, sources, control, previous, lesson);
+        return std::function<void()>([this, outcome, sources, replaces, project] {
+            for (auto it = outcome.unread.begin(); it != outcome.unread.end(); ++it)
+                m_unrecognized.insert(it.key(), it.value());
+            if (outcome.plan.isEmpty()) {              // niente in silenzio: il perché resta accanto a ogni file
+                const QString why = outcome.failure.isEmpty() ? QStringLiteral("non sono riuscito a fare il piano") : outcome.failure;
+                for (const QString &source : sources)
+                    if (!m_unrecognized.contains(source))
+                        m_unrecognized.insert(source, why);
+                saveUnrecognized();
+                refreshTree();
+                const QString said = why.left(1).toLower() + why.mid(1);
+                return say(QStringLiteral("Materiale non riconosciuto: %1 Resta in arrivo; «Riprova» lo rifà.").arg(said.endsWith('.') ? said : said + '.'));
+            }
             plans::discard(project, replaces);         // il piano rifatto prende il posto di quello di prima
+            saveUnrecognized();
             refreshTree();
             say(QStringLiteral("Piano del materiale pronto. Costo: %1 $.").arg(QLocale(QLocale::Italian).toString(outcome.cost, 'f', 2)));
             emit planReady(outcome.plan);
         });
     });
+    refreshTree();                                     // le righe in arrivo dicono che si sta riconoscendo
+}
+
+void Workspace::nextSort()
+{
+    if (m_sortWaiting.isEmpty() || busy() || !hasProject())
+        return;
+    const auto [sources, lesson] = m_sortWaiting.takeFirst();
+    QStringList left;
+    for (const QString &source : sources)
+        if (QFileInfo::exists(m_project.path(source)))
+            left << source;
+    sortJob(left, {}, {}, lesson);
+}
+
+void Workspace::saveUnrecognized()
+{
+    QJsonObject saved;
+    for (auto it = m_unrecognized.begin(); it != m_unrecognized.end(); ++it)
+        if (QFileInfo::exists(m_project.path(it.key())))
+            saved.insert(it.key(), it.value());
+    files::write(m_project.path(UNRECOGNIZED), QString::fromUtf8(QJsonDocument(saved).toJson()));
 }
 
 void Workspace::startSortPlan(const QString &id)
@@ -1830,16 +1793,25 @@ void Workspace::startSortPlan(const QString &id)
     const sort::Prepared prepared = sort::prepare(m_project, plans::load(m_project, id));
     if (!prepared.failure.isEmpty())
         return say(prepared.failure);
-    plans::discard(m_project, id);                     // il piano è eseguito da Texfix: l'esito è quello di Converti
+    plans::discard(m_project, id);                     // il piano è eseguito da Texfix: l'esito è quello della conversione
     m_agentQueue += prepared.agent;
     saveProcedures();
+    for (const QString &line : prepared.done)
+        m_console << QTime::currentTime().toString("HH:mm:ss  ") + QStringLiteral("Aggiungi materiale: %1.").arg(line);
+    emit consoleChanged();
     refreshTree();
-    if (!prepared.sources.isEmpty())
-        convert(prepared.sources, prepared.wanted);    // le lezioni semplici, tutte insieme; poi le procedure dell'agente
-    else
+    if (!prepared.sources.isEmpty()) {
+        if (!prepared.done.isEmpty())
+            m_outcomeHead = QStringLiteral("Prima: %1.").arg(prepared.done.join("; "));
+        convert(prepared.sources, prepared.wanted);    // le lezioni di una fonte sola, tutte insieme; poi le procedure dell'agente
+    } else {
+        checkpoint(QStringLiteral("Aggiungi materiale"));
         nextProcedure();
-    if (prepared.sources.isEmpty() && prepared.agent.isEmpty())
-        say(QStringLiteral("Nel piano non c'è niente da fare."));
+        if (!prepared.done.isEmpty())
+            say(QStringLiteral("Fatto: %1.").arg(prepared.done.join("; ")));
+        else if (prepared.agent.isEmpty())
+            say(QStringLiteral("Nel piano non c'è niente da fare."));
+    }
 }
 
 void Workspace::nextProcedure()
@@ -2023,6 +1995,25 @@ void Workspace::backToLessons()
     refreshTree();
     emit filesChanged();
     m_compiler.compileDocument();
+}
+
+void Workspace::setByTopic(bool on)
+{
+    if (!hasProject() || on == m_settings.byTopic())
+        return;
+    if (!m_project.inputs().isEmpty())                 // con delle lezioni si riorganizza: la scaletta, o il ritorno per data
+        return on ? proposeTopics() : backToLessons();
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    if (on) {
+        reorganize::startByTopic(m_project);
+    } else {
+        Settings settings = Settings::load(m_project);
+        settings.topics = {};
+        settings.save(m_project);
+    }
+    checkpoint(on ? QStringLiteral("Progetto per argomento") : QStringLiteral("Progetto per data"));
+    loadSettings();
+    refreshTree();
 }
 
 void Workspace::correctDoubt(const QString &lesson, const QString &id)
@@ -2215,43 +2206,6 @@ void Workspace::recheckFigures()
                                    "spostare, con la fonte e la pagina. Se è tutto a posto dillo e non consegnare niente.\n"
                                    "- Quando il piano è approvato fai le modifiche, compila le lezioni toccate finché sono pulite e consegna l'esito."),
                     QStringLiteral("Figure: ricontrollo con le fonti"));
-}
-
-QVariantList Workspace::texAlreadyThere() const
-{
-    QVariantList out;
-    if (!hasProject())
-        return out;
-    // le lezioni di un .tex con lo stesso giorno di una lezione del corso che non viene da loro: c'è da fonderle
-    const QDir dir(m_project.path("fonti/coda"));
-    for (const QString &name : dir.entryList({"*.tex"}, QDir::Files, QDir::Name)) {
-        QStringList dates;
-        for (const newlesson::TexLecture &t : newlesson::texLectures(m_project, "fonti/coda/" + name))
-            if (!t.sameDate.isEmpty())
-                dates << t.lesson.date.toString("dd/MM/yyyy");
-        if (!dates.isEmpty())
-            out << QVariantMap{{"file", "fonti/coda/" + name}, {"name", name}, {"count", int(dates.size())}, {"dates", dates}};
-    }
-    return out;
-}
-
-void Workspace::integrateTex(const QString &file)
-{
-    if (busy())
-        return say(QStringLiteral("Aspetta la fine del lavoro in corso."));
-    QStringList dates;
-    for (const QVariant &v : texAlreadyThere())
-        if (v.toMap().value("file").toString() == file)
-            dates = v.toMap().value("dates").toStringList();
-    if (dates.isEmpty())
-        return;
-    emit agentAsked(QStringLiteral("Il file `%1` ha lezioni dello stesso giorno di una lezione del corso che non è stata scritta da loro: %2.\n"
-                                   "- Per ognuna leggi la parte del file (`\\section{Lezione del …}`) e la lezione del corso con quella data. Porta "
-                                   "nella lezione solo ciò che manca o le correzioni, vicino al blocco a cui appartiene; ciò che c'è già non si riscrive.\n"
-                                   "- Prima consegna un piano con consegna_piano: una sezione per lezione, una voce per ogni aggiunta.\n"
-                                   "- Quando il piano è approvato fai le aggiunte, compila finché è pulito e consegna l'esito. Il file resta dov'è.")
-                        .arg(file, dates.join(", ")),
-                    QStringLiteral("Materiale da %1").arg(QFileInfo(file).fileName()));
 }
 
 void Workspace::reopenLesson(const QString &lesson, const QString &section)

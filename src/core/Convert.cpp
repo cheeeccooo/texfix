@@ -9,6 +9,7 @@
 #include "core/NewLesson.h"
 #include "core/Pages.h"
 #include "core/Prompts.h"
+#include "core/Reorganize.h"
 #include "core/TexSource.h"
 
 #include <QCryptographicHash>
@@ -118,12 +119,18 @@ double Convert::estimate(const QString &quality, const QList<Source> &sources)
     return factor * total;
 }
 
-QStringList Convert::interrupted(const Project &project)
+QStringList Convert::interrupted(const Project &project, QHash<QString, Wanted> *wanted)
 {
     QStringList out;
-    for (const QJsonValue &v : readJson(project.path(RUNNING)).value("fonti").toArray())
-        if (QFileInfo::exists(project.path(texsource::parseSpec(v.toString()).path)))
-            out << v.toString();
+    const QJsonObject running = readJson(project.path(RUNNING)), chosen = running.value("scelte").toObject();
+    for (const QJsonValue &v : running.value("fonti").toArray()) {
+        if (!QFileInfo::exists(project.path(texsource::parseSpec(v.toString()).path)))
+            continue;
+        out << v.toString();
+        if (const QJsonObject w = chosen.value(v.toString()).toObject(); wanted && !w.isEmpty())
+            wanted->insert(v.toString(), Wanted{w.value("numero").toInt(), w.value("data").toString(), w.value("argomento").toString(),
+                                                w.value("titolo").toString(), w.value("dopo").toString()});
+    }
     return out;
 }
 
@@ -440,7 +447,10 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
     QElapsedTimer timer;
     timer.start();
     Model model(m_settings.quality, m_project.root(), m_control);
-    writeJson(m_project.path(RUNNING), QJsonObject{{"fonti", QJsonArray::fromStringList(sources)}});
+    QJsonObject chosen;                                // numero, data e argomento scelti nel piano: valgono anche alla ripresa
+    for (auto it = wanted.begin(); it != wanted.end(); ++it)
+        chosen.insert(it.key(), QJsonObject{{"numero", it->number}, {"data", it->date}, {"argomento", it->topic}, {"titolo", it->title}, {"dopo", it->after}});
+    writeJson(m_project.path(RUNNING), QJsonObject{{"fonti", QJsonArray::fromStringList(sources)}, {"scelte", chosen}});
     auto progress = [&](double fraction, const QString &label) {
         if (m_control)
             m_control->progress(fraction, label);
@@ -686,6 +696,14 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
                 QDir().mkpath(m_project.path("fonti/usate/più lezioni"));
                 QFile::rename(m_project.path(it.key()), files::freeName(m_project.path("fonti/usate/più lezioni/" + QFileInfo(it.key()).fileName())));
             }
+        }
+        // in un progetto per argomento ogni lezione scritta va nel suo argomento (ciò che ha da fare la lezione è fatto)
+        for (Work &work : works) {
+            const Wanted chosen = wanted.value(work.source);
+            if (work.lesson.file.isEmpty() || !chosen.byTopic())
+                continue;
+            if (const QString error = reorganize::place(m_project, work.lesson.file, chosen.topic, chosen.title, chosen.after); !error.isEmpty())
+                m_control->log(QStringLiteral("%1 resta una lezione a sé: %2").arg(work.lesson.file, error));
         }
         QFile::remove(m_project.path(RUNNING));        // arrivato in fondo: niente da riprendere
     } catch (const Stopped &) {

@@ -8,8 +8,10 @@
 // approva, l'agente lo esegue e consegna l'esito. Ogni lavoro è una cartella salvataggi/lavori/<nome>/ con piano.json;
 // chiuso, resta solo un file in salvataggi/esiti/. Ogni modifica dell'utente al piano è salvata subito.
 //
-// piano.json: titolo, riepilogo, stato (piano | in_corso | esito), sezioni [{titolo, voci [{testo, fare, nota}]}],
-// domande [{testo, opzioni [..], risposta}], commento, esito.
+// piano.json: titolo, riepilogo, stato (piano | in_corso | esito), sezioni [{titolo, voci [{testo, fare, nota}], scelta}],
+// domande [{testo, opzioni [..], risposta, proposta}], commento, esito. La scelta di una sezione (facoltativa) è
+// {opzioni [..], valori [..], valore, rifai [..]}: un valore in «rifai» chiede di rifare il piano, come una risposta
+// diversa dalla «proposta».
 namespace tx::plans {
 
 struct Info {
@@ -25,7 +27,7 @@ void discard(const Project &project, const QString &id);
 // Chiude un lavoro eseguito: l'esito e sotto il piano seguito, in salvataggi/esiti/. Restituisce il file.
 QString archive(const Project &project, const QString &id);
 
-bool hasInstructions(const QJsonObject &plan);         // una nota sotto una voce o un commento: «Rivedi piano»
+bool hasInstructions(const QJsonObject &plan);         // una nota, un commento, una risposta cambiata: «Rivedi piano»
 QString markdown(const QJsonObject &plan);             // il piano da leggere
 // Ciò che si dice all'agente: esegui il piano com'è ora, oppure rifallo con le istruzioni dell'utente.
 QString startMessage(const QString &id, const QJsonObject &plan);

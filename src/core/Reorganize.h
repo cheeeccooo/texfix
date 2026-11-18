@@ -30,4 +30,12 @@ QString toTopics(const Project &project, const QList<Topic> &topics);
 // Torna a un file per lezione, con i nomi e i titoli di prima.
 QString toLessons(const Project &project);
 
+// Un progetto per argomento che nasce così: niente lezioni da ricordare, ma il progetto è già per argomenti.
+void startByTopic(const Project &project);
+// Una lezione appena scritta (un file nel documento) in un progetto per argomento: il suo contenuto va in fondo
+// all'argomento `topic`, o diventa un argomento nuovo con il titolo `title` subito dopo `after` (vuoto: in fondo), con
+// `\lezione{N}{data}` davanti, e la lezione si ricorda per il ritorno per data. `after` «^»: prima di tutti. Vuoto se è
+// andata.
+QString place(const Project &project, const QString &lesson, const QString &topic, const QString &title, const QString &after = {});
+
 }

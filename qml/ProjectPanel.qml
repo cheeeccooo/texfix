@@ -34,6 +34,8 @@ Rectangle {
         property int indent: 0                         // le righe dentro una lezione stanno più a destra
         property string arrow                          // «▸» o «▾» se la riga ha qualcosa dentro; un clic lì apre solo il ramo
         property string panel                          // la riga apre un pannello Rivedi su questa lezione
+        property string plan                           // la riga apre il piano che la contiene (in arrivo)
+        property string why                            // perché non si è riconosciuta (in arrivo)
         signal arrowClicked()
         width: parent ? parent.width : 0
         height: Theme.rowHeight
@@ -65,7 +67,7 @@ Rectangle {
                 if (mouse.button === Qt.LeftButton && row.arrow !== "" && mouse.x < Theme.gap + 28 + row.indent)
                     return row.arrowClicked()
                 if (mouse.button === Qt.LeftButton)
-                    return row.panel !== "" ? root.panelAsked(row.panel, row.file) : root.fileChosen(row.file)
+                    return row.panel !== "" ? root.panelAsked(row.panel, row.file) : root.fileChosen(row.plan !== "" ? "piano:" + row.plan : row.file)
                 if (row.file.includes(":") || row.panel !== "")
                     return                             // un lavoro, non un file
                 fileMenu.file = row.file
@@ -78,7 +80,7 @@ Rectangle {
         }
         ToolTip.visible: area.containsMouse
         ToolTip.delay: 800
-        ToolTip.text: (row.number !== "" ? row.number + " · " : "") + row.name + (row.detail !== "" ? " · " + row.detail : "")
+        ToolTip.text: (row.number !== "" ? row.number + " · " : "") + row.name + (row.detail !== "" ? " · " + row.detail : "") + (row.why !== "" ? ": " + row.why : "")
     }
 
     // Un gruppo di file con il suo titolo: un clic sul titolo lo apre o lo chiude, e resta così.
@@ -112,6 +114,9 @@ Rectangle {
                 file: modelData.file
                 name: modelData.name
                 detail: modelData.detail || ""
+                plan: modelData.plan || ""
+                why: modelData.why || ""
+                dot: modelData.state === "errore" ? Theme.bad : modelData.state === "piano" ? Theme.warn : "transparent"
             }
         }
     }
@@ -142,7 +147,8 @@ Rectangle {
         MenuItem { text: "Sposta nel Cestino"; onTriggered: Workspace.trashFile(fileMenu.file) }
         MenuSeparator { visible: fileMenu.lesson; height: visible ? implicitHeight : 0 }
         MenuItem { text: "Carica una versione nuova…"; visible: fileMenu.file.startsWith("fonti/usate/"); height: visible ? implicitHeight : 0; onTriggered: root.newVersionAsked(fileMenu.file) }
-        MenuItem { text: "Aggiungi fonti a questa lezione…"; visible: fileMenu.lesson; height: visible ? implicitHeight : 0; onTriggered: root.sourcesAsked(fileMenu.file) }
+        MenuItem { text: "Aggiungi materiale a questa lezione…"; visible: fileMenu.lesson; height: visible ? implicitHeight : 0; onTriggered: root.sourcesAsked(fileMenu.file) }
+        MenuItem { text: "Riconosci di nuovo"; visible: fileMenu.file.startsWith("fonti/coda/"); height: visible ? implicitHeight : 0; onTriggered: Workspace.sortMaterial([fileMenu.file]) }
         MenuItem { text: "Fai decidere al modello tutti i dubbi"; visible: fileMenu.lesson; height: visible ? implicitHeight : 0; onTriggered: Workspace.decideDoubts(fileMenu.file, []) }
         MenuItem { text: fileMenu.done ? "Non è più fatta" : "Segna come fatta"; visible: fileMenu.lesson; height: visible ? implicitHeight : 0; onTriggered: Workspace.setDone(fileMenu.file, !fileMenu.done) }
     }
@@ -151,24 +157,22 @@ Rectangle {
         return state === "good" ? Theme.good : state === "warn" ? Theme.warn : state === "bad" ? Theme.bad : Theme.idle
     }
 
-    signal newLessonAsked()
     signal materialAsked()
     signal sourcesAsked(string lesson)
     signal newVersionAsked(string used)
 
-    // i due ingressi, sopra l'albero
+    // la porta del materiale, sopra l'albero
     Row {
         id: entries
         x: Theme.gap
         y: Theme.gap
         spacing: 6
-        TxButton { text: "＋ Nuova lezione"; width: Math.min(implicitWidth, (root.width - 2 * Theme.gap - 6) / 2); onClicked: root.newLessonAsked() }
-        TxButton { text: "＋ Aggiungi materiale"; width: Math.min(implicitWidth, (root.width - 2 * Theme.gap - 6) / 2); hint: "Porta dei file fra le fonti da convertire"; onClicked: root.materialAsked() }
+        TxButton { text: "＋ Aggiungi materiale"; width: root.width - 2 * Theme.gap; hint: "Texfix lo riconosce e propone un piano: lezioni nuove, da completare, già nel corso (⇧⌘K)"; onClicked: root.materialAsked() }
     }
-    // i file trascinati sull'albero entrano fra le fonti da convertire
+    // i file trascinati sull'albero sono materiale nuovo: si riconoscono, e c'è un piano
     DropArea {
         anchors.fill: parent
-        onDropped: drop => { if (drop.hasUrls) Workspace.sortMaterial(Workspace.addSources(Workspace.localPaths(drop.urls))) }
+        onDropped: drop => { if (drop.hasUrls) Workspace.addMaterial(Workspace.localPaths(drop.urls)) }
     }
 
     TxScroll {
@@ -252,11 +256,13 @@ Rectangle {
                 }
             }
             FileGroup {
-                title: "Da convertire"
+                // ogni file ha uno stato: nel piano (un clic lo apre), in lavorazione, da riconoscere, non riconosciuto
+                // (il perché nel suggerimento), da smistare (rimasto da prima)
+                title: "In arrivo"
                 files: Workspace.queue
                 visible: files.length > 0
-                action: "Smista in lezioni"
-                onActionAsked: Workspace.sortMaterial(Workspace.queue.map(q => q.file))
+                action: files.some(q => q.state === "errore") ? "Riprova" : files.some(q => q.state === "smistare") ? "Smista" : ""
+                onActionAsked: Workspace.sortMaterial(files.filter(q => q.state === "errore" || q.state === "smistare").map(q => q.file))
             }
             FileGroup { title: "Documento"; files: Workspace.documentFiles }
             FileGroup { title: "Fonti senza lezione"; files: Workspace.strays; visible: files.length > 0 }

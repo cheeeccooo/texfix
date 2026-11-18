@@ -80,14 +80,12 @@ qt_add_qml_module(texfix
         qml/PreferencesSheet.qml
         qml/StyleRolesSheet.qml
         qml/StyleMatchSheet.qml
-        qml/ConvertSheet.qml
         qml/OutcomeSheet.qml
         qml/ReviewView.qml
         qml/FiguresView.qml
         qml/LayoutView.qml
         qml/ChatPane.qml
         qml/PlanView.qml
-        qml/NewLessonSheet.qml
         qml/GitPanel.qml
         qml/DiffView.qml
         qml/RenameSheet.qml

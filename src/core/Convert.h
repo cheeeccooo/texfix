@@ -9,9 +9,10 @@
 
 namespace tx {
 
-// Converti: ogni fonte di «Da convertire» diventa una lezione nuova. Per ogni fonte: le pagine, la scaletta, la
-// trascrizione a blocchi con la verifica, l'assemblaggio con i marcatori dei blocchi, la lezione nel documento, la
-// fonte fra quelle usate. Gira nel thread di chi la chiama (un thread di lavoro), dentro il programma.
+// La conversione: una fonte in arrivo diventa una lezione nuova (da «Avvia» di Aggiungi materiale). Per ogni fonte:
+// le pagine, la scaletta, la trascrizione a blocchi con la verifica, l'assemblaggio con i marcatori dei blocchi, la
+// lezione nel documento, la fonte fra quelle usate. Gira nel thread di chi la chiama (un thread di lavoro), dentro il
+// programma.
 //
 // Ciò che è fatto e pagato resta in build/lavori/converti/: un lavoro interrotto, rilanciato, lo riusa.
 class Convert {
@@ -40,12 +41,16 @@ public:
     static QList<Source> queue(const Project &project);
     // Quanto costa all'incirca convertire queste fonti, in dollari.
     static double estimate(const QString &quality, const QList<Source> &sources);
-    // I lavori interrotti: le fonti di un Converti che non è arrivato in fondo (vuoto se non ce n'è).
-    static QStringList interrupted(const Project &project);
+    // I lavori interrotti: le fonti di una conversione che non è arrivata in fondo, con le scelte del piano.
+    struct Wanted;
+    static QStringList interrupted(const Project &project, QHash<QString, Wanted> *wanted = nullptr);
 
-    struct Wanted {                                    // numero e data scelti dall'utente per una fonte (Nuova lezione)
+    struct Wanted {                                    // numero e data scelti nel piano di Aggiungi materiale
         int number = 0;
         QString date;
+        // in un progetto per argomento: in fondo all'argomento `topic`, o un argomento nuovo `title` dopo `after`
+        QString topic, title, after;
+        bool byTopic() const { return !topic.isEmpty() || !title.isEmpty(); }
     };
     Result run(const QStringList &sources, const QHash<QString, Wanted> &wanted = {});
 

@@ -48,7 +48,7 @@ QJsonArray tools()
             tool("impagina", "Impagina una lezione che compila pulita: sistema ciò che cade a cavallo di due pagine e dice le mosse fatte e "
                              "quelle solo proposte.", LESSON, {"lezione"}),
             tool("chiudi_lezione", "Da chiamare quando una lezione scritta o completata da te compila pulita: la mette nel documento se manca, "
-                                   "aggiunge i marcatori dei blocchi che mancano e porta le fonti usate fuori da quelle da convertire.",
+                                   "aggiunge i marcatori dei blocchi che mancano e porta le fonti usate fuori da quelle in arrivo.",
                  QJsonObject{{"lezione", QJsonObject{{"type", "string"}}},
                              {"fonti", QJsonObject{{"type", "array"}, {"items", QJsonObject{{"type", "string"}}}, {"description", "I file di fonti/coda usati"}}}},
                  {"lezione"}),

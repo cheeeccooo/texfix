@@ -116,9 +116,9 @@ public:
     // prepareFolder); altrimenti il perché non si apre.
     Q_INVOKABLE QString openFolder(const QString &path);
     Q_INVOKABLE void prepareFolder(const QString &path);
-    // Un progetto nuovo, anche da un profilo di partenza (vuoto: nessuno). I profili: i nomi; saveProfile salva le scelte
-    // del progetto aperto (vuoto se è andata).
-    Q_INVOKABLE QString newProject(const QString &path, const QString &profile = {});
+    // Un progetto nuovo, per data o per argomento, anche da un profilo di partenza (vuoto: nessuno). I profili: i nomi;
+    // saveProfile salva le scelte del progetto aperto (vuoto se è andata).
+    Q_INVOKABLE QString newProject(const QString &path, const QString &profile = {}, bool byTopic = false);
     Q_INVOKABLE QStringList profiles() const;
     Q_INVOKABLE QString saveProfile(const QString &name);
     Q_INVOKABLE void removeProfile(const QString &name);
@@ -177,9 +177,6 @@ public:
     Q_INVOKABLE QString figurePage(const QString &id) const;
     // «Ricontrolla con le fonti»: l'agente rilegge le fonti e propone un piano.
     Q_INVOKABLE void recheckFigures();
-    // Le lezioni di un .tex in coda che il corso ha già (file, name, count, dates); integrateTex le affida all'agente, con un piano.
-    Q_INVOKABLE QVariantList texAlreadyThere() const;
-    Q_INVOKABLE void integrateTex(const QString &file);
 
     // «Risolvi tutto»: errori e righe fuori misura delle lezioni non fatte (prima le mosse che non costano, poi il
     // modello), poi compila il documento. Un lavoro, un passo della cronologia.
@@ -223,26 +220,21 @@ public:
     Q_INVOKABLE void discardPlan(const QString &id);
     Q_INVOKABLE void archivePlan(const QString &id);
 
-    // Nuova lezione e Aggiungi materiale. addSources porta dei file fra le fonti da convertire. lessonMarks: numero e data
-    // proposti (number, date) o letti dalle fonti, con conflict se non concordano. createLesson: una fonte si converte
-    // con il numero e la data scelti; più fonti le fonde l'agente, con un piano (agentAsked). integrateSources: l'agente
-    // porta in una lezione ciò che manca, con un piano.
-    Q_INVOKABLE QStringList addSources(const QStringList &paths);
+    // Aggiungi materiale, la porta sola (SPEC §3.4). addMaterial porta dei file fra quelli in arrivo e li riconosce: ne
+    // esce sempre un piano. `lesson`: la lezione (o l'argomento) a cui l'utente li ha aggiunti. newVersion: un file che
+    // l'utente dice versione nuova di una fonte usata (arriva con il suo nome, e il piano lo riconosce). sortMaterial
+    // riconosce ciò che è già in arrivo; se un lavoro gira aspetta la sua fine. startSortPlan divide i pezzi e fa partire
+    // le lezioni: quelle di una fonte sola si convertono, le altre passano dall'agente una alla volta; reviseSortPlan
+    // rifà il piano con le istruzioni, le scelte e i ruoli dell'utente. Ciò che non si riconosce resta in arrivo con il
+    // perché (il dettaglio della sua riga) e si riprova con sortMaterial.
+    Q_INVOKABLE void addMaterial(const QStringList &paths, const QString &lesson = {});
+    Q_INVOKABLE void newVersion(const QString &used, const QString &path);
     Q_INVOKABLE void addDocuments(const QStringList &paths);               // copia dei file fra quelli da consultare (docs/)
-    Q_INVOKABLE QVariantMap lessonMarks(const QStringList &paths) const;
-    Q_INVOKABLE QString createLesson(int number, const QString &date, const QStringList &paths, const QStringList &important = {});
-    // Un file con il nome di una fonte già usata, ma diverso (versionAsked): isNew, è la versione nuova (la vecchia va in
-    // «precedenti/», l'agente porta nella lezione ciò che è cambiato); altrimenti è un'altra fonte.
-    Q_INVOKABLE void acceptVersion(const QString &path, const QString &used, bool isNew);
-    Q_INVOKABLE void integrateSources(const QString &lesson, const QStringList &paths);
     Q_INVOKABLE static QStringList localPaths(const QList<QUrl> &urls);
-
-    // Lo smistamento del materiale (Aggiungi materiale): un piano che fa Texfix, tipo «materiale». sortMaterial lo
-    // prepara (un lavoro); startSortPlan divide i pezzi e fa partire le lezioni: quelle semplici si convertono, le altre
-    // passano dall'agente una alla volta; reviseSortPlan lo rifà con le istruzioni dell'utente.
-    Q_INVOKABLE void sortMaterial(const QStringList &sources);
+    Q_INVOKABLE void sortMaterial(const QStringList &sources, const QString &lesson = {});
     Q_INVOKABLE void startSortPlan(const QString &id);
     Q_INVOKABLE void reviseSortPlan(const QString &id);
+    Q_INVOKABLE void askSettings() { emit settingsAsked(); }
 
     // Version control: lo usa solo l'utente. changeCount: quante modifiche non salvate (nel titolo della linguetta).
     Q_PROPERTY(int changeCount READ changeCount NOTIFY treeChanged)
@@ -270,12 +262,15 @@ public:
     // Riorganizza. byTopic: i file sono per argomenti. proposeTopics chiede al modello gli argomenti (un lavoro) e
     // poi outlineReady con la scaletta: topics [{title, sections [{id, title, lesson}]}]. applyTopics la scrive;
     // backToLessons torna a un file per lezione. Ognuno è un passo della cronologia, poi si compila il documento.
+    // setByTopic: l'organizzazione del progetto dalle impostazioni; un progetto senza lezioni cambia e basta, gli altri
+    // passano da proposeTopics o da backToLessons.
     Q_PROPERTY(bool byTopic READ byTopic NOTIFY settingsChanged)
 public:
     bool byTopic() const { return m_settings.byTopic(); }
     Q_INVOKABLE void proposeTopics();
     Q_INVOKABLE QString applyTopics(const QVariantList &topics);          // vuoto se è andata
     Q_INVOKABLE void backToLessons();
+    Q_INVOKABLE void setByTopic(bool on);
 
     // I tag di provenienza sul PDF: da quale fonte viene ogni blocco. showTags li mostra o li nasconde (non sposta una
     // riga: nel documento non c'è niente); tags: page, y, mark, source, sourcePage, path; tagSources: la legenda
@@ -290,12 +285,9 @@ public:
     QVariantList tagSources() const;
     Q_INVOKABLE void setMarkHidden(const QString &mark, bool hidden);
 
-    // Converti. Le fonti di «Da convertire»: file, name, detail, convertible; la stima del costo in dollari.
-    // convert le fa diventare lezioni (un passo solo della cronologia), poi compila il documento; alla fine
-    // outcomeReady con title, lines, cost, minutes. resume riprende un lavoro interrotto senza rifare ciò che è fatto.
-    Q_INVOKABLE QVariantList convertSources() const;
-    Q_INVOKABLE double convertEstimate() const;
-    Q_INVOKABLE void convert(const QStringList &sources);
+    // La conversione, da «Avvia» di Aggiungi materiale: le fonti diventano lezioni (un passo solo della cronologia), poi
+    // si compila il documento; alla fine outcomeReady con title, lines, cost, minutes. resume riprende un lavoro
+    // interrotto senza rifare ciò che è fatto.
     void convert(const QStringList &sources, const QHash<QString, tx::Convert::Wanted> &wanted);
     Q_INVOKABLE void resume();
 
@@ -365,7 +357,6 @@ signals:
     void consoleChanged();
     void tagsChanged();
     void snippetsReady();
-    void versionAsked(const QString &path, const QString &used);
     void styleProposed(const QString &name, const QVariantList &environments);
     void styleQuestions(const QString &name, const QVariantList &questions);
     void outlineReady(const QVariantList &topics);
@@ -378,6 +369,7 @@ signals:
     void message(const QString &text);
     void buildFinished();
     void prepareAsked(const QString &path);            // una cartella che non è un progetto: chiedere se prepararla
+    void settingsAsked();                              // aprire le impostazioni del progetto (da un piano: «Cambia»)
     void gesture(const QString &name, const QString &argument);   // le prove senza mani
 
 private:
@@ -392,7 +384,9 @@ private:
     void paginateLessons(const QStringList &lessons, const QString &title);
     void convertFinished(const tx::Convert::Result &result);
     void decided(const QString &lesson, const QString &title, const QString &error);
-    void sortJob(const QStringList &sources, const QString &previous, const QString &replaces);
+    void sortJob(const QStringList &sources, const QJsonObject &previous, const QString &replaces, const QString &lesson);
+    void nextSort();                                   // il riconoscimento che aspettava la fine di un lavoro
+    void saveUnrecognized();                           // ciò che non si è riconosciuto, e perché: build/lavori/smistamento/
     void nextProcedure();                              // la prossima procedura dell'agente in coda, se niente lavora
     void saveProcedures();                             // la coda delle procedure in salvataggi/procedure.json
     void loadSettings();                               // impostazioni e stile, dal disco
@@ -409,6 +403,9 @@ private:
     bool m_agentRunning = false;
     QStringList m_jobLog;
     QStringList m_agentQueue, m_console, m_hiddenMarks;
+    QHash<QString, QString> m_unrecognized;            // in arrivo, non riconosciuto → perché
+    QList<std::pair<QStringList, QString>> m_sortWaiting;   // da riconoscere appena niente lavora: file e lezione scelta
+    QStringList m_converting;                          // le fonti della conversione in corso
     QVariantList m_tags;
     QString m_outcomeHead;                             // una riga in testa al prossimo esito di Converti
     QList<QStringList> m_snippetQueue;                 // le rese chieste e non ancora fatte: testo, tipo, colore
@@ -416,7 +413,7 @@ private:
     void renderSnippets();
     bool m_showTags = false;
     int m_tagsRun = 0;                                 // l'ultimo calcolo dei tag chiesto: quelli di prima si buttano
-    void computeTags();                          // procedure dell'agente che aspettano il loro turno
+    void computeTags();
     QFileSystemWatcher m_watcher;
     QTimer m_refresh;                                  // più cambiamenti vicini, un aggiornamento solo
     QVariantList m_recent, m_outcomes, m_strays, m_jobs, m_lessons, m_documentFiles, m_queue, m_documents, m_images, m_issues;

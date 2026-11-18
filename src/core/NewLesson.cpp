@@ -22,9 +22,12 @@ namespace tx::newlesson {
 
 int nextNumber(const Project &project)
 {
+    // ogni \lezione di ogni file: in un progetto per argomento un file ne ha più d'una
+    static const RE mark(R"(\\lezione\s*\{\s*(\d+)\s*\})");
     int last = 0;
-    for (const Lesson &lesson : project.lessons())
-        last = qMax(last, lesson.number);
+    for (const QString &file : project.inputs())
+        for (auto it = mark.globalMatch(files::read(project.path(file))); it.hasNext();)
+            last = qMax(last, it.next().captured(1).toInt());
     return last + 1;
 }
 
@@ -115,7 +118,7 @@ QStringList settle(const Project &project, const QStringList &boxes, const QStri
         if (Pages::kindOf(file) == "tex") {            // un .tex con più lezioni resta finché il corso non le ha tutte
             const QList<TexLecture> lectures = texLectures(project, file);         // con la lezione appena aggiunta
             if (std::any_of(lectures.begin(), lectures.end(), [](const TexLecture &t) { return t.in.isEmpty() && t.sameDate.isEmpty(); })) {
-                did << QStringLiteral("%1 resta fra le fonti da convertire: ha altre lezioni").arg(name);
+                did << QStringLiteral("%1 resta in arrivo: ha altre lezioni").arg(name);
                 continue;
             }
             if (lectures.size() > 1)
@@ -242,7 +245,7 @@ Version versionOf(const Project &project, const QString &path)
 {
     Version out;
     const QFileInfo info(path);
-    if (!info.isFile() || info.absoluteFilePath().startsWith(project.path("fonti/")))
+    if (!info.isFile() || info.absoluteFilePath().startsWith(project.path("fonti/usate/")))
         return out;
     const QString bare = files::bare(info.fileName()), suffix = info.suffix().toLower();
     for (QDirIterator it(project.path("fonti/usate"), QDir::Files, QDirIterator::Subdirectories); it.hasNext();) {
@@ -272,6 +275,8 @@ QString replaceVersion(const Project &project, const QString &used, const QStrin
         QFile::rename(kept, old);
         return {};
     }
+    if (QFileInfo(path).absoluteFilePath().startsWith(project.path("fonti/coda/")))
+        return project.relative(QFileInfo(path).absoluteFilePath());    // già fra quelle in arrivo: resta lei
     QDir().mkpath(project.path("fonti/coda"));
     const QString copy = files::freeName(project.path("fonti/coda/" + QFileInfo(old).fileName()));
     return QFile::copy(path, copy) ? project.relative(copy) : QString();

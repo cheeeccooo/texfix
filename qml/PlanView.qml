@@ -78,6 +78,26 @@ Rectangle {
                     Layout.fillWidth: true
                     spacing: 6
                     TxLabel { Layout.fillWidth: true; Layout.topMargin: Theme.gap; text: section.modelData.titolo || ""; font.weight: Font.DemiBold; wrapMode: Text.WordWrap; elide: Text.ElideNone }
+                    // una scelta per tutta la sezione (una sovrapposizione, una versione): un tasto per opzione
+                    Flow {
+                        Layout.fillWidth: true
+                        visible: !!section.modelData.scelta
+                        spacing: Theme.gap
+                        Repeater {
+                            model: section.modelData.scelta ? section.modelData.scelta.opzioni : []
+                            TxButton {
+                                required property string modelData
+                                required property int index
+                                readonly property string value: section.modelData.scelta.valori[index]
+                                readonly property bool on: section.modelData.scelta.valore === value
+                                text: (on ? "✓ " : "") + modelData
+                                primary: on
+                                enabled: root.editable
+                                width: Math.min(implicitWidth, column.width)
+                                onClicked: { root.plan.sezioni[section.index].scelta.valore = value; root.store(); root.reload() }
+                            }
+                        }
+                    }
                     Repeater {
                         model: section.modelData.voci
                         ColumnLayout {
@@ -144,6 +164,24 @@ Rectangle {
                         }
                     }
                 }
+            }
+
+            // il piano del materiale: come si scrive (le impostazioni del progetto) e quanto costa, all'incirca
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: Theme.gap
+                visible: root.plan.tipo === "materiale" && root.editable
+                spacing: Theme.gap
+                TxLabel {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    elide: Text.ElideNone
+                    color: Theme.textMuted
+                    font.pixelSize: Theme.smallSize
+                    text: (root.plan.impostazioni || "") + (root.plan.stima > 0 ? "\nCosto stimato per scrivere le lezioni nuove: circa " + Number(root.plan.stima).toLocaleString(Qt.locale("it_IT"), "f", 2)
+                                                                                  + " $, più il lavoro dell'agente dove si fonde." : "")
+                }
+                TxButton { text: "Cambia"; hint: "Le impostazioni del progetto (⌘,)"; onClicked: Workspace.askSettings() }
             }
 
             TxLabel { Layout.fillWidth: true; Layout.topMargin: Theme.gap; visible: root.editable; text: "Commento"; font.weight: Font.Medium }

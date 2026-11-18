@@ -92,6 +92,15 @@ bool hasInstructions(const QJsonObject &plan)
         for (const QJsonValue &v : s.toObject().value("voci").toArray())
             if (!v.toObject().value("nota").toString().trimmed().isEmpty())
                 return true;
+    // una risposta proposta che l'utente ha cambiato, o una scelta di sezione che chiede di rifare il piano
+    for (const QJsonValue &q : plan.value("domande").toArray())
+        if (q.toObject().contains("proposta") && q.toObject().value("proposta") != q.toObject().value("risposta"))
+            return true;
+    for (const QJsonValue &s : plan.value("sezioni").toArray()) {
+        const QJsonObject choice = s.toObject().value("scelta").toObject();
+        if (!choice.isEmpty() && choice.value("rifai").toArray().contains(choice.value("valore")))
+            return true;
+    }
     return false;
 }
 

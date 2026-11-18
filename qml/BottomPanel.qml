@@ -22,7 +22,10 @@ Rectangle {
         if (Workspace.waitingProcedures > 0)
             out.push({ title: "Procedure dell'agente in attesa", detail: Workspace.waitingProcedures + (Workspace.waitingProcedures === 1 ? " aspetta il suo turno" : " aspettano il loro turno"), progress: -1, state: "wait" })
         if (Workspace.resumable)
-            out.push({ title: "Converti interrotto", detail: "riprende senza rifare ciò che è già fatto", progress: -1, state: "wait", resume: true })
+            out.push({ title: "Scrittura delle lezioni interrotta", detail: "riprende senza rifare ciò che è già fatto", progress: -1, state: "wait", resume: true })
+        const unread = Workspace.queue.filter(q => q.state === "errore").length
+        if (unread > 0)
+            out.push({ title: "Materiale non riconosciuto", detail: (unread === 1 ? "un file" : unread + " file") + " in arrivo: il perché accanto, poi «Riprova»", progress: -1, state: "wait" })
         for (const job of Workspace.recentJobs)
             out.push({ title: job.title, detail: (job.stopped ? "fermato alle " : "finito alle ") + job.when, progress: -1, state: "done" })
         return out
