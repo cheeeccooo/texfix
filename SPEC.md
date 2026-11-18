@@ -34,6 +34,8 @@ predefinito semplice o con uno stile importato (come `styles`, §4.2). Le fonti 
 - **Il modello serve solo dove serve.** Ciò che si decide con un'occhiata lo decide l'utente con un clic; ciò che è
   deterministico lo fa il programma.
 - **Costi visibili**: prima di un lavoro che usa il modello si vede la stima del costo; dopo, quanto è costato.
+- **Niente fallisce in silenzio.** Ciò che non riesce (il modello non risponde, un file non si legge, un programma esterno
+  manca) lo si dice dove l'utente guarda, con il motivo e un modo per riprovare; mai un lavoro che finisce senza dire niente.
 - **Parole dell'utente**, in italiano. Nei testi visibili mai: seed, hbox, overfull, profilo, ramo, root, GUI, report
   (si dice esito), sessione, id, percorsi interni.
 
@@ -94,6 +96,7 @@ nome, `fatta` dentro `salvataggi/lezioni/<srcN>.json`, dubbi come stringhe «P1:
 ## 3. Funzioni
 
 ### 3.1 Progetti
+- **[S]** Alla creazione si sceglie se il progetto è per data o per argomento (§3.5).
 - **[S]** Nuovo progetto: nasce intero, con `styles.sty`, `main.tex`, le cartelle, `generated.tex`, `.latexmkrc` e il repository git.
 - **[S]** Apri cartella. Una cartella che non è un progetto si prepara con il sì dell'utente: ciò che c'era va in `docs/`, un nome già preso diventa «nome (2)» e i file nascosti restano dove sono. Un progetto senza `main.tex` si completa da sé.
 - **[S]** Pagina di benvenuto con i progetti recenti.
@@ -116,7 +119,7 @@ nome, `fatta` dentro `salvataggi/lezioni/<srcN>.json`, dubbi come stringhe «P1:
 - **[C]** ▶ File e ▶▶ Tutto sono spenti mentre si compila.
 
 ### 3.3 Albero del progetto e stato delle lezioni
-- **[S]** Gruppi dell'albero: Lavori; Lezioni (o Argomenti); Da convertire; Documento (main, `generated.tex`, file fuori dal main); Fonti senza lezione; Da consultare (`docs/`, ci si trascinano file); Esiti; Immagini (chiuso, divise per il file che le usa).
+- **[S]** Gruppi dell'albero: Lavori; Lezioni (o Argomenti); In arrivo (§3.4); Documento (main, `generated.tex`, file fuori dal main); Fonti senza lezione; Da consultare (`docs/`, ci si trascinano file); Esiti; Immagini (chiuso, divise per il file che le usa).
 - **[S]** Una lezione è una riga: pallino dello stato, numero, titolo, data. Il pallino è verde (pronta, con ✓ se fatta), giallo (da rivedere), rosso (errori) o grigio (mai compilata). Dentro ci sono le righe Dubbi, Correzioni, Impaginazione, Figure con il loro conto (un clic apre il pannello su quella lezione) e il ramo Fonti.
 - **[S]** Il nome sta a sinistra; a destra, piccolo, il dettaglio (data, conto, stato). Ogni voce ha il nome intero nel suggerimento.
 - **[S]** Un clic apre ciò che va in una scheda; il doppio clic apre anche ciò che prende la finestra o un'altra app; la freccia apre solo il ramo. Ciò che l'utente apre o chiude resta così fra un aggiornamento e l'altro.
@@ -124,37 +127,76 @@ nome, `fatta` dentro `salvataggi/lezioni/<srcN>.json`, dubbi come stringhe «P1:
 - **[C]** *(se le fonti si ritrovano per nome)* «notes_LabSS (1).pdf» deve ritrovare notes_LabSS_1.pdf: si confronta il nome senza maiuscole, punteggiatura e « (2)». Questa regola sta in un posto solo (`Sources::bare`).
 - **[C]** Le lezioni di prima senza manifest si riconoscono dal nome `srcN.*` o dalla data nel nome dei file in `fonti/usate`.
 
-### 3.4 Nuova lezione
-- **[S]** Numero e data vengono proposti. Le fonti si mostrano come miniature (trascinate, dal disco o dalla coda); tasto destro: apri, dai importanza, togli. La lezione compare subito nell'albero.
-- **[S]** «Prendi dal file»: numero e data cercati senza modello nei nomi e nel testo delle fonti; ciò che non trova lo chiede. Se le fonti non concordano o il numero c'è già, lo dice. «Crea» avvisa se le fonti dicono altro; un secondo clic tiene i valori scritti.
-- **[S]** Una fonte: si converte. Più fonti senza intersezioni (deciso da una chiamata leggera al modello: cosa hanno in comune, l'ordine, la più ricca): si uniscono e si convertono, con una riga in testa all'esito. Fonti che si sovrappongono o di tipo diverso: le fonde l'agente, **sempre con un piano da approvare**.
-- **[S]** Non c'è gerarchia fra le fonti: la struttura la dà la fonte più ricca, le fonti «importanti» decidono i dubbi.
-- **[S]** «Aggiungi fonti a questa lezione»: l'agente integra solo ciò che manca, con un piano.
-- **[S]** Se il numero e la data letti dalla scansione non tornano con quelli scelti, si crea un dubbio sulla riga `\lezione` con le due letture. Nella fusione diventa una domanda del piano.
-- **[S]** A lavoro finito le fonti vanno in `fonti/usate/lezione N/` e restano sotto la lezione. Tutto il lavoro è un passo solo della cronologia.
-- **[S]** Versioni delle fonti. Un file con il nome di una fonte già usata: se è identico non si aggiunge; se è diverso si chiede se è la versione nuova. Se sì, la vecchia va in `precedenti/` con la data, la nuova prende il suo posto e una copia va in coda per lo smistamento. L'agente sa che è un aggiornamento e porta le parti nuove e le correzioni. A mano: «Carica una versione nuova…». Un file identico non si archivia due volte.
+### 3.4 Aggiungi materiale (decisioni del 18/11/2026)
+Una porta sola per il materiale nuovo. Non ci sono più Nuova lezione, il tasto Converti, «Smista in lezioni» né
+«Fai il piano»: c'è **Aggiungi materiale**, e il resto lo decide Texfix con un piano che l'utente approva.
 
-### 3.5 Aggiungi materiale (smistamento)
-- **[S]** File aggiunti o trascinati sull'albero vengono smistati fra lezioni nuove e lezioni da completare. Ogni pagina finisce in un posto solo, oppure in un file per lezione.
-- **[O]** Due chiamate: per ogni file di scansioni una con le miniature (data e argomento di ogni pagina, `prompt/smistamento-pagine.md`), poi una leggera con le lezioni del corso (`prompt/smistamento.md`).
-- **[S]** Il piano: una sezione per lezione, una voce per pezzo, scritto a parole («p1.tex · lezione del 29 settembre 2026»). Sotto ogni voce un campo di istruzioni. Con almeno un'istruzione il tasto diventa «Rivedi piano»: si rifà solo l'ultima chiamata e le istruzioni restano sul loro pezzo. «Avvia» divide i PDF in pezzi e crea le lezioni, che partono una dopo l'altra. Una lezione nuova con istruzioni passa dall'agente. Le lezioni da completare passano dall'agente con il piano. «Butta il piano» chiede conferma e il materiale resta in coda. Chiudere la scheda lascia il piano sotto Lavori.
-- **[C]** *(se le lezioni partono in coda)* Una fusione aspetta che il piano aperto dell'agente sia deciso.
+- **[S]** **Il materiale entra in qualunque modo**: il tasto, file trascinati sul pannello, «Aggiungi materiale a questa
+  lezione…» dal menu di una lezione (il materiale va lì, se le pagine non dicono chiaramente altro), «Carica una versione
+  nuova…» sul menu di una fonte usata. Ogni volta Texfix lo riconosce e **mostra sempre il piano**, anche quando non c'è
+  niente da chiedere.
+- **[S]** **Riconoscere** vuol dire dividere il materiale in unità (le pagine di un PDF o di una scansione, le lezioni di
+  un `.tex` per `\section{Lezione del …}`, un testo intero) e dare a ciascuna un esito:
+  - *già nel corso*: lo stesso file è già fra le fonti usate, o il testo c'è già (per i testi lo dice il confronto senza
+    modello: i marcatori dei blocchi nominano il file, o la lezione ne contiene il testo). Si salta; la voce resta nel
+    piano senza spunta, e con la spunta la si porta nella lezione che la contiene;
+  - *versione nuova di …*: ha il nome di una fonte già usata ma è diversa. Scelte: «Porta le differenze» (la vecchia va
+    in `precedenti/` con la data, l'agente porta nella lezione le parti nuove e le correzioni), «Smistala come materiale
+    nuovo», «Salta»;
+  - *si sovrappone alla lezione N* (o all'argomento): scelte «Fondi nella lezione N» (l'agente, con un suo piano),
+    «Lezione a parte», «Salta»;
+  - *lezione nuova* (o argomento nuovo), con data e titolo;
+  - *da saltare*: pagine bianche, copertine, indici, doppioni.
+- **[S]** **Ruoli delle fonti**, proposti dal modello e confermati nel piano (una domanda per fonte):
+  - *principale* (appunti, il `.tex` di un collega): crea le lezioni;
+  - *integrativa* (slide, un capitolo di libro): completa le lezioni a cui si appoggia, e crea una lezione sua solo se
+    non trova niente;
+  - *esercizi*: vanno nella lezione dell'argomento che esercitano, o in una lezione di esercizi.
+  Cambiare un ruolo, scrivere un'istruzione sotto una voce o un commento fa diventare il tasto «Rivedi piano»: si rifà
+  solo l'ultima chiamata.
+- **[S]** **Date.** La data è un indizio fra gli altri (numero, argomento, ordine). Ciò che non ha data in un progetto per
+  data diventa una *lezione senza data*, in fondo, e il piano lo dice; numero e data si correggono con un'istruzione.
+- **[S]** **Il piano** ha una sezione per lezione (o argomento) di destinazione, una voce per pezzo con le istruzioni
+  sotto, le domande sui ruoli, il riepilogo delle impostazioni del progetto con «Cambia» e il costo stimato. «Avvia»
+  sceglie da sé come procedere: una lezione nuova di una fonte sola passa per la conversione (§3.6), il resto (fondere,
+  completare, versioni, lezioni con istruzioni) per l'agente, con un piano suo, una procedura alla volta. Le procedure
+  in attesa restano su disco (`salvataggi/procedure.json`) e ripartono alla riapertura. «Butta il piano» chiede conferma.
+- **[S]** **Costo.** Riconoscere le scansioni costa una chiamata leggera per file (tenuta: non si ripaga), più una per
+  il piano. Parte da sola a ogni aggiunta. Aprire un progetto non riconosce niente da sé.
+- **[S]** **In arrivo** (era «Da convertire»): il materiale aspetta in `fonti/coda/` finché un lavoro non lo porta fra le
+  fonti usate. Nell'albero c'è solo se c'è qualcosa, e ogni file ha uno stato e un'azione: *nel piano* (apre il piano),
+  *in lavorazione*, *non riconosciuto* con il motivo e «Riprova», *da smistare* (rimasto da prima) con «Smista».
+- **[S]** **Niente fallisce in silenzio.** Se il modello non risponde (connessione, limite d'uso, errore) il materiale resta
+  in arrivo con il motivo scritto accanto e «Riprova»; il messaggio va anche nella barra e in Console. Se il modello
+  risponde ma il piano non torna (pagine perse o doppie), si propone un file per lezione e il riepilogo lo dice.
+- **[S]** A lavoro finito le fonti vanno in `fonti/usate/lezione N/`; un PDF diviso in pezzi in `fonti/usate/divise/`, un
+  `.tex` con più lezioni in `fonti/usate/più lezioni/` quando il corso le ha tutte. Tutto il lavoro è un passo solo della
+  cronologia.
+- **[S]** Se numero e data letti da una scansione non tornano con quelli del piano, si crea un dubbio sulla riga
+  `\lezione` con le due letture.
 
-### 3.6 Converti
-- **[S]** Le fonti in «Da convertire» diventano lezioni nuove. Un `.tex` con più lezioni dà una riga per lezione, in ordine di calendario. Le lezioni di un `.tex` che il corso ha già non si elencano: una riga le conta e «Fai il piano» le manda ad Aggiungi materiale. Se c'è un piano di materiale da approvare, Converti apre quello.
-- **[S]** In basso: riepilogo delle impostazioni del progetto e costo stimato (da pagine e righe). «Cambia» apre le impostazioni e ciò che si cambia lì vale per il progetto.
-- **[S]** **Converti va fino in fondo da solo.** Per ogni lezione: scaletta, trascrizione a blocchi, verifica, assemblaggio, figure, titolo, poi errori e righe, poi impaginazione delle box (se l'impostazione è «da sola»), poi compilazione del documento. Alla fine la lezione è *pronta* oppure *da rivedere*. Non si ferma ad aspettare la scelta delle figure: quelle da scegliere entrano nel registro.
+### 3.5 Per data o per argomento
+- **[S]** Un progetto è **per data** (le lezioni di un corso, in ordine di calendario) o **per argomento** (un libro, una
+  dispensa, un corso senza calendario). Si sceglie alla creazione e si cambia quando si vuole dalle impostazioni: verso
+  gli argomenti con Riorganizza (§3.11), verso le date tornando a un file per lezione. Un progetto vuoto cambia e basta.
+- **[S]** In un progetto per argomento il materiale nuovo va nell'argomento con cui si sovrappone (con le stesse scelte:
+  fondi, a parte, salta) o in un argomento nuovo, messo nel punto della scaletta dove sta meglio. Ogni pezzo ricorda la
+  lezione da cui viene (`\lezione{N}{data}` prima del pezzo), così si torna sempre per data; ciò che non ha data torna
+  come lezione senza data.
+
+### 3.6 La conversione
+La conversione non è più un tasto: è il modo in cui «Avvia» scrive una lezione nuova da una fonte sola.
+- **[S]** **Va fino in fondo da sola.** Per ogni lezione: scaletta, trascrizione a blocchi, verifica, assemblaggio, figure, titolo, poi errori e righe, poi impaginazione delle box (se l'impostazione è «da sola»), poi compilazione del documento. Alla fine la lezione è *pronta* oppure *da rivedere*. Non si ferma ad aspettare la scelta delle figure: quelle da scegliere entrano nel registro.
 - **[S]** Esito corto: una riga per lezione, l'impaginazione in una riga, il costo e i minuti, un collegamento al resoconto completo.
-- **[S]** Un lavoro interrotto si riprende senza rifare ciò che è già fatto e pagato.
+- **[S]** Un lavoro interrotto si riprende senza rifare ciò che è già fatto e pagato («Riprendi» in Attività).
 - **[S]** Tipi di fonte:
   - scansioni e PDF (pagine come immagini);
   - documenti di testo;
-  - `.tex` di altri autori: divisi per `\section{Lezione del …}`, con `--only file.tex@AAAA-MM-GG`, macro dell'autore in testa, figure annunciate, scaletta per blocchi di righe.
+  - `.tex` di altri autori: divisi per `\section{Lezione del …}` (due lezioni lo stesso giorno sono due lezioni), con le macro dell'autore in testa, figure annunciate, scaletta per blocchi di righe.
 - **[S]** Figure dei `.tex`: «tieni» adatta il codice dell'autore alla colonna e lo asciuga solo se la resa resta uguale; «ridisegna» passa al disegnatore la resa del codice.
 - **[S]** Stile «Da studiare» (prosa, correzioni dichiarate, aggiunte marcate, rimandi, didascalie) o «Fedele» (uno a uno, niente aggiunte; restano correzioni, passaggi troncati, box per esempi ed esercizi, didascalie, rimandi e titoli che la fonte ha).
 - **[S]** I blocchi scritti hanno il marcatore di provenienza (§3.18).
-- **[O]** `pipe run` gira staccato (`--detach`) con cache su disco; l'app segue `build/artifacts/pipe/status.json`. Ci sono stadi numerati 1–9 con worker `claude -p` in parallelo e uno stato condiviso (`RunState`). *→ Decisione D3: il motore gira nell'app; chiusa l'app, tutto si ferma. Alla riapertura il lavoro riprende da dove era, senza rifare né ripagare ciò che è già fatto (cache su disco del lavoro).*
-- **[O]** La «lettura guidata» (un file alla volta in attesa della revisione dei ritagli) resta solo per riprendere run vecchi. *→ Sparisce.*
+- **[S]** L'agente legge testo, PDF e immagini PNG e JPEG; di `.docx`, `.odt`, `.doc`, `.rtf`, HEIC e TIFF riceve una copia leggibile.
 
 ### 3.7 Rivedi dubbi e Rivedi correzioni
 Due pannelli con lo stesso codice, lezione per lezione. Il tasto nella barra c'è solo finché resta qualcosa da decidere (⇧⌘D, ⇧⌘E).
@@ -274,6 +316,7 @@ Le mosse e le misure sono regole strutturali (§4.1); quanto essere severi è un
 - **[C]** *(se il menu legge la cronologia da file)* Il menu deve fare una lettura sola, non quattro.
 
 ### 3.15 Impostazioni del progetto (⌘,)
+- **[S]** Organizzazione: Per data · Per argomento (§3.5).
 - **[S]** Stile: Da studiare · Fedele. Qualità: Veloce · Bilanciata · Massima (oggi i profili `sonnet-low`, `default`, `opus-medium`). Figure delle scansioni: Ridisegna · Ritaglia. Figure dei `.tex`: Tieni · Ridisegna. Impaginazione: da sola · quando lo chiedo.
 - **[S]** Regole del progetto: entrano nei prompt di trascrizione e di decisione e l'agente le legge. Le segue la cronologia.
 - **[S]** «Fatta» (menu della lezione): pallino verde con ✓, esce dai pannelli Rivedi; i lavori del modello chiedono conferma; le modifiche a mano restano libere; ⌘Z la annulla.
@@ -453,6 +496,10 @@ Decisioni successive (14/11/2026):
 - **D10**: senza stile il progetto è un classico documento LaTeX matematico;
 - il progetto di prova usa il nuovo `styles` con preferenze che riproducono la vecchia Texfix, e diventa il primo profilo di partenza;
 - l'impaginazione vale per tutto il documento, non solo per le box (§3.9).
+
+Decisioni del 18/11/2026 (§3.4, §3.5): una porta sola per il materiale, Aggiungi materiale, con il piano sempre mostrato;
+il progetto è per data o per argomento, scelto alla creazione e cambiabile quando si vuole; il riconoscimento usa il
+modello a ogni aggiunta, ma niente fallisce in silenzio; le fonti hanno un ruolo: principale, integrativa, esercizi.
 
 Le domande D8–D10 come erano poste:
 - **D8. Come Texfix conosce uno stile importato.** (a) Lo stile porta un piccolo file di descrizione (ambienti e ruoli, macro, colori) accanto al `.sty`; `styles` lo avrà, per gli altri lo si scrive all'importazione. (b) All'importazione Texfix legge il `.sty`, trova ambienti e macro, il modello propone i ruoli e l'utente li conferma; il risultato si salva come in (a). Proposta: (b), che produce (a), così ogni stile funziona e quelli già descritti non costano niente.
