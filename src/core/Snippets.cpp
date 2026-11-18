@@ -24,7 +24,7 @@ QString keyOf(const Project &project, const QString &text, Kind kind, const QStr
     hash.addData(text.toUtf8());
     hash.addData(kind == Kind::Prose ? "p" : "l");
     hash.addData(color.toUtf8());
-    hash.addData("2");                         // le rese fallite prima che pdflatex avesse percorsi relativi si riprovano
+    hash.addData("3");                         // le rese fallite prima che i simboli Unicode avessero una definizione si riprovano
     // il preambolo: cambia lo stile, cambiano le rese
     const QFileInfo package(project.path(Project::PACKAGE));
     hash.addData(QByteArray::number(package.lastModified().toSecsSinceEpoch()) + QByteArray::number(package.size()));
@@ -45,7 +45,8 @@ const QHash<QChar, QString> &greek()
 // Un tratto di prosa fuori dalla matematica: i caratteri che LaTeX non vuole, le lettere greche, «V_CB».
 QString plain(const QString &text)
 {
-    static const RE token(R"((\\?[A-Za-z0-9]+)([_^])(\{[^{}$]*\}|[A-Za-z0-9]+))");     // «V_CB», «\beta_F», «R_{in}»
+    static const RE token(R"(((?:(?<![A-Za-z0-9])-)?\\?[A-Za-z0-9]+)((?:[_^](?:\{[^{}$]*\}|[A-Za-z0-9]+))+))");     // «V_CB», «\beta_F», «R_{in}», «i_C^Q»
+    static const RE script(R"(([_^])(\{[^{}$]*\}|[A-Za-z0-9]+))");
     QString out;
     qsizetype at = 0;
     auto escaped = [](const QString &s) {
@@ -89,21 +90,46 @@ QString plain(const QString &text)
     for (auto it = token.globalMatch(text); it.hasNext();) {
         const auto m = it.next();
         out += escaped(text.mid(at, m.capturedStart() - at));
-        {
-            QString sub = m.captured(3);
-            if (!sub.startsWith(u'{'))
-                sub = u'{' + sub + u'}';
-            out += QStringLiteral("$%1%2%3$").arg(m.captured(1), m.captured(2), sub);
+        QString math = m.captured(1);
+        for (auto s = script.globalMatch(m.captured(2)); s.hasNext();) {
+            const auto part = s.next();
+            const QString sub = part.captured(2);
+            math += part.captured(1) + (sub.startsWith(u'{') ? sub : u'{' + sub + u'}');
         }
+        out += u'$' + math + u'$';
         at = m.capturedEnd();
     }
     return out + escaped(text.mid(at));
 }
 
+// I simboli che il modello scrive in Unicode (−, ≃, ≫, le lettere greche, anche dentro $…$) e che pdflatex non conosce:
+// ognuno con il suo comando; un carattere che resta sconosciuto è un «?», non un pezzo che non compila.
+QString unicodeSymbols()
+{
+    static const QString preamble = [] {
+        QHash<QChar, QString> symbols = greek();
+        const QList<std::pair<char16_t, const char *>> more{
+            {u'−', "-"}, {u'≃', "\\simeq"}, {u'≅', "\\cong"}, {u'≈', "\\approx"}, {u'∼', "\\sim"}, {u'≫', "\\gg"}, {u'≪', "\\ll"},
+            {u'′', "'"}, {u'″', "''"}, {u'∥', "\\parallel"}, {u'∝', "\\propto"}, {u'≡', "\\equiv"}, {u'←', "\\leftarrow"},
+            {u'⇒', "\\Rightarrow"}, {u'⇔', "\\Leftrightarrow"}, {u'↔', "\\leftrightarrow"}, {u'↑', "\\uparrow"}, {u'↓', "\\downarrow"},
+            {u'∘', "\\circ"}, {u'∠', "\\angle"}, {u'∆', "\\Delta"}, {u'Ω', "\\Omega"}, {u'µ', "\\mu"}, {u'⋅', "\\cdot"},
+            {u'∀', "\\forall"}, {u'∃', "\\exists"}, {u'∉', "\\notin"}, {u'⊂', "\\subset"}, {u'∩', "\\cap"}, {u'∪', "\\cup"},
+            {u'∇', "\\nabla"}, {u'ℏ', "\\hbar"}, {u'ℓ', "\\ell"}, {u'∗', "\\ast"}, {u'∓', "\\mp"}, {u'≲', "\\lesssim"}, {u'≳', "\\gtrsim"}};
+        const auto hex = [](int c) { return QString::number(c, 16).toUpper().rightJustified(4, u'0'); };
+        QString out = "\\makeatletter\\def\\UTFviii@undefined@err#1{?}\\makeatother\n";
+        for (auto it = symbols.cbegin(); it != symbols.cend(); ++it)
+            out += QStringLiteral("\\DeclareUnicodeCharacter{%1}{\\ensuremath{\\%2}}\n").arg(hex(it.key().unicode()), it.value());
+        for (const auto &[c, command] : more)
+            out += QStringLiteral("\\DeclareUnicodeCharacter{%1}{\\ensuremath{%2}}\n").arg(hex(c), QString::fromLatin1(command));
+        return out;
+    }();
+    return preamble;
+}
+
 QString document(const QStringList &bodies, const QString &color)
 {
     QString tex = "\\documentclass[10pt]{article}\n\\usepackage{texfix}\n\\usepackage{varwidth}\n\\usepackage[active,tightpage]{preview}\n"
-                  "\\setlength\\PreviewBorder{1.5pt}\n\\pagestyle{empty}\n\\begin{document}\n";
+                  "\\setlength\\PreviewBorder{1.5pt}\n\\pagestyle{empty}\n" + unicodeSymbols() + "\\begin{document}\n";
     for (const QString &body : bodies)
         tex += "\\begin{preview}\\begin{varwidth}{13cm}\\raggedright\\color[HTML]{" + color + "}%\n" + body + "%\n\\end{varwidth}\\end{preview}\n";
     return tex + "\\end{document}\n";

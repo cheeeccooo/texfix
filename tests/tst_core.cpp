@@ -492,6 +492,10 @@ private slots:
         QVERIFY(formula.width() > 20 && formula.width() < 400);                        // ritagliata a ciò che è scritto
         QVERIFY(formula.hasAlphaChannel());
         QCOMPARE(snippets::render(p, texts, snippets::Kind::Latex, "202020").size(), 0);   // niente da rifare
+        // la prosa del modello: simboli Unicode (anche dentro $…$), pedici in fila, comandi senza $, un carattere sconosciuto
+        QCOMPARE(snippets::prose("i_C^Q e \\beta_F, -R_C, x-y_1"), "$i_{C}^{Q}$ e $\\beta_{F}$, $-R_{C}$, x-$y_{1}$");
+        const QString model = "Vale −I_C R_C/V_T ≃ −100 con 1/h_oe ≫ R_C, i_C^Q, \\beta_F, $A ≈ 2$ e 5 kΩ ☃.";
+        QCOMPARE(snippets::render(p, {model}, snippets::Kind::Prose, "202020").size(), 1);
     }
 
     // Le versioni delle fonti: un file identico a una fonte usata non si aggiunge; uno diverso con lo stesso nome prende
