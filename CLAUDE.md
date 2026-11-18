@@ -173,8 +173,9 @@ e accanto ai file. Per argomento: scelto alla creazione (`ProfileSheet`, `reorga
 lezioni nuove. «Avvia» provato solo con il finto modello. Nei piani dell'agente (formato di prima) le modifiche passano
 da `Workspace::setPlanEntry|Choice|Answer|Comment`; in tutti e due la vista si rilegge dopo il gestore del clic
 (`Qt.callLater`) e resta dov'era. La capsula del divisore (PDF pieno, alla pari, editor pieno) sta in alto, all'altezza
-delle schede: in basso copriva «Avvia». In QML gli elenchi che vengono dal C++ non sono array JavaScript: `Array.from`
-prima di `concat`.
+delle schede: in basso copriva «Avvia». La vista segue lo spazio: colonna fino a 1280 punti, concetti e destinazioni su due colonne da 1000, il grafo da 560 (le
+posizioni ricavate dalla larghezza, i numeri sulle loro linee), sotto un elenco con una riga per file nuovo. In QML gli
+elenchi che vengono dal C++ non sono array JavaScript: `Array.from` prima di `concat`.
 
 **§3.6 La conversione.** Scansioni, PDF, immagini, documenti di testo, `.tex` di altri autori. Esito corto con
 «Resoconto completo» (la Console), «Ferma», «Riprendi» (le scelte del piano restano in `build/lavori/converti/in-corso.json`).

@@ -120,6 +120,7 @@ Rectangle {
         property var item
         property int index
         Layout.fillWidth: true
+        Layout.alignment: Qt.AlignTop
         implicitHeight: destColumn.implicitHeight + 2 * Theme.gap
         radius: Theme.radius
         color: Theme.surface
@@ -228,7 +229,8 @@ Rectangle {
             id: column
             x: Theme.gap + 4
             y: Theme.gap + 4
-            width: Math.min(root.width - 2 * Theme.gap - 8, 920)
+            width: Math.min(root.width - 2 * Theme.gap - 8, 1280)          // usa lo spazio che c'è, fino a un limite di lettura
+            readonly property int cards: width >= 1000 ? 2 : 1   // concetti e destinazioni su una o due colonne
             spacing: Theme.gap
 
             TxLabel { Layout.fillWidth: true; text: root.plan.titolo || "Questo lavoro non c'è più."; font.pixelSize: Theme.textSize + 4; font.weight: Font.DemiBold }
@@ -254,11 +256,45 @@ Rectangle {
             Heading {
                 visible: (root.plan.comuni || []).length > 0
                 title: "Dove il materiale si interseca"
-                detail: "A sinistra il materiale nuovo, a destra le lezioni che hai. Ogni linea dice quanti concetti hanno in comune. Un clic su un nome mostra solo i suoi."
+                detail: column.width >= 560 ? "A sinistra il materiale nuovo, a destra le lezioni che hai. Ogni linea dice quanti concetti hanno in comune. Un clic su un nome mostra solo i suoi."
+                                            : "Una riga per file nuovo: con chi ha concetti in comune, e quanti. Un clic mostra solo i suoi."
+            }
+            // poco spazio: al posto del grafo una riga per fonte nuova, con chi interseca e quanti concetti
+            Repeater {
+                model: column.width < 560 && (root.plan.comuni || []).length > 0 ? root.leftKeys.filter(k => root.sharedHolders.includes(k)) : []
+                Rectangle {
+                    id: compact
+                    required property string modelData
+                    Layout.fillWidth: true
+                    implicitHeight: compactColumn.implicitHeight + Theme.gap
+                    radius: Theme.radius
+                    color: root.focusKey === modelData ? Theme.selected : Theme.surface
+                    border.width: 1
+                    border.color: Theme.border
+                    ColumnLayout {
+                        id: compactColumn
+                        x: Theme.gap / 2; y: Theme.gap / 2
+                        width: parent.width - Theme.gap
+                        spacing: 2
+                        Chip { key: compact.modelData }
+                        TxLabel {
+                            Layout.fillWidth: true
+                            text: Object.keys(root.pairs).filter(p => p.split("|").includes(compact.modelData))
+                                  .map(p => { const other = p.split("|").find(x => x !== compact.modelData); const course = root.holders[other] && root.holders[other].course
+                                          return root.pairs[p] + " in comune con " + (course ? "la " + root.nameOf(other).charAt(0).toLowerCase() + root.nameOf(other).slice(1) : root.nameOf(other)) })
+                                  .join(" · ")
+                            color: Theme.textMuted
+                            font.pixelSize: Theme.smallSize
+                            wrapMode: Text.WordWrap
+                            elide: Text.ElideNone
+                        }
+                    }
+                    MouseArea { anchors.fill: parent; onClicked: root.focusKey = root.focusKey === compact.modelData ? "" : compact.modelData }
+                }
             }
             Rectangle {
                 id: graphBox
-                visible: (root.plan.comuni || []).length > 0
+                visible: (root.plan.comuni || []).length > 0 && column.width >= 560
                 Layout.fillWidth: true
                 readonly property int rowH: 30
                 readonly property int pad: 26
@@ -267,8 +303,11 @@ Rectangle {
                 color: Theme.surface
                 border.width: 1
                 border.color: Theme.border
-                readonly property real nodeW: Math.min(230, (width - 120) * 0.4)
-                readonly property real leftX: 70
+                // le posizioni dallo spazio che c'è: a sinistra il posto degli archi fra file nuovi (se ce ne sono), in mezzo quello
+                // delle linee, ai nomi il resto
+                readonly property bool arcs: Object.keys(root.pairs).some(k => k.split("|").every(x => root.leftKeys.includes(x)))
+                readonly property real leftX: arcs ? 56 : 12
+                readonly property real nodeW: Math.max(110, Math.min(320, (width - leftX - 16 - Math.max(140, width * 0.28)) / 2))
                 readonly property real rightX: width - nodeW - 16
                 function yOf(key) {
                     const l = root.leftKeys.indexOf(key)
@@ -304,11 +343,20 @@ Rectangle {
                                 ctx.moveTo(x1, yl)
                                 ctx.bezierCurveTo(x1 + (x2 - x1) * 0.45, yl, x2 - (x2 - x1) * 0.45, yr, x2, yr)
                                 ctx.stroke()
-                                const mx = (x1 + x2) / 2
-                                let my = (yl + yr) / 2
-                                while (labels.some(y => Math.abs(y - my) < 22))
-                                    my += 22
-                                labels.push(my)
+                                // il numero sta sulla sua linea: a metà, o più avanti e più indietro se lì c'è già un altro
+                                const dx = (x2 - x1) * 0.45
+                                const at = t => {
+                                    const u = 1 - t
+                                    return [u * u * u * x1 + 3 * u * u * t * (x1 + dx) + 3 * u * t * t * (x2 - dx) + t * t * t * x2,
+                                            u * u * u * yl + 3 * u * u * t * yl + 3 * u * t * t * yr + t * t * t * yr]
+                                }
+                                let mx = 0, my = 0
+                                for (const t of [0.5, 0.38, 0.62, 0.28, 0.72, 0.2, 0.8]) {
+                                    [mx, my] = at(t)
+                                    if (!labels.some(p => Math.hypot(p[0] - mx, p[1] - my) < 24))
+                                        break
+                                }
+                                labels.push([mx, my])
                                 ctx.globalAlpha = on ? 1 : 0.15
                                 ctx.fillStyle = Theme.surface
                                 ctx.strokeStyle = Theme.border
@@ -387,71 +435,78 @@ Rectangle {
                 TxLabel { Layout.fillWidth: true; text: "Solo i concetti di " + root.nameOf(root.focusKey); color: Theme.textMuted; font.pixelSize: Theme.smallSize }
                 TxButton { text: "Mostra tutti"; flat: true; onClicked: root.focusKey = "" }
             }
-            Repeater {
-                model: root.plan.comuni || []
-                Rectangle {
-                    id: shared
-                    required property var modelData
-                    required property int index
-                    // dove sta la versione sola, detto corto: «nella lezione 5», «in labss1 · 20 ottobre»
-                    readonly property string host: {
-                        const key = root.holderOf(modelData.ospite)
-                        return root.holders[key] && root.holders[key].course ? "nella " + root.nameOf(key).split(" · ")[0].toLowerCase() : "in " + root.nameOf(key)
-                    }
-                    property bool open: false
-                    visible: root.focusKey === "" || modelData.items.some(id => root.holderOf(id) === root.focusKey)
-                    Layout.fillWidth: true
-                    implicitHeight: sharedColumn.implicitHeight + 2 * Theme.gap
-                    radius: Theme.radius
-                    color: Theme.surface
-                    border.width: 1
-                    border.color: Theme.border
-                    ColumnLayout {
-                        id: sharedColumn
-                        x: Theme.gap; y: Theme.gap
-                        width: parent.width - 2 * Theme.gap
-                        spacing: 6
-                        TxLabel { Layout.fillWidth: true; text: shared.modelData.name; font.weight: Font.DemiBold; wrapMode: Text.WordWrap; elide: Text.ElideNone }
-                        Flow {
-                            Layout.fillWidth: true
+            GridLayout {                       // due colonne quando c'è spazio
+                Layout.fillWidth: true
+                columns: column.cards
+                columnSpacing: Theme.gap
+                rowSpacing: Theme.gap
+                Repeater {
+                    model: root.plan.comuni || []
+                    Rectangle {
+                        id: shared
+                        required property var modelData
+                        required property int index
+                        // dove sta la versione sola, detto corto: «nella lezione 5», «in labss1 · 20 ottobre»
+                        readonly property string host: {
+                            const key = root.holderOf(modelData.ospite)
+                            return root.holders[key] && root.holders[key].course ? "nella " + root.nameOf(key).split(" · ")[0].toLowerCase() : "in " + root.nameOf(key)
+                        }
+                        property bool open: false
+                        visible: root.focusKey === "" || modelData.items.some(id => root.holderOf(id) === root.focusKey)
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignTop
+                        implicitHeight: sharedColumn.implicitHeight + 2 * Theme.gap
+                        radius: Theme.radius
+                        color: Theme.surface
+                        border.width: 1
+                        border.color: Theme.border
+                        ColumnLayout {
+                            id: sharedColumn
+                            x: Theme.gap; y: Theme.gap
+                            width: parent.width - 2 * Theme.gap
                             spacing: 6
-                            Repeater {
-                                model: shared.modelData.items
-                                Chip {
-                                    required property string modelData
-                                    key: root.holderOf(modelData)
-                                    tip: root.titleOf(modelData) + ": " + root.whatOf(modelData)
-                                }
-                            }
-                        }
-                        TxLabel { Layout.fillWidth: true; text: shared.modelData.note || ""; color: Theme.textMuted; font.pixelSize: Theme.smallSize; wrapMode: Text.WordWrap; elide: Text.ElideNone }
-                        Flow {
-                            Layout.fillWidth: true
-                            spacing: Theme.gap / 2
-                            Repeater {
-                                model: [["one", "Una versione sola, " + shared.host], ["both", "Tienile tutte"], ["skip", "Salta il nuovo"]]
-                                        .filter(c => c[0] !== "skip" || shared.modelData.items.some(id => root.holders[root.holderOf(id)] && root.holders[root.holderOf(id)].course))
-                                TxButton {
-                                    required property var modelData
-                                    readonly property bool on: shared.modelData.valore === modelData[0]
-                                    text: (on ? "✓ " : "") + modelData[1]
-                                    primary: on
-                                    enabled: root.editable
-                                    width: Math.min(implicitWidth, sharedColumn.width)
-                                    onClicked: Workspace.setPlanField(root.planId, "comuni", shared.index, "valore", modelData[0])
-                                }
-                            }
-                        }
-                        TxButton { text: shared.open ? "Nascondi che cosa dice ciascuno" : "Che cosa dice ciascuno"; flat: true; onClicked: shared.open = !shared.open }
-                        Repeater {
-                            model: shared.open ? shared.modelData.items : []
-                            TxLabel {
-                                required property string modelData
+                            TxLabel { Layout.fillWidth: true; text: shared.modelData.name; font.weight: Font.DemiBold; wrapMode: Text.WordWrap; elide: Text.ElideNone }
+                            Flow {
                                 Layout.fillWidth: true
-                                text: root.nameOf(root.holderOf(modelData)) + ": " + root.titleOf(modelData) + ". " + root.whatOf(modelData)
-                                font.pixelSize: Theme.smallSize
-                                wrapMode: Text.WordWrap
-                                elide: Text.ElideNone
+                                spacing: 6
+                                Repeater {
+                                    model: shared.modelData.items
+                                    Chip {
+                                        required property string modelData
+                                        key: root.holderOf(modelData)
+                                        tip: root.titleOf(modelData) + ": " + root.whatOf(modelData)
+                                    }
+                                }
+                            }
+                            TxLabel { Layout.fillWidth: true; text: shared.modelData.note || ""; color: Theme.textMuted; font.pixelSize: Theme.smallSize; wrapMode: Text.WordWrap; elide: Text.ElideNone }
+                            Flow {
+                                Layout.fillWidth: true
+                                spacing: Theme.gap / 2
+                                Repeater {
+                                    model: [["one", "Una versione sola, " + shared.host], ["both", "Tienile tutte"], ["skip", "Salta il nuovo"]]
+                                            .filter(c => c[0] !== "skip" || shared.modelData.items.some(id => root.holders[root.holderOf(id)] && root.holders[root.holderOf(id)].course))
+                                    TxButton {
+                                        required property var modelData
+                                        readonly property bool on: shared.modelData.valore === modelData[0]
+                                        text: (on ? "✓ " : "") + modelData[1]
+                                        primary: on
+                                        enabled: root.editable
+                                        width: Math.min(implicitWidth, sharedColumn.width)
+                                        onClicked: Workspace.setPlanField(root.planId, "comuni", shared.index, "valore", modelData[0])
+                                    }
+                                }
+                            }
+                            TxButton { text: shared.open ? "Nascondi che cosa dice ciascuno" : "Che cosa dice ciascuno"; flat: true; onClicked: shared.open = !shared.open }
+                            Repeater {
+                                model: shared.open ? shared.modelData.items : []
+                                TxLabel {
+                                    required property string modelData
+                                    Layout.fillWidth: true
+                                    text: root.nameOf(root.holderOf(modelData)) + ": " + root.titleOf(modelData) + ". " + root.whatOf(modelData)
+                                    font.pixelSize: Theme.smallSize
+                                    wrapMode: Text.WordWrap
+                                    elide: Text.ElideNone
+                                }
                             }
                         }
                     }
@@ -464,9 +519,15 @@ Rectangle {
                 title: "Ciò che resta di questi file"
                 detail: "Tolti i concetti in comune (qui sbiaditi: li decidi sopra), dove va il resto. Una lezione nuova può prendere concetti da più file."
             }
-            Repeater {
-                model: (root.plan.destinazioni || []).map((d, i) => ({ d: d, i: i })).filter(e => root.touches(e.d))
-                Destination { required property var modelData; item: modelData.d; index: modelData.i }
+            GridLayout {                       // due colonne quando c'è spazio
+                Layout.fillWidth: true
+                columns: column.cards
+                columnSpacing: Theme.gap
+                rowSpacing: Theme.gap
+                Repeater {
+                    model: (root.plan.destinazioni || []).map((d, i) => ({ d: d, i: i })).filter(e => root.touches(e.d))
+                    Destination { required property var modelData; item: modelData.d; index: modelData.i }
+                }
             }
 
             // 3. tutto nuovo
@@ -475,9 +536,15 @@ Rectangle {
                 title: "Tutto nuovo"
                 detail: "Materiale che non si interseca con niente: entra così com'è."
             }
-            Repeater {
-                model: (root.plan.destinazioni || []).map((d, i) => ({ d: d, i: i })).filter(e => !root.touches(e.d))
-                Destination { required property var modelData; item: modelData.d; index: modelData.i }
+            GridLayout {                       // due colonne quando c'è spazio
+                Layout.fillWidth: true
+                columns: column.cards
+                columnSpacing: Theme.gap
+                rowSpacing: Theme.gap
+                Repeater {
+                    model: (root.plan.destinazioni || []).map((d, i) => ({ d: d, i: i })).filter(e => !root.touches(e.d))
+                    Destination { required property var modelData; item: modelData.d; index: modelData.i }
+                }
             }
 
             // versioni nuove di fonti usate
