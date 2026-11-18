@@ -100,11 +100,22 @@ Item {
     // Le revisioni (impaginazione, dubbi, correzioni, figure) prendono la finestra: i pannelli si chiudono, e tornano
     // com'erano quando le si lascia. Rivedi figure tiene l'anteprima accanto: «Vai alla figura» la mostra lì.
     property var reviewSaved: null
+    property var planSaved: null                       // com'era l'anteprima prima di aprire un piano: torna così quando lo si lascia
     function syncReview() {
         if (manual)
             return
         const file = editor.currentFile
         const inReview = ["rivedi:impaginazione", "rivedi:dubbi", "rivedi:correzioni", "rivedi:figure"].includes(file)
+        // un piano si legge a tutta larghezza: l'anteprima si chiude, e si riapre com'era quando si passa a un'altra scheda
+        const inPlan = file.startsWith("piano:")
+        if (inPlan && !inReview) {
+            if (!planSaved)
+                planSaved = { split: split }
+            split = 2
+        } else if (planSaved && !inReview) {
+            split = planSaved.split
+            planSaved = null
+        }
         if (inReview) {
             if (!reviewSaved)
                 reviewSaved = { leftOpen: leftOpen, chatOpen: chatOpen, bottomOpen: bottomOpen, split: split }
