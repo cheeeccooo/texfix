@@ -24,7 +24,7 @@ QString keyOf(const Project &project, const QString &text, Kind kind, const QStr
     hash.addData(text.toUtf8());
     hash.addData(kind == Kind::Prose ? "p" : "l");
     hash.addData(color.toUtf8());
-    hash.addData("3");                         // le rese fallite prima che i simboli Unicode avessero una definizione si riprovano
+    hash.addData("4");                         // le rese fallite prima che la prosa del modello si leggesse bene si riprovano
     // il preambolo: cambia lo stile, cambiano le rese
     const QFileInfo package(project.path(Project::PACKAGE));
     hash.addData(QByteArray::number(package.lastModified().toSecsSinceEpoch()) + QByteArray::number(package.size()));
@@ -45,8 +45,8 @@ const QHash<QChar, QString> &greek()
 // Un tratto di prosa fuori dalla matematica: i caratteri che LaTeX non vuole, le lettere greche, «V_CB».
 QString plain(const QString &text)
 {
-    static const RE token(R"(((?:(?<![A-Za-z0-9])-)?\\?[A-Za-z0-9]+)((?:[_^](?:\{[^{}$]*\}|[A-Za-z0-9]+))+))");     // «V_CB», «\beta_F», «R_{in}», «i_C^Q»
-    static const RE script(R"(([_^])(\{[^{}$]*\}|[A-Za-z0-9]+))");
+    static const RE token(R"(((?:(?<![A-Za-z0-9])-)?\\?[A-Za-z0-9\x{0370}-\x{03FF}]+)((?:[_^](?:\{[^{}$]*\}|\([^()$]{1,6}\)|[A-Za-z0-9]+|[\x{0370}-\x{03FF}]))+))");     // «V_CB», «\beta_F», «R_{in}», «i_C^Q»
+    static const RE script(R"(([_^])(\{[^{}$]*\}|\([^()$]{1,6}\)|[A-Za-z0-9]+|[\x{0370}-\x{03FF}]))");     // «R_o^(1)»: la parentesi resta nell'esponente
     QString out;
     qsizetype at = 0;
     auto escaped = [](const QString &s) {
@@ -63,7 +63,7 @@ QString plain(const QString &text)
                     known = known || v == name || v.toLower() == name;
                 known = known || QStringList{"varepsilon", "varphi", "approx", "parallel", "omega", "infty"}.contains(name);
                 if (known) {
-                    o += "$\\" + name + "$";
+                    o += "$\\" + name + " $";   // lo spazio: unita a una formula vicina, il comando non si attacca alla lettera dopo
                     i = end - 1;
                 } else {
                     o += "\\textbackslash{}";
@@ -72,13 +72,13 @@ QString plain(const QString &text)
                 QString sub;                           // «ω0»: il numero che segue è un pedice
                 while (i + 1 < s.size() && s[i + 1].isDigit())
                     sub += s[++i];
-                o += "$\\" + greek().value(c) + (sub.isEmpty() ? QString() : "_{" + sub + "}") + "$";
+                o += "$\\" + greek().value(c) + (sub.isEmpty() ? QStringLiteral(" ") : "_{" + sub + "}") + "$";
             } else if (QStringLiteral("%&#_").contains(c)) {
                 o += '\\' + QString(c);
             } else if (c == u'^') {
                 o += "\\^{}";
             } else if (c == u'~') {
-                o += "\\~{}";
+                o += "$\\sim $";                      // «~» nella prosa del modello: circa
             } else if (c == u'{' || c == u'}') {
                 o += '\\' + QString(c);
             } else {
@@ -91,15 +91,51 @@ QString plain(const QString &text)
         const auto m = it.next();
         out += escaped(text.mid(at, m.capturedStart() - at));
         QString math = m.captured(1);
+        QString last;                                  // due pedici di fila («k_BTr_e»): il secondo dopo un gruppo vuoto
         for (auto s = script.globalMatch(m.captured(2)); s.hasNext();) {
             const auto part = s.next();
             const QString sub = part.captured(2);
+            if (part.captured(1) == last)
+                math += "{}";
+            last = part.captured(1);
             math += part.captured(1) + (sub.startsWith(u'{') ? sub : u'{' + sub + u'}');
         }
         out += u'$' + math + u'$';
         at = m.capturedEnd();
     }
-    return out + escaped(text.mid(at));
+    out += escaped(text.mid(at));
+    // due formule separate solo da segni, spazi e numeri («$A_{v}$ $Z_{in}$/($R_{s}$+$Z_{in}$)») sono una formula sola:
+    // altrimenti =, + e / escono nel carattere del testo
+    static const RE between(R"(^[ =+\-/()\[\]0-9.'<>|·×−≃≈≫≪∥]*$)");
+    const QStringList parts = out.split(u'$');
+    if (parts.size() % 2 == 0)
+        return out;
+    QString merged = parts[0];
+    QString formula;                                   // la formula che si sta scrivendo
+    static const RE opening(R"([(\[][0-9.+\-−/=·× ]*$)");   // «perché (1+» davanti a una formula: la parentesi entra con lei
+    for (qsizetype i = 1; i < parts.size(); i += 2) {
+        if (formula.isEmpty()) {
+            const auto m = opening.match(merged);
+            if (m.hasMatch()) {
+                formula = m.captured();
+                merged.chop(formula.size());
+            }
+        }
+        formula += parts[i];
+        QString gap = parts[i + 1];
+        if (i + 2 < parts.size() && between.match(gap).hasMatch()) {
+            formula += gap;
+            continue;
+        }
+        // una parentesi aperta nella formula si chiude nella formula
+        while (!gap.isEmpty() && (gap[0] == u')' || gap[0] == u']') && formula.count(u'(') + formula.count(u'[') > formula.count(u')') + formula.count(u']')) {
+            formula += gap[0];
+            gap.remove(0, 1);
+        }
+        merged += u'$' + formula + u'$' + gap;
+        formula.clear();
+    }
+    return merged;
 }
 
 // I simboli che il modello scrive in Unicode (−, ≃, ≫, le lettere greche, anche dentro $…$) e che pdflatex non conosce:
@@ -114,7 +150,7 @@ QString unicodeSymbols()
             {u'⇒', "\\Rightarrow"}, {u'⇔', "\\Leftrightarrow"}, {u'↔', "\\leftrightarrow"}, {u'↑', "\\uparrow"}, {u'↓', "\\downarrow"},
             {u'∘', "\\circ"}, {u'∠', "\\angle"}, {u'∆', "\\Delta"}, {u'Ω', "\\Omega"}, {u'µ', "\\mu"}, {u'⋅', "\\cdot"},
             {u'∀', "\\forall"}, {u'∃', "\\exists"}, {u'∉', "\\notin"}, {u'⊂', "\\subset"}, {u'∩', "\\cap"}, {u'∪', "\\cup"},
-            {u'∇', "\\nabla"}, {u'ℏ', "\\hbar"}, {u'ℓ', "\\ell"}, {u'∗', "\\ast"}, {u'∓', "\\mp"}, {u'≲', "\\lesssim"}, {u'≳', "\\gtrsim"}};
+            {u'∇', "\\nabla"}, {u'ℏ', "\\hbar"}, {u'ℓ', "\\ell"}, {u'∗', "\\ast"}, {u'⟨', "\\langle"}, {u'⟩', "\\rangle"}, {u'²', "^{2}"}, {u'³', "^{3}"}, {u'√', "\\surd"}, {u'∓', "\\mp"}, {u'≲', "\\lesssim"}, {u'≳', "\\gtrsim"}};
         const auto hex = [](int c) { return QString::number(c, 16).toUpper().rightJustified(4, u'0'); };
         QString out = "\\makeatletter\\def\\UTFviii@undefined@err#1{?}\\makeatother\n";
         for (auto it = symbols.cbegin(); it != symbols.cend(); ++it)

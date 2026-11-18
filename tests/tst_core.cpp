@@ -494,6 +494,9 @@ private slots:
         QCOMPARE(snippets::render(p, texts, snippets::Kind::Latex, "202020").size(), 0);   // niente da rifare
         // la prosa del modello: simboli Unicode (anche dentro $…$), pedici in fila, comandi senza $, un carattere sconosciuto
         QCOMPARE(snippets::prose("i_C^Q e \\beta_F, -R_C, x-y_1"), "$i_{C}^{Q}$ e $\\beta_{F}$, $-R_{C}$, x-$y_{1}$");
+        // formule vicine in una sola (segni compresi), due pedici di fila, una greca nel pedice
+        QCOMPARE(snippets::prose("A_vs=A_v Z_in/(R_s+Z_in), quindi"), "$A_{vs}=A_{v} Z_{in}/(R_{s}+Z_{in})$, quindi");
+        QCOMPARE(snippets::prose("k_BTr_e, I_EΔf, v_π, (1+h_fe)R_E, R_o^(1)~R_C·I_b"), "$k_{BTr}{}_{e}$, $I_{E}\\Delta $f, $v_{π}$, $(1+h_{fe})R_{E}$, $R_{o}^{(1)}\\sim R_{C}\\cdot I_{b}$");
         const QString model = "Vale −I_C R_C/V_T ≃ −100 con 1/h_oe ≫ R_C, i_C^Q, \\beta_F, $A ≈ 2$ e 5 kΩ ☃.";
         QCOMPARE(snippets::render(p, {model}, snippets::Kind::Prose, "202020").size(), 1);
     }
