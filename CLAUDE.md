@@ -56,7 +56,7 @@ Due parti, un processo solo.
 | `core/Layout` | l'impaginazione, con qualunque stile: dove cade ogni blocco nel PDF (SyncTeX, e l'area del testo scritta nel log da `texfix.sty`); un'unità a cavallo di due pagine (o colonne) va a pagina nuova (`\newpage % impaginazione` prima del marcatore) se il vuoto è al più il 25%; altrimenti, o se è più lunga di una colonna, si spezza in un punto scelto: il comando dello stile (`comando_spezza`: `\tcbbreak` per `styles`, `\pagebreak` senza stile) sull'ultima cucitura fra due paragrafi prima del punto in cui passerebbe alla colonna dopo (se le pagine in piccolo del prima e del dopo sono uguali la mossa ha il segno «invariata»: `same`, `invariata` nel registro); se nessuna mossa regge resta proposta; registro `salvataggi/impaginazione.json` |
 | `core/AgentTools` | gli strumenti che l'app dà all'agente (`stato_progetto`, `compila_lezione`, `compila_documento`, `dubbi`, `impagina`), il protocollo a righe (MCP) e il prompt di sistema dell'agente |
 | `core/Plans` | i lavori con un piano: `salvataggi/lavori/<nome>/piano.json` (voci con spunta e istruzioni, la scelta di una sezione, domande con la risposta proposta, commento, esito); l'agente consegna piano ed esito con gli strumenti `consegna_piano` e `consegna_esito`; l'archivio in `salvataggi/esiti/` |
-| `core/NewLesson` | numero e data proposti o letti dai nomi e dal testo delle fonti (senza modello); i file portati in `fonti/coda`; `settle` chiude una lezione scritta dall'agente (documento, marcatori, fonti usate: lo strumento `chiudi_lezione`); i messaggi delle procedure di fusione e integrazione; `texLectures`: le lezioni di un `.tex` rispetto al corso (contenute, per marcatori o per testo; dello stesso giorno; nuove), la regola unica della conversione, dello smistamento e di `settle`; `forAgent`: le fonti come le legge l'agente (copia in testo o PNG di .docx, .odt, .rtf, HEIC, TIFF in `build/lavori/leggibili/`) |
+| `core/NewLesson` | il numero e il nome del file dopo l'ultimo (`nextNumber`, `lastFile`); i file portati in `fonti/coda`; `settle` chiude una lezione scritta dall'agente (documento, marcatori, fonti usate: lo strumento `chiudi_lezione`); i messaggi delle procedure di fusione e integrazione; `texLectures`: le lezioni di un `.tex` rispetto al corso (contenute, per marcatori o per testo; dello stesso giorno; nuove), la regola unica della conversione, dello smistamento e di `settle`; `forAgent`: le fonti come le legge l'agente (copia in testo o PNG di .docx, .odt, .rtf, HEIC, TIFF in `build/lavori/leggibili/`) |
 | `core/Sort` | Aggiungi materiale, la porta sola: riconosce (già nel corso, versione nuova, si sovrappone, lezione o argomento nuovo, da saltare; senza modello dove si può, le pagine con una chiamata per file tenuta in `build/lavori/smistamento/`), poi una chiamata con il corso che dice anche il ruolo delle fonti; il piano (tipo «materiale») e `prepare`, che divide i PDF in pezzi (anche quelli tolti dal piano restano in arrivo; l'originale va in `fonti/usate/divise/`), toglie i doppioni, mette le versioni al loro posto e dice che cosa si converte e che cosa passa dall'agente |
 | `core/Git` | il version control dell'utente: modifiche, differenze, commit di tutto, cronologia (chiama `git`) |
 | `core/Reorganize` | Riorganizza: le sezioni del corso (fra un `\subsection` e il successivo), gli argomenti proposti dal modello, la scrittura di un file per argomento e il ritorno a un file per lezione, tutti e due del programma; resta uguale il contenuto riga per riga, o non si tocca niente. `startByTopic` (un progetto che nasce per argomento) e `place` (una lezione nuova in un argomento, con `\lezione{N}{data}` davanti) |
@@ -162,8 +162,12 @@ programma), in barra, in Attività e accanto ai file. Per argomento: scelto alla
 `reorganize::startByTopic`) e nelle impostazioni (`Workspace::setByTopic`: un progetto senza lezioni cambia e basta,
 gli altri passano da Riorganizza). L'agente riceve una copia leggibile di `.docx`, `.odt`, `.doc`, `.rtf`, HEIC e TIFF
 (`newlesson::forAgent`). Provato con il modello vero su una copia di labss: le cinque lezioni già nel corso
-riconosciute, le due del 10/11 separate; e con un finto modello muto. Più scansioni della stessa lezione le fonde
-sempre l'agente: `newlesson::overlap` e `unite` (unire senza modello quando non si sovrappongono) non sono più usati.
+riconosciute, le due del 10/11 separate; e con un finto modello muto. Una lezione nuova fatta di pezzi di più file
+(tutti pagine) ha la scelta «Unisci e converti, in quest'ordine» o «Fai fondere all'agente»: il modello dello smistamento
+dice se si seguono o si ripetono (nel dubbio: si ripetono), e unire è `newlesson::unite`. Quando l'agente fonde fonti di
+ruoli diversi, le principali danno la struttura (`fuseMessage`, `main`). Per argomento le lezioni che scrive l'agente
+sono lezioni (`src/srcN.tex`): la loro collocazione aspetta in `salvataggi/procedure.json` e `settle` le mette al loro
+posto con `reorganize::place`; i nomi nuovi tengono conto anche dei file che gli argomenti ricordano (`lastFile`).
 
 **§3.6 La conversione.** Scansioni, PDF, immagini, documenti di testo, `.tex` di altri autori. Esito corto con
 «Resoconto completo» (la Console), «Ferma», «Riprendi» (le scelte del piano restano in `build/lavori/converti/in-corso.json`).
@@ -270,7 +274,7 @@ A confronto con la vecchia app sulle stesse pagine (`../prova-texfix`, src4.pdf 
 riquadri, stesso numero di definizioni e di figure; la nuova dà titoli alle sezioni, mette in un riquadro
 un'osservazione che la vecchia lasciava in prosa, e non va a capo nel sorgente. Simili, non uguali.
 
-**§5 Prove.** `./build.sh prove` (53 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
+**§5 Prove.** `./build.sh prove` (54 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
 spesso, contro `tests/misure.txt`; `--scrivi` li riscrive). Dei riferimenti della vecchia app sono portate le formule in display vere (`tests/dati/display.json`), per la mossa
 sulle formule; il resto dipende da prompt e stile, che qui sono cambiati per scelta.
 

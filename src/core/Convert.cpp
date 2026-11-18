@@ -534,11 +534,9 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
         if (m_control)
             m_control->check();
 
-        // nomi e numeri, in ordine: il file dopo l'ultimo srcN, il numero scritto sulle pagine o quello dopo l'ultimo
-        static const RE numbered(R"(^src(\d+)$)");
-        int lastFile = 0, lastNumber = 0;
-        for (const QString &name : QDir(m_project.path("src")).entryList({"*.tex"}, QDir::Files))
-            lastFile = qMax(lastFile, numbered.match(QFileInfo(name).completeBaseName()).captured(1).toInt());
+        // nomi e numeri, in ordine: il file dopo l'ultimo (anche di quelli che ora stanno in un argomento), il numero
+        // scritto sulle pagine o quello dopo l'ultimo
+        int lastFile = newlesson::lastFile(m_project), lastNumber = newlesson::nextNumber(m_project) - 1;
         QList<int> taken;
         for (const tx::Lesson &lesson : m_project.lessons()) {
             lastNumber = qMax(lastNumber, lesson.number);

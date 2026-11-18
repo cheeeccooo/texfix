@@ -159,7 +159,10 @@ Una porta sola per il materiale nuovo. Non ci sono più Nuova lezione, il tasto 
 - **[S]** **Il piano** ha una sezione per lezione (o argomento) di destinazione, una voce per pezzo con le istruzioni
   sotto, le domande sui ruoli, il riepilogo delle impostazioni del progetto con «Cambia» e il costo stimato. «Avvia»
   sceglie da sé come procedere: una lezione nuova di una fonte sola passa per la conversione (§3.6), il resto (fondere,
-  completare, versioni, lezioni con istruzioni) per l'agente, con un piano suo, una procedura alla volta. Le procedure
+  completare, versioni, lezioni con istruzioni) per l'agente, con un piano suo, una procedura alla volta. Una lezione
+  nuova fatta di pagine di più file si unisce in un PDF solo e si converte se le parti si seguono, la fonde l'agente se si
+  ripetono: lo propone il modello, sceglie l'utente. Fondendo, le fonti principali danno la struttura. Per argomento la
+  lezione scritta dall'agente va dove dice il piano quando la chiude. Le procedure
   in attesa restano su disco (`salvataggi/procedure.json`) e ripartono alla riapertura. «Butta il piano» chiede conferma.
 - **[S]** **Costo.** Riconoscere le scansioni costa una chiamata leggera per file (tenuta: non si ripaga), più una per
   il piano. Parte da sola a ogni aggiunta. Aprire un progetto non riconosce niente da sé.

@@ -37,10 +37,10 @@ Say also the role of every file:
 - "exercises": exercise sheets: they go with the unit whose topic they practise, or into a new unit of exercises.
 Return only a JSON object:
 {"roles": {"<file name>": "main|supplementary|exercises"},
- "groups": [{"dest": "new", "date": "<GG/MM/AAAA or empty>", "title": "<Italian, at most 40 characters>", "after": <topic number, only in a course by topics>, "pieces": [{"file": "<name>", "from": <first page>, "to": <last page>}], "why": "<Italian, at most 15 words>"},
+ "groups": [{"dest": "new", "date": "<GG/MM/AAAA or empty>", "title": "<Italian, at most 40 characters>", "after": <topic number, only in a course by topics>, "pieces": [{"file": "<name>", "from": <first page>, "to": <last page>}], "overlap": <only for a group with pieces of more than one file: true if they tell the same things twice (two sets of notes of the same lecture), false if they are parts that follow each other; when unsure, true>, "why": "<Italian, at most 15 words>"},
             {"dest": "unit", "unit": <number of the existing unit>, "pieces": [...], "why": "..."}],
  "skip": [{"file": "<name>", "from": <k>, "to": <k>, "why": "..."}]}
-Rules: every page of every file is in exactly one piece of one group or in skip; pieces are ranges of consecutive pages of one file; a text file is one piece with "from": 1, "to": 1. A lecture of LaTeX notes is never split, and two of them go in the same group only if they are the same lecture (two lectures on the same day are usually two lectures). Groups of new lectures in calendar order. The roles under USER ROLES are fixed by the user: keep them and sort accordingly.
+Rules: every page of every file is in exactly one piece of one group or in skip; pieces are ranges of consecutive pages of one file; a text file is one piece with "from": 1, "to": 1. A lecture of LaTeX notes is never split, and two of them go in the same group only if they are the same lecture (two lectures on the same day are usually two lectures). Groups of new lectures in calendar order; inside a group, pieces in reading order. The roles under USER ROLES are fixed by the user: keep them and sort accordingly.
 If the request says THE USER ADDED THIS MATERIAL TO a unit, it goes there, unless a page clearly belongs to another unit or to none.
 If the request ends with YOUR PREVIOUS PLAN, WITH THE USER'S INSTRUCTIONS: make the plan again following them. The user's instructions win over your own reading (they may move pieces, merge or split groups, change dates or titles, skip pages); what they do not mention stays as before.)";
 
@@ -419,8 +419,20 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
             }
             if (!why.isEmpty())
                 title += " — " + why;
-            sections.append(QJsonObject{{"titolo", title}, {"voci", entries},
-                                        {"gruppo", QJsonObject{{"dest", "new"}, {"date", date}, {"title", name}, {"after", after}}}});
+            QJsonObject section{{"titolo", title}, {"voci", entries}, {"gruppo", QJsonObject{{"dest", "new"}, {"date", date}, {"title", name}, {"after", after}}}};
+            // pezzi di più file, tutti pagine: si uniscono e si convertono se si seguono, li fonde l'agente se si ripetono
+            QSet<QString> from;
+            bool pages = true;
+            for (const QJsonValue &p : group.value("pieces").toArray()) {
+                from.insert(p.toObject().value("file").toString());
+                pages = pages && Pages::kindOf(p.toObject().value("file").toString()) == "pagine";
+            }
+            if (from.size() > 1 && pages) {
+                const bool repeat = group.value("overlap").toBool(true);   // se non lo dice: il percorso sicuro
+                section["scelta"] = choice({"Unisci e converti, in quest'ordine", "Fai fondere all'agente"}, {"unisci", "fondi"}, repeat ? "fondi" : "unisci");
+                section["titolo"] = title + (repeat ? QStringLiteral(" · si ripetono") : QStringLiteral(" · si seguono"));
+            }
+            sections.append(section);
         }
         for (const QJsonValue &v : std::as_const(versions))
             sections.append(v);
@@ -512,10 +524,7 @@ Prepared prepare(const Project &project, const QJsonObject &document)
     for (const QJsonValue &f : document.value("file").toArray())
         paths.insert(QFileInfo(f.toString()).fileName(), f.toString());
     int number = newlesson::nextNumber(project);
-    static const QRegularExpression numbered(R"(^(?:src|arg)(\d+)$)");
-    int lastFile = 0;
-    for (const QString &name : QDir(project.path("src")).entryList({"*.tex"}, QDir::Files))
-        lastFile = qMax(lastFile, numbered.match(QFileInfo(name).completeBaseName()).captured(1).toInt());
+    const int lastFile = newlesson::lastFile(project);
 
     // un pezzo di un PDF diventa un file suo fra quelli in arrivo; se qualcosa non va, i pezzi fatti si tolgono
     int pieceCount = 0;
@@ -554,8 +563,14 @@ Prepared prepare(const Project &project, const QJsonObject &document)
         QStringList named, notes;
         int number;
         QString date;
+        Convert::Wanted where;
+        QStringList main;                              // le fonti principali, se ce ne sono anche di integrative
     };
     QList<Fuse> fuses;
+    QHash<QString, QString> roles;                     // file → ruolo, dalle domande del piano
+    for (const QJsonValue &q : document.value("domande").toArray())
+        if (q.toObject().value("chiave").toString() == "ruolo")
+            roles.insert(q.toObject().value("file").toString(), q.toObject().value("risposta").toString());
     QHash<QString, QStringList> integrate;             // lezione → fonti già nel corso da riportarci
     for (const QJsonValue &s : document.value("sezioni").toArray()) {
         const QJsonObject group = s.toObject().value("gruppo").toObject();
@@ -603,7 +618,7 @@ Prepared prepare(const Project &project, const QJsonObject &document)
         }
         if (chosen == "salta")
             continue;
-        QStringList sources, notes;
+        QStringList sources, notes, origins;           // origins: per ogni fonte, il file da cui viene
         for (const QJsonValue &v : s.toObject().value("voci").toArray()) {
             const QJsonObject entry = v.toObject(), piece = entry.value("pezzo").toObject();
             const QString name = piece.value("file").toString(), source = paths.value(name);
@@ -620,10 +635,13 @@ Prepared prepare(const Project &project, const QJsonObject &document)
             if (!entry.value("nota").toString().trimmed().isEmpty())
                 notes << QStringLiteral("%1: %2").arg(name, entry.value("nota").toString().trimmed());
             if (piece.contains("lezioni")) {          // le lezioni di un .tex: si indicano, il file resta com'è
-                for (const QJsonValue &spec : piece.value("lezioni").toArray())
+                for (const QJsonValue &spec : piece.value("lezioni").toArray()) {
                     sources << spec.toString();
+                    origins << name;
+                }
                 continue;
             }
+            origins << name;
             if (!part) {
                 sources << source;                     // il file intero
                 continue;
@@ -645,30 +663,53 @@ Prepared prepare(const Project &project, const QJsonObject &document)
         QString date = group.value("date").toString();
         if (const texsource::Ref ref = texsource::parseSpec(sources.first()); date.isEmpty() && ref.date.isValid())
             date = ref.date.toString("dd/MM/yyyy");
-        if (dest == "unit" && byTopic && (sources.size() > 1 || !notes.isEmpty())) {     // a parte, in fondo all'argomento
-            out.agent << withNotes(newlesson::integrateMessage(unit, named)
-                                       + QStringLiteral("\nNon fondere: metti questo materiale in fondo all'argomento, come una parte a sé, con `\\lezione{%1}{%2}` davanti.").arg(n).arg(date),
-                                   notes);
-            continue;
+        // dove va, per argomento: in fondo a un argomento che c'è («a parte»), o un argomento nuovo dopo un altro
+        Convert::Wanted where{n, date};
+        if (byTopic && dest == "unit") {
+            where.topic = unit;
+        } else if (byTopic) {
+            where.title = group.value("title").toString().trimmed().isEmpty() ? QStringLiteral("Argomento %1").arg(n) : group.value("title").toString().trimmed();
+            where.after = group.value("after").toString();
+        }
+        // pezzi di più file che si seguono: un PDF solo, nell'ordine del piano, che si converte come una fonte
+        if (sources.size() > 1 && chosen == "unisci" && notes.isEmpty()) {
+            QList<int> order;
+            QStringList names;
+            for (int i = 0; i < sources.size(); ++i) {
+                order << i;
+                names << QFileInfo(sources[i]).fileName();
+            }
+            if (const QString united = newlesson::unite(project, sources, order, n); !united.isEmpty()) {
+                out.done << QStringLiteral("%1 uniti in %2").arg(names.join(", "), QFileInfo(united).fileName());
+                sources = {united};
+            } else {
+                out.done << QStringLiteral("non sono riuscito a unire %1: li fonde l'agente").arg(names.join(", "));
+            }
         }
         if (sources.size() == 1 && notes.isEmpty()) {  // una fonte sola (anche una lezione di un .tex): la conversione
-            Convert::Wanted wanted{n, date};
-            if (byTopic && dest == "unit")
-                wanted.topic = unit;
-            else if (byTopic) {
-                wanted.title = group.value("title").toString().trimmed().isEmpty() ? QStringLiteral("Argomento %1").arg(n) : group.value("title").toString().trimmed();
-                wanted.after = group.value("after").toString();
-            }
             out.sources << sources.first();
-            out.wanted.insert(sources.first(), wanted);
+            out.wanted.insert(sources.first(), where);
         } else {                                       // più pezzi, o con istruzioni: la scrive l'agente, con un piano
-            fuses << Fuse{named, notes, n, date};
+            QStringList main;
+            bool mixed = false;
+            for (qsizetype i = 0; i < named.size(); ++i) {
+                if (roles.value(origins.value(i), "Principale") == "Principale")
+                    main << named[i];
+                else
+                    mixed = true;
+            }
+            fuses << Fuse{named, notes, n, date, where, mixed ? main : QStringList()};
         }
     }
-    // i file che scrive l'agente vengono dopo quelli della conversione, che li prende per primi
+    // i file che scrive l'agente vengono dopo quelli della conversione, che li prende per primi; sono sempre lezioni,
+    // e per argomento le colloca Texfix quando l'agente le chiude (chiudi_lezione), come fa la conversione
     int next = lastFile + int(out.sources.size());
-    for (const Fuse &f : std::as_const(fuses))
-        out.agent << withNotes(newlesson::fuseMessage(QStringLiteral("src/%1%2.tex").arg(byTopic ? "arg" : "src").arg(++next), f.number, f.date, f.named), f.notes);
+    for (const Fuse &f : std::as_const(fuses)) {
+        const QString file = QStringLiteral("src/src%1.tex").arg(++next);
+        out.agent << withNotes(newlesson::fuseMessage(file, f.number, f.date, f.named, f.main), f.notes);
+        if (f.where.byTopic())
+            out.placements.insert(file, QJsonObject{{"argomento", f.where.topic}, {"titolo", f.where.title}, {"dopo", f.where.after}});
+    }
     for (auto it = integrate.begin(); it != integrate.end(); ++it)
         out.agent << newlesson::integrateMessage(it.key(), newlesson::forAgent(project, it.value()));
     // un PDF diviso non resta in arrivo accanto ai suoi pezzi

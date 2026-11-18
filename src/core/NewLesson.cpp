@@ -2,13 +2,14 @@
 
 #include "core/Blocks.h"
 #include "core/Files.h"
-#include "core/Model.h"
 #include "core/Pages.h"
+#include "core/Reorganize.h"
 #include "core/TexSource.h"
 #include "core/Tools.h"
 #include <QDirIterator>
 #include <QFile>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 
 #include <QDate>
@@ -31,45 +32,16 @@ int nextNumber(const Project &project)
     return last + 1;
 }
 
-Marks readOne(const QString &name, const QString &text)
+int lastFile(const Project &project)
 {
-    Marks marks;
-    static const RE numberRe(R"((?:lezione|lez|lecture)[\s._-]*n?[°.]?\s*(\d{1,3})(?!\d))", RE::CaseInsensitiveOption);
-    static const RE dmy(R"((?<!\d)(\d{1,2})[./_-](\d{1,2})[./_-](\d{4}|\d{2})(?!\d))"), ymd(R"((?<!\d)(\d{4})[./_-](\d{1,2})[./_-](\d{1,2})(?!\d))");
-    for (const QString &where : {QFileInfo(name).completeBaseName(), text.left(600)}) {
-        if (!marks.number)
-            marks.number = numberRe.match(where).captured(1).toInt();
-        if (marks.date.isEmpty()) {
-            QDate date;
-            if (const auto m = ymd.match(where); m.hasMatch())
-                date = QDate(m.captured(1).toInt(), m.captured(2).toInt(), m.captured(3).toInt());
-            else if (const auto m = dmy.match(where); m.hasMatch())
-                date = QDate(m.captured(3).size() == 2 ? 2000 + m.captured(3).toInt() : m.captured(3).toInt(), m.captured(2).toInt(), m.captured(1).toInt());
-            if (date.isValid())
-                marks.date = date.toString("dd/MM/yyyy");
-        }
-    }
-    return marks;
-}
-
-Marks read(const QStringList &paths)
-{
-    Marks all;
-    QStringList numbers, dates;
-    for (const QString &path : paths) {
-        const Marks one = readOne(path, Pages::kindOf(path) == "testo" || Pages::kindOf(path) == "tex" ? files::read(path) : QString());
-        if (one.number && !numbers.contains(QString::number(one.number)))
-            numbers << QString::number(one.number);
-        if (!one.date.isEmpty() && !dates.contains(one.date))
-            dates << one.date;
-    }
-    all.number = numbers.value(0).toInt();
-    all.date = dates.value(0);
-    if (numbers.size() > 1)
-        all.conflict = QStringLiteral("Le fonti dicono numeri diversi: %1.").arg(numbers.join(", "));
-    else if (dates.size() > 1)
-        all.conflict = QStringLiteral("Le fonti dicono date diverse: %1.").arg(dates.join(", "));
-    return all;
+    static const RE numbered(R"(^(?:src|arg)(\d+)$)");
+    QStringList names = QDir(project.path("src")).entryList({"*.tex"}, QDir::Files);
+    for (const QJsonValue &v : Settings::load(project).topics.value("lezioni").toObject())
+        names << QFileInfo(v.toObject().value("file").toString()).fileName();
+    int last = 0;
+    for (const QString &name : std::as_const(names))
+        last = qMax(last, numbered.match(QFileInfo(name).completeBaseName()).captured(1).toInt());
+    return last;
 }
 
 QStringList toQueue(const Project &project, const QStringList &paths)
@@ -128,7 +100,32 @@ QStringList settle(const Project &project, const QStringList &boxes, const QStri
         if (QFile::rename(from, files::freeName(to + '/' + name)))
             did << QStringLiteral("%1 portata fra le fonti usate").arg(name);
     }
+    // per argomento: la lezione va dove l'ha messa il piano, come quelle della conversione
+    QJsonObject saved = QJsonDocument::fromJson(files::read(project.path(PROCEDURES)).toUtf8()).object();
+    QJsonObject placements = saved.value("collocazioni").toObject();
+    if (const QJsonObject where = placements.value(lesson).toObject(); !where.isEmpty()) {
+        const QString error = reorganize::place(project, lesson, where.value("argomento").toString(), where.value("titolo").toString(), where.value("dopo").toString());
+        if (!error.isEmpty())
+            return did << QStringLiteral("la lezione resta a sé: %1").arg(error);
+        did << (where.value("argomento").toString().isEmpty() ? QStringLiteral("la lezione è diventata l'argomento «%1»").arg(where.value("titolo").toString())
+                                                               : QStringLiteral("la lezione è andata in fondo a %1").arg(where.value("argomento").toString()));
+        placements.remove(lesson);
+        saved["collocazioni"] = placements;
+        files::write(project.path(PROCEDURES), QString::fromUtf8(QJsonDocument(saved).toJson()));
+    }
     return did.isEmpty() ? QStringList{QStringLiteral("era già tutto a posto")} : did;
+}
+
+void addPlacements(const Project &project, const QJsonObject &added)
+{
+    if (added.isEmpty())
+        return;
+    QJsonObject saved = QJsonDocument::fromJson(files::read(project.path(PROCEDURES)).toUtf8()).object();
+    QJsonObject placements = saved.value("collocazioni").toObject();
+    for (auto it = added.begin(); it != added.end(); ++it)
+        placements.insert(it.key(), it.value());
+    saved["collocazioni"] = placements;
+    files::write(project.path(PROCEDURES), QString::fromUtf8(QJsonDocument(saved).toJson()));
 }
 
 QList<TexLecture> texLectures(const Project &project, const QString &file)
@@ -216,13 +213,14 @@ QStringList forAgent(const Project &project, const QStringList &sources)
     return out;
 }
 
-QString fuseMessage(const QString &file, int number, const QString &date, const QStringList &sources, const QStringList &important)
+QString fuseMessage(const QString &file, int number, const QString &date, const QStringList &sources, const QStringList &main)
 {
-    const QString weight = important.isEmpty() ? QString()
-        : QStringLiteral("\n- Fonti importanti: %1. Dove le fonti dicono cose diverse, decide una fonte importante, senza farne una domanda.").arg(important.join(", "));
+    const QString weight = main.isEmpty() ? QString()
+        : QStringLiteral("\n- Fonti principali: %1. La struttura la danno loro, e dove le fonti dicono cose diverse decidono loro, senza farne una "
+                         "domanda; le altre sono integrative: completano, non riordinano.").arg(main.join(", "));
     return QStringLiteral("Crea la lezione %1%2 fondendo queste fonti, che parlano della stessa lezione: %3.\n"
-                          "- Leggile tutte per intero. Non c'è una fonte che comanda: la struttura la dà la più ricca, e dove due fonti dicono cose "
-                          "diverse non scegliere tu: fanne una domanda del piano.\n"
+                          "- Leggile tutte per intero. Se non è detto altro sotto, non c'è una fonte che comanda: la struttura la dà la più ricca, e "
+                          "dove due fonti dicono cose diverse non scegliere tu: fanne una domanda del piano.\n"
                           "- Prima consegna un piano con consegna_piano: che cosa prendi da ogni fonte, in che ordine, le domande.\n"
                           "- Quando il piano è approvato scrivi `%4` (comincia con `\\section{…}` e sotto `\\lezione{%1}{%5}`), compilala finché è pulita, "
                           "poi chiama chiudi_lezione con la lezione e le fonti, e consegna l'esito.")
@@ -291,45 +289,6 @@ QString updateMessage(const QString &lesson, const QString &source, const QStrin
                           "- Quando il piano è approvato fai le modifiche, compila finché è pulita, chiama chiudi_lezione con la lezione e la fonte, "
                           "e consegna l'esito.")
         .arg(source, lesson, previous);
-}
-
-Overlap overlap(const Project &project, const QString &quality, const QStringList &sources, JobControl *control)
-{
-    Overlap out;
-    QStringList parts;
-    try {
-        for (qsizetype i = 0; i < sources.size(); ++i) {
-            if (Pages::kindOf(sources[i]) != "pagine")
-                return out;                            // tipi diversi: le fonde l'agente
-            const Pages pages = Pages::read(project.path(sources[i]), project.path("build/lavori/fonti/" + QFileInfo(sources[i]).fileName()));
-            parts << QStringLiteral("SOURCE %1: %2 (%3 pages). Its pages, small:").arg(i).arg(QFileInfo(sources[i]).fileName()).arg(pages.count());
-            const int step = qMax(1, pages.count() / 6);       // al più sei pagine per fonte: l'inizio, la fine e qualcosa in mezzo
-            for (int p = 0; p < pages.count(); p += step)
-                parts << pages.thumb.value(p);
-        }
-        Model model(quality, project.root(), control);
-        const QString system = QStringLiteral(
-            "Several sources (scans or PDFs) are given for ONE lecture of a course. Decide whether they overlap: do two of them cover the same "
-            "material (the same lecture written twice, e.g. the teacher's notes and a student's notes), or are they consecutive pieces of one "
-            "lecture with nothing in common? Return only a JSON object: {\"overlap\": true|false, \"order\": [source indices in reading order], "
-            "\"richest\": <index of the most complete source>, \"why\": \"<Italian, one short sentence; name the sources by file name, never by index>\"}. When unsure, answer overlap true.");
-        const QJsonObject answer = Model::json(model.ask("outline", system, parts, "fonti")).toObject();
-        out.cost = model.cost();
-        QList<int> order;
-        for (const QJsonValue &v : answer.value("order").toArray())
-            if (v.toInt(-1) >= 0 && v.toInt() < sources.size() && !order.contains(v.toInt()))
-                order << v.toInt();
-        if (order.size() != sources.size() || !answer.contains("overlap"))
-            return out;
-        out.known = true;
-        out.overlap = answer.value("overlap").toBool(true);
-        out.order = order;
-        out.why = answer.value("why").toString().trimmed();
-    } catch (const Stopped &) {
-        throw;
-    } catch (const std::exception &) {
-    }
-    return out;
 }
 
 QString unite(const Project &project, const QStringList &sources, const QList<int> &order, int number)

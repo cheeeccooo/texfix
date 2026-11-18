@@ -42,7 +42,6 @@ using namespace tx;
 
 namespace {
 const char *const STATES = "build/stato-lezioni.json"; // lo stato dell'ultima compilazione di ogni lezione: si rifà
-const char *const PROCEDURES = "salvataggi/procedure.json";   // le procedure dell'agente che aspettano il turno: restano alla chiusura
 const char *const UNRECOGNIZED = "build/lavori/smistamento/non-riconosciuti.json";   // in arrivo, non riconosciuti: il perché
 
 QString plural(int n, const char *one, const char *many)
@@ -182,7 +181,7 @@ void Workspace::open(const QString &path)
     if (!closed.isEmpty() && closed != m_history->digest())
         m_history->renameFirst(QStringLiteral("Modifiche fuori da Texfix"));
     loadSettings();
-    for (const QJsonValue &v : QJsonDocument::fromJson(files::read(m_project.path(PROCEDURES)).toUtf8()).object().value("in_attesa").toArray())
+    for (const QJsonValue &v : QJsonDocument::fromJson(files::read(m_project.path(newlesson::PROCEDURES)).toUtf8()).object().value("in_attesa").toArray())
         m_agentQueue << v.toString();
     const QJsonObject unrecognized = QJsonDocument::fromJson(files::read(m_project.path(UNRECOGNIZED)).toUtf8()).object();
     for (auto it = unrecognized.begin(); it != unrecognized.end(); ++it)
@@ -1795,6 +1794,7 @@ void Workspace::startSortPlan(const QString &id)
         return say(prepared.failure);
     plans::discard(m_project, id);                     // il piano è eseguito da Texfix: l'esito è quello della conversione
     m_agentQueue += prepared.agent;
+    newlesson::addPlacements(m_project, prepared.placements);   // per argomento: dove vanno le lezioni dell'agente
     saveProcedures();
     for (const QString &line : prepared.done)
         m_console << QTime::currentTime().toString("HH:mm:ss  ") + QStringLiteral("Aggiungi materiale: %1.").arg(line);
@@ -1828,10 +1828,19 @@ void Workspace::nextProcedure()
 
 void Workspace::saveProcedures()
 {
+    // nello stesso file ci sono le collocazioni delle lezioni che l'agente sta scrivendo: restano finché non le chiude
+    const QString path = m_project.path(newlesson::PROCEDURES);
+    QJsonObject saved = QJsonDocument::fromJson(files::read(path).toUtf8()).object();
     if (m_agentQueue.isEmpty())
-        QFile::remove(m_project.path(PROCEDURES));
+        saved.remove("in_attesa");
     else
-        files::write(m_project.path(PROCEDURES), QString::fromUtf8(QJsonDocument(QJsonObject{{"in_attesa", QJsonArray::fromStringList(m_agentQueue)}}).toJson()));
+        saved["in_attesa"] = QJsonArray::fromStringList(m_agentQueue);
+    if (saved.value("collocazioni").toObject().isEmpty())
+        saved.remove("collocazioni");
+    if (saved.isEmpty())
+        QFile::remove(path);
+    else
+        files::write(path, QString::fromUtf8(QJsonDocument(saved).toJson()));
     emit jobChanged();
 }
 

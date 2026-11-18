@@ -38,6 +38,8 @@ struct Prepared {
     QStringList agent;                                 // i messaggi delle procedure dell'agente, uno alla volta
     QStringList done;                                  // ciò che è già fatto (un doppione tolto, un .tex archiviato)
     QString failure;
+    // per argomento: dove vanno le lezioni che scrive l'agente (file → argomento, titolo, dopo); le colloca chiudi_lezione
+    QJsonObject placements;
 };
 Prepared prepare(const Project &project, const QJsonObject &planDocument);
 
