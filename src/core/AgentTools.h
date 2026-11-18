@@ -20,4 +20,17 @@ QByteArray handle(const Project &project, const Style &style, const QByteArray &
 // Il prompt di sistema dell'agente: che cosa può fare e come, le regole editoriali, lo stile.
 QString systemPrompt(const Settings &settings, const Style &style);
 
+// L'agente dentro un lavoro (un piano già approvato, senza chat): fa il compito fino in fondo, senza piani né domande; la sua
+// ultima risposta è l'esito per l'utente. Ha i file e gli strumenti di WORKER_TOOLS.
+QString workerPrompt(const Settings &settings, const Style &style);
+inline const QStringList WORKER_TOOLS{"stato_progetto", "compila_lezione", "dubbi", "chiudi_lezione"};
+
+// Una richiesta di permesso dell'agente (lo strumento e i suoi argomenti) tocca un file fuori dal progetto?
+bool outside(const QString &root, const QJsonObject &input);
+
+// Gli strumenti senza la finestra: `Texfix --strumenti-progetto <cartella>` legge le richieste da stdin e risponde su
+// stdout, sul progetto su disco. Li usa l'agente di un lavoro: solo WORKER_TOOLS, e alle richieste di permesso risponde
+// da sé (sì dentro il progetto, no fuori).
+int serve(const QString &root);
+
 }

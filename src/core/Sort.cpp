@@ -274,6 +274,16 @@ Prepared prepare(const Project &project, const QJsonObject &document)
     for (const QJsonValue &v : document.value("corso").toArray())
         lessonOf.insert(v.toObject().value("key").toString(), v.toObject().value("source").toString());
     const QJsonObject concepts = document.value("concetti").toObject();
+    auto lessonName = [&](const QString &file) {
+        for (const Lesson &l : project.lessons())
+            if (l.file == file)
+                return QStringLiteral("lezione %1").arg(l.number);
+        return QFileInfo(file).completeBaseName();
+    };
+    struct Integration {                               // ciò che va in una lezione del corso: un compito solo
+        QStringList sources, named, notes;
+    };
+    QMap<QString, Integration> integrations;
     auto titleOf = [&](const QString &id) { return concepts.value(id).toObject().value("title").toString(); };
 
     // i doppioni di una fonte usata si tolgono per primi: dopo, una versione nuova al posto della vecchia li farebbe diversi
@@ -302,7 +312,8 @@ Prepared prepare(const Project &project, const QJsonObject &document)
             out.done << QStringLiteral("non riesco a mettere %1 al posto della versione vecchia").arg(QFileInfo(source).fileName());
             continue;
         }
-        out.agent << newlesson::updateMessage(owner, newlesson::forAgent(project, {copy}).first(), QFileInfo(used).path() + "/precedenti/");
+        out.tasks << Task{QStringLiteral("versione"), owner, QStringLiteral("Versione nuova di %1, nella %2").arg(QFileInfo(used).fileName(), lessonName(owner)), {copy},
+                          newlesson::updateMessage(owner, newlesson::forAgent(project, {copy}).first(), QFileInfo(used).path() + "/precedenti/")};
     }
 
     // i concetti in comune: chi resta fuori dal suo posto, chi va in una lezione del corso
@@ -405,7 +416,8 @@ Prepared prepare(const Project &project, const QJsonObject &document)
 
     // le destinazioni: in una lezione che c'è (l'agente) o una lezione nuova (la conversione, o l'agente se mescola pagine e testi)
     struct Fuse {
-        QStringList named, notes;
+        QStringList named, notes, sources;
+        QString title;
         int number;
         QString date;
         Convert::Wanted where;
@@ -441,9 +453,12 @@ Prepared prepare(const Project &project, const QJsonObject &document)
             QStringList what;
             for (const QString &id : std::as_const(ids))
                 what << titleOf(id);
-            out.agent << newlesson::integrateMessage(lessonOf.value(d.value("into").toString()), named)
-                             + QStringLiteral("\nSono questi concetti: %1.").arg(what.join("; "))
-                             + (notes.isEmpty() ? QString() : "\nIstruzioni dell'utente: " + notes.join("; "));
+            Integration &into = integrations[lessonOf.value(d.value("into").toString())];
+            into.sources += made;
+            into.named += named;
+            into.notes << QStringLiteral("Sono questi concetti: %1.").arg(what.join("; "));
+            if (!notes.isEmpty())
+                into.notes << "Istruzioni dell'utente: " + notes.join("; ");
             continue;
         }
         const int n = number++;
@@ -457,7 +472,7 @@ Prepared prepare(const Project &project, const QJsonObject &document)
             out.sources << made.first();
             out.wanted.insert(made.first(), where);
         } else {
-            fuses << Fuse{named, notes, n, d.value("date").toString(), where};
+            fuses << Fuse{named, notes, made, title, n, d.value("date").toString(), where};
         }
     }
     // le versioni sole nelle lezioni del corso: l'agente porta ciò che aggiungono
@@ -466,13 +481,19 @@ Prepared prepare(const Project &project, const QJsonObject &document)
         const QStringList made = piecesOf(it.value(), QStringLiteral("per %1").arg(it.key()), &failure);
         if (!failure.isEmpty())
             return Prepared{{}, {}, {}, {}, failure, {}};
-        out.agent << newlesson::integrateMessage(lessonOf.value(it.key()), newlesson::forAgent(project, made))
-                         + QStringLiteral("\nSono concetti che la lezione ha già: %1.").arg(courseNotes.value(it.key()).join("; "));
+        Integration &into = integrations[lessonOf.value(it.key())];
+        into.sources += made;
+        into.named += newlesson::forAgent(project, made);
+        into.notes << QStringLiteral("Sono concetti che la lezione ha già: %1.").arg(courseNotes.value(it.key()).join("; "));
     }
+    for (auto it = integrations.begin(); it != integrations.end(); ++it)
+        out.tasks << Task{QStringLiteral("integra"), it.key(), QStringLiteral("Aggiunte alla %1").arg(lessonName(it.key())), it->sources,
+                          newlesson::integrateMessage(it.key(), it->named) + '\n' + it->notes.join('\n')};
     int next = lastFile + int(out.sources.size());
     for (const Fuse &f : std::as_const(fuses)) {
         const QString file = QStringLiteral("src/src%1.tex").arg(++next);
-        out.agent << newlesson::fuseMessage(file, f.number, f.date, f.named) + (f.notes.isEmpty() ? QString() : "\nIstruzioni dell'utente: " + f.notes.join("; "));
+        out.tasks << Task{QStringLiteral("fondi"), file, QStringLiteral("Lezione nuova %1: %2").arg(f.number).arg(f.where.title.isEmpty() ? f.title : f.where.title), f.sources,
+                          newlesson::fuseMessage(file, f.number, f.date, f.named) + (f.notes.isEmpty() ? QString() : "\nIstruzioni dell'utente: " + f.notes.join("; "))};
         if (f.where.byTopic())
             out.placements.insert(file, QJsonObject{{"argomento", f.where.topic}, {"titolo", f.where.title}, {"dopo", f.where.after}});
     }

@@ -105,7 +105,8 @@ Item {
         if (manual)
             return
         const file = editor.currentFile
-        const inReview = ["rivedi:impaginazione", "rivedi:dubbi", "rivedi:correzioni", "rivedi:figure"].includes(file)
+        // anche la finestra del lavoro di «Avvia» prende tutto lo spazio
+        const inReview = ["rivedi:impaginazione", "rivedi:dubbi", "rivedi:correzioni", "rivedi:figure"].includes(file) || file.startsWith("lavoro:")
         // un piano si legge a tutta larghezza: l'anteprima si chiude, e si riapre com'era quando si passa a un'altra scheda
         const inPlan = file.startsWith("piano:")
         if (inPlan && !inReview) {
@@ -229,6 +230,7 @@ Item {
         function onProjectChanged() { editor.closeAll() }
         function onPdfRebuilt() { pdf.reload() }
         function onPlanReady(id) { root.openFile("piano:" + id) }
+        function onRunOpened(id) { root.openFile("lavoro:" + id) }
         function onFileRenamed(from, to) { editor.fileRenamed(from, to) }
         function onAgentAsked(message, title) { root.chatOpen = true; Chat.startProcedure(title, message) }
         function onFilesChanged() { root.refreshManual() }
@@ -299,6 +301,13 @@ Item {
             } else if (name === "avvia-materiale") {
                 if (Workspace.jobs.length > 0)
                     Workspace.startSortPlan(Workspace.jobs[0].id)
+            } else if (name === "lavoro") {              // la finestra del lavoro di «Avvia»
+                if (Workspace.run.id)
+                    root.openFile("lavoro:" + Workspace.run.id)
+            } else if (name === "chiamata") {            // apre una chiamata nella finestra del lavoro (senza numero: la prima)
+                editor.showCall(parseInt(argument) || 0)
+            } else if (name === "riprendi") {
+                Workspace.resume()
             } else if (name === "versioni") {
                 root.leftTab = 1
             } else if (name === "rinomina") {

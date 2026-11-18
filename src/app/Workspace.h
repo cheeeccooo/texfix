@@ -2,6 +2,7 @@
 #include "core/Compiler.h"
 #include "core/Convert.h"
 #include "core/History.h"
+#include "core/Run.h"
 #include "core/Settings.h"
 #include "core/Style.h"
 #include "core/Project.h"
@@ -12,6 +13,8 @@
 #include <QQmlEngine>
 #include <QSettings>
 #include <QThread>
+#include <QDateTime>
+#include <QJsonObject>
 #include <QTimer>
 #include <QVariantList>
 
@@ -57,9 +60,10 @@ class Workspace : public QObject {
     Q_PROPERTY(QString jobLabel READ jobLabel NOTIFY jobProgressChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
     Q_PROPERTY(bool resumable READ resumable NOTIFY jobChanged)           // un lavoro interrotto, da riprendere
-    // Per il pannello Attività: i lavori finiti da poco (title, when, stopped) e le procedure dell'agente che aspettano il turno.
+    // Per il pannello Attività: i lavori finiti da poco (title, when, stopped).
     Q_PROPERTY(QVariantList recentJobs READ recentJobs NOTIFY jobChanged)
-    Q_PROPERTY(int waitingProcedures READ waitingProcedures NOTIFY jobChanged)
+    // Il lavoro in pausa per il limite di utilizzo: fino a quando («HH:mm», o con il giorno); vuoto se non è in pausa.
+    Q_PROPERTY(QString pausedUntil READ pausedUntil NOTIFY jobProgressChanged)
     Q_PROPERTY(QStringList jobLog READ jobLog NOTIFY jobLogChanged)       // il registro del lavoro (Console)
     // Le regole del progetto, una per voce (Impostazioni del progetto).
     Q_PROPERTY(QStringList projectRules READ projectRules WRITE setProjectRules NOTIFY settingsChanged)
@@ -97,10 +101,10 @@ public:
     double jobProgress() const { return m_jobProgress; }
     QString jobLabel() const { return m_jobLabel; }
     bool busy() const { return compiling() || jobRunning() || m_agentRunning; }
-    bool resumable() const { return hasProject() && !jobRunning() && !tx::Convert::interrupted(m_project).isEmpty(); }
+    bool resumable() const;
     QStringList jobLog() const { return m_jobLog; }
     QVariantList recentJobs() const { return m_recent; }
-    int waitingProcedures() const { return int(m_agentQueue.size()); }
+    QString pausedUntil() const;
     QStringList projectRules() const { return m_settings.rules; }
     void setProjectRules(const QStringList &rules);
     QString styleName() const { return m_style.name; }
@@ -230,8 +234,8 @@ public:
     // Aggiungi materiale, la porta sola (SPEC §3.4). addMaterial porta dei file fra quelli in arrivo e li riconosce: ne
     // esce sempre un piano. `lesson`: la lezione (o l'argomento) a cui l'utente li ha aggiunti. newVersion: un file che
     // l'utente dice versione nuova di una fonte usata (arriva con il suo nome, e il piano lo riconosce). sortMaterial
-    // riconosce ciò che è già in arrivo; se un lavoro gira aspetta la sua fine. startSortPlan divide i pezzi e fa partire
-    // le lezioni: quelle di una fonte sola si convertono, le altre passano dall'agente una alla volta; reviseSortPlan
+    // riconosce ciò che è già in arrivo; se un lavoro gira aspetta la sua fine. startSortPlan avvia il lavoro intero
+    // (core/Run, nella finestra «lavoro:<piano>»): le lezioni nuove si convertono e l'agente fa il resto, insieme; reviseSortPlan
     // rifà il piano con le istruzioni, le scelte e i ruoli dell'utente. Ciò che non si riconosce resta in arrivo con il
     // perché (il dettaglio della sua riga) e si riprova con sortMaterial.
     Q_INVOKABLE void addMaterial(const QStringList &paths, const QString &lesson = {});
@@ -294,6 +298,23 @@ public:
     QVariantList tags() const { return m_tags; }
     QVariantList tagSources() const;
     Q_INVOKABLE void setMarkHidden(const QString &mark, bool hidden);
+
+    // Il lavoro di «Avvia» (core/Run), nella sua finestra («lavoro:<piano>», a tutta finestra come le revisioni). run: id,
+    // title, state (in_corso | in_pausa | fermato | interrotto | finito), until (la ripresa dopo il limite), started (ms),
+    // ended (ms), cost, estimate, progress, active (chiamate in corso), sites (i cantieri: key, kind, title, file, state,
+    // phases [{name, state, done, total}], failure, outcome), calls (le chiamate: id, site, siteTitle, role, what, model,
+    // state, started, seconds, cost, error, last), outcome (lines, cost, minutes), canUndo. Vuoto se non c'è un lavoro.
+    // runCall: una chiamata per intero (system, parts [{text} | {image}], response, stream [{kind, text}], error).
+    // resumeRun riprende un lavoro fermato o interrotto; wakeRun riprende subito dopo il limite; undoRun annulla tutto il
+    // lavoro (il progetto torna com'era prima di «Avvia»); closeRun lo archivia fra gli esiti e butta i registri.
+    Q_PROPERTY(QVariantMap run READ run NOTIFY runChanged)
+public:
+    QVariantMap run() const;
+    Q_INVOKABLE QVariantMap runCall(int id) const;
+    Q_INVOKABLE void resumeRun();
+    Q_INVOKABLE void wakeRun();
+    Q_INVOKABLE void undoRun();
+    Q_INVOKABLE void closeRun();
 
     // La conversione, da «Avvia» di Aggiungi materiale: le fonti diventano lezioni (un passo solo della cronologia), poi
     // si compila il documento; alla fine outcomeReady con title, lines, cost, minutes. resume riprende un lavoro
@@ -373,6 +394,8 @@ signals:
     void outlineReady(const QVariantList &topics);
     void fileRenamed(const QString &from, const QString &to);
     void agentAsked(const QString &message, const QString &title);   // una procedura da affidare all'agente, in una chat sua con il suo nome
+    void runChanged();
+    void runOpened(const QString &id);                 // aprire la finestra del lavoro
     void settingsChanged();
     void styleChanged();
     void filesChanged();                               // qualcosa nel progetto è cambiato su disco
@@ -391,15 +414,33 @@ private:
     void onBuildFinished(const tx::BuildResult &result);
     void remember(const QString &path);
     void moved(const tx::History::Outcome &outcome);
-    void startJob(const QString &title, std::function<std::function<void()>(tx::JobControl *)> work);
+    // forRun: il lavoro di «Avvia», i suoi eventi vanno nella sua finestra
+    void startJob(const QString &title, std::function<std::function<void()>(tx::JobControl *)> work, bool forRun = false);
     void paginateLessons(const QStringList &lessons, const QString &title);
     void convertFinished(const tx::Convert::Result &result);
     void decided(const QString &lesson, const QString &title, const QString &error);
     void sortJob(const QStringList &sources, const QJsonObject &previous, const QString &replaces, const QString &lesson);
     void nextSort();                                   // il riconoscimento che aspettava la fine di un lavoro
     void saveUnrecognized();                           // ciò che non si è riconosciuto, e perché: build/lavori/smistamento/
-    void nextProcedure();                              // la prossima procedura dell'agente in coda, se niente lavora
-    void saveProcedures();                             // la coda delle procedure in salvataggi/procedure.json
+    // il lavoro di «Avvia»: gli eventi dal thread del lavoro, la fine, ciò che la finestra mostra (e build/…/vista.json)
+    void startRun(const QString &id);
+    void runEvent(const QJsonObject &event);
+    void runFinished(const tx::run::Result &result);
+    void loadRun();
+    void saveRunView() const;
+    QString m_runId, m_runState;
+    QDateTime m_runUntil;
+    qint64 m_runStarted = 0, m_runEnded = 0;
+    double m_runEstimate = 0;
+    QList<QVariantMap> m_runSites, m_runCalls;
+    QHash<QString, int> m_runSiteAt;                   // chiave del cantiere → posto in m_runSites
+    QHash<int, int> m_runCallAt;                       // id della chiamata → posto in m_runCalls
+    QHash<QString, QString> m_runLessonSite;           // «src7» → la chiave del suo cantiere (per le chiamate senza cantiere)
+    QHash<int, QVariantList> m_runStreams;             // il flusso delle chiamate dell'agente in corso
+    QVariantMap m_runOutcome;
+    QTimer m_runTimer;                                 // più eventi vicini, un aggiornamento solo
+    bool m_closing = false;
+    QDateTime m_pausedUntil;                           // il lavoro in corso aspetta la fine del limite di utilizzo
     void loadSettings();                               // impostazioni e stile, dal disco
 
     tx::Project m_project;
@@ -413,7 +454,7 @@ private:
     double m_jobProgress = 0;
     bool m_agentRunning = false;
     QStringList m_jobLog;
-    QStringList m_agentQueue, m_console, m_hiddenMarks;
+    QStringList m_console, m_hiddenMarks;
     QHash<QString, QString> m_unrecognized;            // in arrivo, non riconosciuto → perché
     QList<std::pair<QStringList, QString>> m_sortWaiting;   // da riconoscere appena niente lavora: file e lezione scelta
     QStringList m_converting;                          // le fonti della conversione in corso

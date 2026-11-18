@@ -1,11 +1,13 @@
 // Texfix: una finestra sola in Qt Quick sul motore (src/core), chiamato direttamente.
 //   Texfix [cartella]                                apre il progetto (senza: la pagina di benvenuto)
+//   Texfix --strumenti-progetto <cartella>          gli strumenti dell'agente di un lavoro (li lancia il CLI `claude`)
 //   Texfix [cartella] --foto f.png [--gesti "…"] [--dimensione LxA]
 //                                                    prova senza mani: esegue i gesti, fotografa la finestra ed esce
 #include "Chat.h"
 #include "PdfBackend.h"
 #include "Theme.h"
 #include "Workspace.h"
+#include "core/AgentTools.h"
 #include "core/Tools.h"
 
 #include <QCommandLineParser>
@@ -66,7 +68,8 @@ void runHandsFree(QQuickWindow *window, QStringList gestures, const QString &pho
     auto *timer = new QTimer(window);
     timer->setInterval(350);
     QObject::connect(timer, &QTimer::timeout, window, [=]() mutable {
-        if ((Workspace::instance()->busy() && !Chat::instance()->waiting()) || Workspace::instance()->rendering())
+        // un lavoro in pausa per il limite di utilizzo è fermo: i gesti vanno avanti (e la foto lo mostra in pausa)
+        if ((Workspace::instance()->busy() && !Chat::instance()->waiting() && Workspace::instance()->pausedUntil().isEmpty()) || Workspace::instance()->rendering())
             return;
         if (!gestures.isEmpty()) {
             const QString gesture = gestures.takeFirst().trimmed();
@@ -119,6 +122,10 @@ int main(int argc, char *argv[])
         if (QByteArray(argv[i]) == "--strumenti") {
             QCoreApplication relay(argc, argv);
             return Chat::relay(QString::fromUtf8(argv[i + 1]));
+        }
+        if (QByteArray(argv[i]) == "--strumenti-progetto") {    // gli strumenti dell'agente di un lavoro, sul progetto su disco
+            QCoreApplication tools(argc, argv);
+            return tx::agent::serve(QString::fromUtf8(argv[i + 1]));
         }
     }
     QGuiApplication app(argc, argv);

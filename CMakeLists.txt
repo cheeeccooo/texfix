@@ -32,6 +32,8 @@ qt_add_library(texfix_core STATIC
     src/core/Fix.cpp
     src/core/Layout.cpp
     src/core/AgentTools.cpp
+    src/core/Worker.cpp
+    src/core/Run.cpp
     src/core/Plans.cpp
     src/core/NewLesson.cpp
     src/core/Sort.cpp
@@ -101,6 +103,7 @@ qt_add_qml_module(texfix
         qml/ReviewView.qml
         qml/FiguresView.qml
         qml/LayoutView.qml
+        qml/RunView.qml
         qml/ChatPane.qml
         qml/PlanView.qml
         qml/ConceptPlan.qml

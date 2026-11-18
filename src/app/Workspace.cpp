@@ -14,6 +14,7 @@
 #include "core/Provenance.h"
 #include "core/Reorganize.h"
 #include "core/Review.h"
+#include "core/Run.h"
 #include "core/Rules.h"
 #include "core/Snippets.h"
 #include "core/Sort.h"
@@ -65,7 +66,12 @@ Workspace::Workspace()
     connect(this, &Workspace::compilingChanged, this, &Workspace::busyChanged);
     connect(this, &Workspace::jobChanged, this, &Workspace::busyChanged);
     connect(this, &Workspace::busyChanged, this, &Workspace::nextSort, Qt::QueuedConnection);   // prima il materiale che aspetta
-    connect(this, &Workspace::busyChanged, this, &Workspace::nextProcedure, Qt::QueuedConnection);
+    m_runTimer.setSingleShot(true);
+    m_runTimer.setInterval(250);
+    connect(&m_runTimer, &QTimer::timeout, this, [this] {
+        emit runChanged();
+        saveRunView();
+    });
     connect(this, &Workspace::pdfChanged, this, &Workspace::computeTags);
     connect(this, &Workspace::pdfRebuilt, this, &Workspace::computeTags);
     m_showTags = settings().value("vista/tag", false).toBool();
@@ -182,8 +188,6 @@ void Workspace::open(const QString &path)
     if (!closed.isEmpty() && closed != m_history->digest())
         m_history->renameFirst(QStringLiteral("Modifiche fuori da Texfix"));
     loadSettings();
-    for (const QJsonValue &v : QJsonDocument::fromJson(files::read(m_project.path(newlesson::PROCEDURES)).toUtf8()).object().value("in_attesa").toArray())
-        m_agentQueue << v.toString();
     const QJsonObject unrecognized = QJsonDocument::fromJson(files::read(m_project.path(UNRECOGNIZED)).toUtf8()).object();
     for (auto it = unrecognized.begin(); it != unrecognized.end(); ++it)
         m_unrecognized.insert(it.key(), it.value().toString());
@@ -195,6 +199,7 @@ void Workspace::open(const QString &path)
     }
     if (QFileInfo::exists(Compiler::pdfOf(m_project, {})))
         m_pdf = Compiler::pdfOf(m_project, {});
+    loadRun();                                         // un lavoro di «Avvia» non archiviato: la sua finestra lo mostra
     remember(m_project.root());
     refreshTree();
     emit projectChanged();
@@ -206,9 +211,11 @@ void Workspace::closeProject()
     if (!hasProject())
         return;
     if (m_jobThread) {                                 // chiuso il progetto (o il programma) tutto si ferma
+        m_closing = true;                              // un lavoro di «Avvia» resta interrotto, da riprendere
         m_jobControl->stop();
         m_jobThread->wait();
         QCoreApplication::sendPostedEvents(this);      // la fine del lavoro, prima di smontare il progetto
+        m_closing = false;
     }
     m_compiler.stop();
     if (m_history)
@@ -218,7 +225,16 @@ void Workspace::closeProject()
         m_watcher.removePaths(m_watcher.files());
     if (!m_watcher.directories().isEmpty())
         m_watcher.removePaths(m_watcher.directories());
-    m_agentQueue.clear();                              // sono del progetto: restano nei suoi file
+    m_runId.clear();                                   // il lavoro di «Avvia» resta nei file del progetto
+    m_runState.clear();
+    m_runSites.clear();
+    m_runCalls.clear();
+    m_runSiteAt.clear();
+    m_runCallAt.clear();
+    m_runLessonSite.clear();
+    m_runStreams.clear();
+    m_runOutcome.clear();
+    emit runChanged();
     m_unrecognized.clear();
     m_sortWaiting.clear();
     m_converting.clear();
@@ -360,7 +376,8 @@ void Workspace::refreshTree()
     m_changeCount = changeCount;
     QVariantList jobs;
     for (const plans::Info &info : plans::open(m_project))
-        jobs << QVariantMap{{"id", info.id}, {"title", info.title}, {"state", info.state}, {"kind", plans::load(m_project, info.id).value("tipo").toString()}};
+        jobs << QVariantMap{{"id", info.id}, {"title", info.title}, {"state", info.state}, {"kind", plans::load(m_project, info.id).value("tipo").toString()},
+                            {"run", !run::load(m_project, info.id).isEmpty()}};   // avviato: si apre la finestra del lavoro
     QVariantList outcomes;                             // «AAAA-MM-GG HH.MM — titolo.md»: il titolo a sinistra, quando a destra
     for (const QString &name : QDir(m_project.path("salvataggi/esiti")).entryList({"*.md"}, QDir::Files, QDir::Name | QDir::Reversed)) {
         const QString stem = QFileInfo(name).completeBaseName();
@@ -383,6 +400,15 @@ void Workspace::refreshTree()
     for (const auto &[files, lesson] : std::as_const(m_sortWaiting))
         for (const QString &f : files)
             waiting.insert(f);
+    QSet<QString> runFiles;                            // ciò che il lavoro di «Avvia» sta usando
+    if (!m_runId.isEmpty() && m_runState != "finito") {
+        const QJsonObject state = run::load(m_project, m_runId);
+        for (const QJsonValue &v : state.value("fonti").toArray())
+            runFiles.insert(texsource::parseSpec(v.toString()).path);
+        for (const QJsonValue &t : state.value("compiti").toArray())
+            for (const QJsonValue &v : t.toObject().value("fonti").toArray())
+                runFiles.insert(v.toString());
+    }
     QVariantList queue = listing("fonti/coda");
     for (QVariant &v : queue) {
         QVariantMap entry = v.toMap();
@@ -390,8 +416,7 @@ void Workspace::refreshTree()
         bool working = false;
         for (const QString &source : std::as_const(m_converting))
             working = working || texsource::parseSpec(source).path == file;
-        for (const QString &message : std::as_const(m_agentQueue))
-            working = working || message.contains(file);
+        working = working || runFiles.contains(file);
         if (working) {
             entry["state"] = "lavoro";
             entry["detail"] = QStringLiteral("in lavorazione");
@@ -843,6 +868,8 @@ void Workspace::removeLibraryStyle(const QString &name) { styleswitch::removeFro
 
 void Workspace::resume()
 {
+    if (!m_runId.isEmpty())                            // il lavoro di «Avvia»: riprende tutto, conversione e compiti dell'agente
+        return resumeRun();
     QHash<QString, Convert::Wanted> wanted;                       // con numero, data e argomento scelti nel piano
     const QStringList sources = Convert::interrupted(m_project, &wanted);
     convert(sources, wanted);
@@ -864,9 +891,20 @@ void Workspace::convert(const QStringList &sources, const QHash<QString, Convert
 
 // Un lavoro: gira qui dentro, in un thread suo (nessun altro processo, nessun file che fa da tramite); ciò che
 // restituisce gira alla fine nel thread della finestra.
-void Workspace::startJob(const QString &title, std::function<std::function<void()>(JobControl *)> work)
+void Workspace::startJob(const QString &title, std::function<std::function<void()>(JobControl *)> work, bool forRun)
 {
     m_jobControl = std::make_unique<JobControl>();
+    m_jobControl->onPause = [this](const QDateTime &until) {     // il limite di utilizzo: tutto aspetta fino a lì
+        QMetaObject::invokeMethod(this, [this, until] {
+            m_pausedUntil = until;
+            if (until.isValid())
+                say(QStringLiteral("Limite di utilizzo di Claude raggiunto: il lavoro riprende da solo alle %1.").arg(pausedUntil()));
+            emit jobProgressChanged();
+            emit runChanged();
+        });
+    };
+    if (forRun)
+        m_jobControl->onEvent = [this](const QJsonObject &e) { QMetaObject::invokeMethod(this, [this, e] { runEvent(e); }); };
     m_jobControl->onProgress = [this](double fraction, const QString &label) {
         QMetaObject::invokeMethod(this, [this, fraction, label] {
             m_jobProgress = fraction;
@@ -895,6 +933,7 @@ void Workspace::startJob(const QString &title, std::function<std::function<void(
             m_jobThread = nullptr;
             const bool stopped = m_jobControl && m_jobControl->stopped();
             m_jobControl.reset();
+            m_pausedUntil = {};
             m_recent.prepend(QVariantMap{{"title", m_jobTitle}, {"when", QTime::currentTime().toString("HH:mm")}, {"stopped", stopped}});
             while (m_recent.size() > 12)
                 m_recent.removeLast();
@@ -1727,14 +1766,18 @@ void Workspace::discardPlan(const QString &id)
 {
     plans::discard(m_project, id);
     refreshTree();
-    nextProcedure();
 }
 
 void Workspace::archivePlan(const QString &id)
 {
     const QString file = plans::archive(m_project, id);
+    run::forget(m_project, id);                        // un lavoro di «Avvia» letto e archiviato: via i registri e la copia
+    if (id == m_runId) {
+        m_runId.clear();
+        m_runState.clear();
+        emit runChanged();
+    }
     refreshTree();
-    nextProcedure();
     if (!file.isEmpty())
         say(QStringLiteral("Archiviato fra gli esiti: %1.").arg(QFileInfo(file).completeBaseName()));
 }
@@ -1875,64 +1918,447 @@ void Workspace::startSortPlan(const QString &id)
     if (busy())
         return say(QStringLiteral("C'è già un lavoro in corso."));
     checkpoint(QStringLiteral("Modifiche a mano"));
-    sort::Prepared prepared;
-    try {
-        prepared = sort::prepare(m_project, plans::load(m_project, id));
-    } catch (const std::exception &e) {               // niente in silenzio, e niente che chiuda il programma
-        return say(QStringLiteral("Non riesco ad avviare il piano: %1").arg(QString::fromUtf8(e.what())));
-    }
-    if (!prepared.failure.isEmpty())
-        return say(prepared.failure);
-    plans::discard(m_project, id);                     // il piano è eseguito da Texfix: l'esito è quello della conversione
-    m_agentQueue += prepared.agent;
-    newlesson::addPlacements(m_project, prepared.placements);   // per argomento: dove vanno le lezioni dell'agente
-    saveProcedures();
-    for (const QString &line : prepared.done)
-        m_console << QTime::currentTime().toString("HH:mm:ss  ") + QStringLiteral("Aggiungi materiale: %1.").arg(line);
-    emit consoleChanged();
-    refreshTree();
-    if (!prepared.sources.isEmpty()) {
-        if (!prepared.done.isEmpty())
-            m_outcomeHead = QStringLiteral("Prima: %1.").arg(prepared.done.join("; "));
-        convert(prepared.sources, prepared.wanted);    // le lezioni di una fonte sola, tutte insieme; poi le procedure dell'agente
+    // un lavoro nuovo: la finestra comincia vuota; quello di prima, se c'era e non era archiviato, va fra gli esiti
+    if (!m_runId.isEmpty() && m_runId != id && m_runState == "finito")
+        archivePlan(m_runId);
+    m_runId = id;
+    m_runSites.clear();
+    m_runCalls.clear();
+    m_runSiteAt.clear();
+    m_runCallAt.clear();
+    m_runLessonSite.clear();
+    m_runStreams.clear();
+    m_runOutcome.clear();
+    m_runStarted = QDateTime::currentMSecsSinceEpoch();
+    m_runEnded = 0;
+    m_runEstimate = plans::load(m_project, id).value("stima").toDouble();
+    startRun(id);
+}
+
+void Workspace::startRun(const QString &id)
+{
+    m_runState = QStringLiteral("in_corso");
+    m_runUntil = {};
+    m_runOutcome.clear();
+    emit runChanged();
+    emit runOpened(id);
+    startJob(QStringLiteral("Aggiungi materiale"), [this, id, project = m_project, settings = m_settings, style = m_style](JobControl *control) {
+        const run::Result result = run::execute(project, settings, style, id, control);
+        return std::function<void()>([this, result] { runFinished(result); });
+    }, true);
+    refreshTree();                                     // le righe in arrivo dicono che sono in lavorazione
+}
+
+void Workspace::runFinished(const run::Result &result)
+{
+    checkpoint(QStringLiteral("Aggiungi materiale"));  // tutto il lavoro è un passo solo
+    loadSettings();                                    // i pacchetti chiesti dalle figure
+    const QJsonObject state = run::load(m_project, m_runId);
+    m_runEnded = QDateTime::currentMSecsSinceEpoch();
+    if (state.isEmpty()) {                             // non è partito: il progetto è com'era
+        m_runState.clear();
+        m_runId.clear();
+        say(result.failure);
+    } else if (result.stopped) {
+        m_runState = m_closing ? QStringLiteral("interrotto") : QStringLiteral("fermato");
+        if (m_closing) {                               // chiuso il programma: alla riapertura si riprende con un clic
+            QJsonObject s = state;
+            s["stato"] = "interrotto";
+            run::save(m_project, m_runId, s);
+        }
     } else {
-        checkpoint(QStringLiteral("Aggiungi materiale"));
-        nextProcedure();
-        if (!prepared.done.isEmpty())
-            say(QStringLiteral("Fatto: %1.").arg(prepared.done.join("; ")));
-        else if (prepared.agent.isEmpty())
-            say(QStringLiteral("Nel piano non c'è niente da fare."));
+        m_runState = QStringLiteral("finito");
     }
+    m_runUntil = QDateTime::fromString(state.value("pausa").toString(), Qt::ISODate);
+    if (!m_runState.isEmpty()) {
+        const QLocale italian(QLocale::Italian);
+        QStringList lines;
+        for (const QJsonValue &v : state.value("fatto").toArray())
+            lines << v.toString().left(1).toUpper() + v.toString().mid(1) + '.';
+        for (const Convert::Lesson &lesson : result.converted.lessons) {
+            if (lesson.file.isEmpty()) {
+                if (!lesson.failure.isEmpty())
+                    lines << QStringLiteral("%1: non convertita (%2).").arg(lesson.source, lesson.failure);
+                continue;
+            }
+            QStringList open;
+            if (lesson.doubts)
+                open << plural(lesson.doubts, "dubbio", "dubbi");
+            if (lesson.corrections)
+                open << plural(lesson.corrections, "aggiunta o correzione", "fra aggiunte e correzioni");
+            if (lesson.figures)
+                open << plural(lesson.figures, "figura da inserire", "figure da inserire");
+            if (lesson.layoutOpen)
+                open << plural(lesson.layoutOpen, "mossa di impaginazione da rivedere", "mosse di impaginazione da rivedere");
+            if (lesson.errors)
+                open << plural(lesson.errors, "errore", "errori");
+            if (lesson.rows)
+                open << plural(lesson.rows, "riga fuori misura", "righe fuori misura");
+            lines << QStringLiteral("Lezione %1 · %2: %3.").arg(lesson.number).arg(lesson.title, open.isEmpty() ? QStringLiteral("niente da rivedere") : open.join(", "));
+        }
+        for (const QJsonValue &v : state.value("compiti").toArray()) {
+            const QJsonObject t = v.toObject();
+            if (t.value("stato").toString() == "fatta")
+                lines << QStringLiteral("%1: fatte.").arg(t.value("titolo").toString());
+        }
+        lines += result.lines;
+        if (result.stopped && !m_closing)
+            lines << QStringLiteral("Lavoro fermato: ciò che è fatto resta, e si riprende da lì con «Riprendi».");
+        if (!result.failure.isEmpty())
+            lines << result.failure;
+        m_runOutcome = QVariantMap{{"lines", lines}, {"cost", italian.toString(state.value("costo").toDouble(), 'f', 2)},
+                                   {"minutes", italian.toString(result.minutes, 'f', 1)}};
+        if (!m_closing)
+            say(result.stopped ? QStringLiteral("Aggiungi materiale: fermato.")
+                               : QStringLiteral("Aggiungi materiale: %1, %2.").arg(plural(result.converted.written(), "lezione scritta", "lezioni scritte"),
+                                                                                    plural(result.tasksDone, "lezione completata dall'agente", "lezioni completate dall'agente")));
+    }
+    saveRunView();
+    emit runChanged();
+    refreshTree();
+    emit filesChanged();
+    if (!m_closing && (result.converted.written() > 0 || result.tasksDone > 0))
+        m_compiler.compileDocument();                  // dà lo stato alle lezioni nuove e cambiate
 }
 
-void Workspace::nextProcedure()
+void Workspace::resumeRun()
 {
-    if (m_agentQueue.isEmpty() || busy() || !hasProject())
+    if (m_runId.isEmpty() || (m_runState != "fermato" && m_runState != "interrotto"))
         return;
-    for (const plans::Info &info : plans::open(m_project))
-        if (info.state != "esito")
-            return;                                    // una procedura aspetta che il piano aperto sia deciso ed eseguito
-    const QString next = m_agentQueue.takeFirst();
-    saveProcedures();
-    emit agentAsked(next, QStringLiteral("Materiale da sistemare"));
+    if (busy())
+        return say(QStringLiteral("C'è già un lavoro in corso."));
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    m_runEnded = 0;
+    startRun(m_runId);
 }
 
-void Workspace::saveProcedures()
+void Workspace::wakeRun()
 {
-    // nello stesso file ci sono le collocazioni delle lezioni che l'agente sta scrivendo: restano finché non le chiude
-    const QString path = m_project.path(newlesson::PROCEDURES);
-    QJsonObject saved = QJsonDocument::fromJson(files::read(path).toUtf8()).object();
-    if (m_agentQueue.isEmpty())
-        saved.remove("in_attesa");
-    else
-        saved["in_attesa"] = QJsonArray::fromStringList(m_agentQueue);
-    if (saved.value("collocazioni").toObject().isEmpty())
-        saved.remove("collocazioni");
-    if (saved.isEmpty())
-        QFile::remove(path);
-    else
-        files::write(path, QString::fromUtf8(QJsonDocument(saved).toJson()));
-    emit jobChanged();
+    if (m_jobControl)
+        m_jobControl->wake();
+}
+
+void Workspace::undoRun()
+{
+    if (m_runId.isEmpty() || busy())
+        return;
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    QString error;
+    const QString id = m_runId;
+    const QStringList changed = run::undo(m_project, id, &error);
+    if (!error.isEmpty())
+        return say(error);
+    checkpoint(QStringLiteral("Aggiungi materiale annullato"));
+    m_runId.clear();
+    m_runState.clear();
+    emit runChanged();
+    refreshTree();
+    emit filesChanged();
+    m_compiler.compileDocument();
+    say(QStringLiteral("Il progetto è tornato com'era prima di «Avvia» (%1). Il piano è di nuovo da avviare.").arg(plural(changed.size(), "file", "file")));
+    emit planReady(id);                                // il piano, di nuovo da leggere e avviare
+}
+
+void Workspace::closeRun()
+{
+    if (!m_runId.isEmpty() && m_runState == "finito")
+        archivePlan(m_runId);
+}
+
+QString Workspace::pausedUntil() const
+{
+    if (!m_pausedUntil.isValid())
+        return {};
+    return m_pausedUntil.date() == QDate::currentDate() ? m_pausedUntil.toString("HH:mm") : m_pausedUntil.toString("dd/MM 'alle' HH:mm");
+}
+
+bool Workspace::resumable() const
+{
+    if (!hasProject() || jobRunning())
+        return false;
+    if (!m_runId.isEmpty())
+        return m_runState == "fermato" || m_runState == "interrotto";
+    return !Convert::interrupted(m_project).isEmpty();
+}
+
+void Workspace::loadRun()
+{
+    const QStringList ids = run::started(m_project);
+    if (ids.isEmpty())
+        return;
+    m_runId = ids.first();
+    const QJsonObject state = run::load(m_project, m_runId);
+    const QString saved = state.value("stato").toString();
+    m_runState = saved == "finito" ? QStringLiteral("finito") : saved == "fermato" ? QStringLiteral("fermato") : QStringLiteral("interrotto");
+    m_runUntil = QDateTime::fromString(state.value("pausa").toString(), Qt::ISODate);
+    m_runEstimate = state.value("stima").toDouble();
+    const QJsonObject view = QJsonDocument::fromJson(files::read(run::folder(m_project, m_runId) + "/vista.json").toUtf8()).object();
+    m_runStarted = qint64(view.value("inizio").toDouble());
+    m_runEnded = qint64(view.value("fine").toDouble());
+    for (const QJsonValue &v : view.value("cantieri").toArray()) {
+        QVariantMap site = v.toObject().toVariantMap();
+        if (site.value("state") == "in_corso") {       // il lavoro non gira: ciò che era a metà aspetta la ripresa
+            site["state"] = "da_fare";
+            QVariantList phases = site.value("phases").toList();
+            for (QVariant &p : phases) {
+                QVariantMap m = p.toMap();
+                if (m.value("state") == "in_corso")
+                    m["state"] = "da_fare";
+                p = m;
+            }
+            site["phases"] = phases;
+        }
+        m_runSiteAt.insert(site.value("key").toString(), int(m_runSites.size()));
+        if (!site.value("file").toString().isEmpty())
+            m_runLessonSite.insert(QFileInfo(site.value("file").toString()).completeBaseName(), site.value("key").toString());
+        m_runSites << site;
+    }
+    for (const QJsonValue &v : view.value("chiamate").toArray()) {
+        QVariantMap call = v.toObject().toVariantMap();
+        if (call.value("state") == "in_corso" || call.value("state") == "riprova")
+            call["state"] = "interrotta";
+        m_runCallAt.insert(call.value("id").toInt(), int(m_runCalls.size()));
+        m_runCalls << call;
+    }
+    m_runOutcome = view.value("esito").toObject().toVariantMap();
+    if (m_runState == "interrotto" && m_runOutcome.isEmpty())
+        m_runOutcome = QVariantMap{{"lines", QStringList{QStringLiteral("Il lavoro si è interrotto con la chiusura del programma: ciò che è fatto resta, "
+                                                                         "e si riprende da lì con «Riprendi».")}}};
+    emit runChanged();
+}
+
+void Workspace::saveRunView() const
+{
+    if (m_runId.isEmpty() || !hasProject() || run::load(m_project, m_runId).isEmpty())
+        return;
+    QJsonArray sites, calls;
+    for (const QVariantMap &site : m_runSites)
+        sites.append(QJsonObject::fromVariantMap(site));
+    for (const QVariantMap &call : m_runCalls)
+        calls.append(QJsonObject::fromVariantMap(call));
+    QDir().mkpath(run::folder(m_project, m_runId));
+    files::write(run::folder(m_project, m_runId) + "/vista.json",
+                 QString::fromUtf8(QJsonDocument(QJsonObject{{"inizio", double(m_runStarted)}, {"fine", double(m_runEnded)}, {"cantieri", sites},
+                                                             {"chiamate", calls}, {"esito", QJsonObject::fromVariantMap(m_runOutcome)}})
+                                       .toJson(QJsonDocument::Compact)));
+}
+
+namespace {
+// chi è una chiamata per chi guarda: il suo ruolo e su che cosa lavora
+QString roleOf(const QString &stage, const QString &tag)
+{
+    if (stage == "outline")
+        return tag.endsWith(" titolo") ? QStringLiteral("Titolo") : QStringLiteral("Scaletta");
+    if (stage == "transcribe")
+        return tag.endsWith(" correzione") ? QStringLiteral("Correzione dopo la verifica") : QStringLiteral("Trascrizione");
+    if (stage == "verify")
+        return QStringLiteral("Verifica");
+    if (stage == "figure")
+        return QStringLiteral("Figura");
+    if (stage.startsWith("fix"))
+        return QStringLiteral("Errori e righe");
+    if (stage == "decide")
+        return QStringLiteral("Dubbio");
+    if (stage == "integrate")
+        return QStringLiteral("Agente");
+    return stage;
+}
+QString whatOf(const QString &stage, const QString &tag)
+{
+    static const QRegularExpression block(R"(#(\d+))"), figure(R"(-(\d+)$)");
+    if (stage == "integrate")
+        return {};
+    if (const auto m = block.match(tag); m.hasMatch())
+        return QStringLiteral("blocco %1").arg(m.captured(1));
+    if (const auto m = figure.match(tag); m.hasMatch() && stage == "figure")
+        return QStringLiteral("figura %1").arg(m.captured(1).toInt());
+    return {};
+}
+const QStringList CONVERT_PHASES{"Scaletta", "Blocchi", "Lezione", "Figure", "Errori e righe", "Impaginazione"};
+}
+
+void Workspace::runEvent(const QJsonObject &e)
+{
+    const QString type = e.value("tipo").toString();
+    if (type == "cantiere") {
+        QString key = e.value("chiave").toString();
+        if (!m_runSiteAt.contains(key) && m_runSiteAt.contains(texsource::parseSpec(key).path))
+            key = texsource::parseSpec(key).path;      // una lezione di un .tex: il cantiere è il file
+        if (!m_runSiteAt.contains(key)) {
+            const QString kind = e.value("genere").toString("converti");
+            QVariantList phases;
+            for (const QString &name : kind == "converti" ? CONVERT_PHASES : QStringList{"Agente"})
+                phases << QVariantMap{{"name", name}, {"state", "da_fare"}, {"done", 0}, {"total", 0}};
+            m_runSiteAt.insert(key, int(m_runSites.size()));
+            m_runSites << QVariantMap{{"key", key}, {"kind", kind}, {"title", e.value("titolo").toString()}, {"state", "da_fare"}, {"phases", phases}};
+        }
+        QVariantMap &site = m_runSites[m_runSiteAt.value(key)];
+        if (e.contains("file") && !e.value("file").toString().isEmpty()) {
+            site["file"] = e.value("file").toString();
+            m_runLessonSite.insert(QFileInfo(e.value("file").toString()).completeBaseName(), key);
+        }
+        if (e.contains("numero"))
+            site["number"] = e.value("numero").toInt();
+        if (!e.value("titolo").toString().isEmpty())
+            site["title"] = e.value("titolo").toString();
+        const QString phase = e.value("fase").toString(), state = e.value("stato").toString();
+        if (phase == "Fine" || phase.isEmpty()) {
+            site["state"] = state;
+            if (phase == "Fine" && state == "fatta") {  // finito: ciò che non è stato fatto da sé era da saltare
+                QVariantList phases = site.value("phases").toList();
+                for (QVariant &p : phases) {
+                    QVariantMap m = p.toMap();
+                    if (m.value("state") == "da_fare" || m.value("state") == "in_corso")
+                        m["state"] = m.value("state") == "in_corso" ? "fatta" : "saltata";
+                    p = m;
+                }
+                site["phases"] = phases;
+            }
+        } else {
+            QVariantList phases = site.value("phases").toList();
+            for (QVariant &p : phases) {
+                QVariantMap m = p.toMap();
+                if (m.value("name") != phase)
+                    continue;
+                m["state"] = state;
+                if (e.contains("totale"))
+                    m["total"] = e.value("totale").toInt();
+                if (e.contains("fatti"))
+                    m["done"] = e.value("fatti").toInt();
+                if (e.contains("piu"))
+                    m["done"] = m.value("done").toInt() + e.value("piu").toInt();
+                p = m;
+            }
+            site["phases"] = phases;
+            if (site.value("state") == "da_fare" || site.value("state") == "fatta")
+                site["state"] = "in_corso";
+        }
+        if (e.contains("motivo") && !e.value("motivo").toString().isEmpty())
+            site["failure"] = e.value("motivo").toString();
+        if (e.contains("esito"))
+            site["outcome"] = e.value("esito").toString();
+    } else if (type == "chiamata") {
+        const int id = e.value("id").toInt();
+        QString key = e.value("cantiere").toString();
+        if (!key.isEmpty() && !m_runSiteAt.contains(key) && m_runSiteAt.contains(texsource::parseSpec(key).path))
+            key = texsource::parseSpec(key).path;
+        if (key.isEmpty()) {                           // una chiamata partita da un thread senza cantiere: dalla lezione nell'etichetta
+            static const QRegularExpression lesson(R"(^((?:src|arg)\d+))");
+            key = m_runLessonSite.value(lesson.match(e.value("etichetta").toString()).captured(1));
+        }
+        if (!m_runCallAt.contains(id)) {
+            m_runCallAt.insert(id, int(m_runCalls.size()));
+            m_runCalls << QVariantMap{{"id", id}};
+        }
+        QVariantMap &call = m_runCalls[m_runCallAt.value(id)];
+        const QString stage = e.value("fase").toString(), tag = e.value("etichetta").toString();
+        call["site"] = key;
+        call["role"] = roleOf(stage, tag);
+        call["what"] = whatOf(stage, tag);
+        call["tag"] = tag;
+        call["model"] = e.value("modello").toString().contains("opus") ? QStringLiteral("Opus") : QStringLiteral("Sonnet");
+        const QString effort = e.value("impegno").toString();
+        call["effort"] = effort == "low" ? QStringLiteral("basso") : effort == "medium" ? QStringLiteral("medio") : effort == "high" ? QStringLiteral("alto") : effort;
+        call["state"] = e.value("stato").toString();
+        call["started"] = e.value("inizio").toDouble();
+        if (e.contains("secondi"))
+            call["seconds"] = e.value("secondi").toDouble();
+        if (e.contains("costo"))
+            call["cost"] = e.value("costo").toDouble();
+        call["error"] = e.value("motivo").toString();
+        if (e.value("stato").toString() != "in_corso" && e.value("stato").toString() != "riprova")
+            m_runStreams.remove(id);                   // finita: il flusso intero sta nel suo registro
+    } else if (type == "flusso") {
+        const int id = e.value("id").toInt();
+        QVariantList &stream = m_runStreams[id];
+        stream << e.value("riga").toObject().toVariantMap();
+        if (stream.size() > 600)
+            stream.removeFirst();
+        if (m_runCallAt.contains(id))
+            m_runCalls[m_runCallAt.value(id)]["last"] = e.value("riga").toObject().value("testo").toString().simplified().left(160);
+    }
+    if (!m_runTimer.isActive())
+        m_runTimer.start();
+}
+
+QVariantMap Workspace::run() const
+{
+    if (m_runId.isEmpty())
+        return {};
+    QVariantList sites, calls;
+    double progress = 0, cost = 0;
+    int active = 0;
+    for (const QVariantMap &site : m_runSites) {
+        QVariantMap s = site;
+        double part = 0;
+        const QString state = site.value("state").toString();
+        if (state == "fatta" || state == "fallita") {
+            part = 1;
+        } else if (site.value("kind") == "converti") {
+            static const QHash<QString, double> weight{{"Scaletta", 0.1}, {"Blocchi", 0.55}, {"Lezione", 0.05}, {"Figure", 0.1}, {"Errori e righe", 0.12}, {"Impaginazione", 0.08}};
+            for (const QVariant &p : site.value("phases").toList()) {
+                const QVariantMap m = p.toMap();
+                const double w = weight.value(m.value("name").toString());
+                if (m.value("state") == "fatta" || m.value("state") == "saltata")
+                    part += w;
+                else if (m.value("state") == "in_corso" && m.value("total").toInt() > 0)
+                    part += w * qMin(1.0, m.value("done").toDouble() / m.value("total").toDouble());
+            }
+        } else if (state == "in_corso") {
+            part = 0.4;
+        }
+        progress += part;
+        QString title = site.value("title").toString();
+        if (site.value("number").toInt() > 0 && site.value("kind") == "converti")
+            title = QStringLiteral("Lezione %1 · %2").arg(site.value("number").toInt()).arg(title);
+        s["title"] = title;
+        sites << s;
+    }
+    QHash<QString, QString> titles;
+    for (const QVariant &s : std::as_const(sites))
+        titles.insert(s.toMap().value("key").toString(), s.toMap().value("title").toString());
+    // le chiamate: quelle in corso in cima, poi le altre dalla più recente
+    QList<QVariantMap> ordered = m_runCalls;
+    std::stable_sort(ordered.begin(), ordered.end(), [](const QVariantMap &a, const QVariantMap &b) {
+        const bool ra = a.value("state") == "in_corso" || a.value("state") == "riprova", rb = b.value("state") == "in_corso" || b.value("state") == "riprova";
+        if (ra != rb)
+            return ra;
+        return a.value("id").toInt() > b.value("id").toInt();
+    });
+    for (QVariantMap call : std::as_const(ordered)) {
+        cost += call.value("cost").toDouble();
+        active += call.value("state") == "in_corso" || call.value("state") == "riprova";
+        call["siteTitle"] = titles.value(call.value("site").toString());
+        calls << call;
+    }
+    QString state = m_runState;
+    if (state == "in_corso" && m_pausedUntil.isValid())
+        state = QStringLiteral("in_pausa");
+    const QDateTime until = state == "in_pausa" ? m_pausedUntil : m_runUntil;
+    return QVariantMap{{"id", m_runId}, {"title", QStringLiteral("Aggiungi materiale")}, {"state", state},
+                       {"until", until.isValid() ? (until.date() == QDate::currentDate() ? until.toString("HH:mm") : until.toString("dd/MM 'alle' HH:mm")) : QString()},
+                       {"untilPassed", until.isValid() && until <= QDateTime::currentDateTime()},
+                       {"started", double(m_runStarted)}, {"ended", double(m_runEnded)}, {"cost", cost}, {"estimate", m_runEstimate},
+                       {"progress", m_runSites.isEmpty() ? 0.0 : progress / m_runSites.size()}, {"active", active}, {"sites", sites}, {"calls", calls},
+                       {"outcome", m_runOutcome}, {"canUndo", QFileInfo::exists(run::folder(m_project, m_runId) + "/prima/stato.json")}};
+}
+
+QVariantMap Workspace::runCall(int id) const
+{
+    if (m_runId.isEmpty())
+        return {};
+    const QJsonObject record = QJsonDocument::fromJson(files::read(QStringLiteral("%1/%2.json").arg(run::recordsDir(m_project, m_runId)).arg(id)).toUtf8()).object();
+    QVariantList parts;
+    for (const QJsonValue &v : record.value("parti").toArray()) {
+        const QJsonObject p = v.toObject();
+        parts << (p.contains("immagine") ? QVariantMap{{"image", p.value("immagine").toString()}} : QVariantMap{{"text", p.value("testo").toString()}});
+    }
+    QVariantList stream = m_runStreams.value(id);
+    if (stream.isEmpty())
+        for (const QJsonValue &v : record.value("flusso").toArray())
+            stream << v.toObject().toVariantMap();
+    return QVariantMap{{"found", !record.isEmpty()}, {"system", record.value("istruzioni").toString()}, {"parts", parts},
+                       {"response", record.value("risposta").toString()}, {"stream", stream}, {"error", record.value("motivo").toString()}};
 }
 
 bool Workspace::hasRepository() const { return hasProject() && git::hasRepository(m_project); }

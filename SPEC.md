@@ -159,9 +159,19 @@ sua analisi, un esempio, un esercizio) va dove serve, anche se il file da cui vi
 - **[S]** **«Avvia»**: di ogni fonte si prendono le righe (o le pagine) dei concetti che vanno in un posto, allargate al
   paragrafo, e diventano un file fra quelli in arrivo. Una lezione nuova di soli testi e `.tex` (anche da più file, con le
   macro di tutti) la scrive la conversione (§3.6); ciò che va in una lezione che c'è, una versione sola di un concetto in
-  comune che sta nel corso, una lezione nuova che mescola pagine e testi o che ha un'istruzione la fa l'agente, con un
-  piano suo, una procedura alla volta (restano su disco, `salvataggi/procedure.json`). Gli originali smistati vanno in
-  `fonti/usate/smistate/`. Tutto il lavoro è un passo solo della cronologia.
+  comune che sta nel corso, una lezione nuova che mescola pagine e testi o che ha un'istruzione la fa l'agente, senza
+  chat e senza un piano suo: basta l'approvazione del piano dei concetti (decisione del 18/11/2026). Le aggiunte alla
+  stessa lezione sono un compito solo. Gli originali smistati vanno in `fonti/usate/smistate/`. Tutto il lavoro è un
+  passo solo della cronologia.
+- **[S]** **Il lavoro di «Avvia»** (decisioni del 18/11/2026): Texfix fa da orchestratore, in un lavoro solo, e lo mostra
+  in una finestra sua che prende tutto lo spazio come le revisioni: lo stato, quanto è fatto, il tempo, il costo; i
+  cantieri (ogni lezione da scrivere con le sue fasi, ogni lezione del corso da completare); le chiamate ai sottoagenti,
+  con che cosa hanno ricevuto, fatto e risposto; alla fine l'esito, con «Chiudi e archivia» (i registri delle chiamate si
+  buttano) e «Annulla tutto il lavoro» (il progetto torna com'era prima di «Avvia», il piano da avviare).
+- **[S]** **Il limite di utilizzo non è un errore.** Quando una chiamata lo trova, tutto il lavoro si ferma fino all'ora di
+  ripresa letta dal messaggio (se non si legge, mezz'ora) e riparte da solo; «Riprendi ora» non aspetta. Ciò che è fatto
+  resta. Se il programma si chiude, alla riapertura il lavoro è interrotto e si riprende con un clic.
+
 - **[S]** **In arrivo** (era «Da convertire»): il materiale aspetta in `fonti/coda/` finché un lavoro non lo porta fra le
   fonti usate. Nell'albero c'è solo se c'è qualcosa; un clic apre il file nell'editor, e ogni file dice il suo stato:
   *nel piano* (il piano è sotto Lavori), *in lavorazione*, *non riconosciuto* con il motivo e «Riprova», *da smistare*

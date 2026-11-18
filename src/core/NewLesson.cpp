@@ -220,10 +220,9 @@ QString fuseMessage(const QString &file, int number, const QString &date, const 
                          "domanda; le altre sono integrative: completano, non riordinano.").arg(main.join(", "));
     return QStringLiteral("Crea la lezione %1%2 fondendo queste fonti, che parlano della stessa lezione: %3.\n"
                           "- Leggile tutte per intero. Se non è detto altro sotto, non c'è una fonte che comanda: la struttura la dà la più ricca, e "
-                          "dove due fonti dicono cose diverse non scegliere tu: fanne una domanda del piano.\n"
-                          "- Prima consegna un piano con consegna_piano: che cosa prendi da ogni fonte, in che ordine, le domande.\n"
-                          "- Quando il piano è approvato scrivi `%4` (comincia con `\\section{…}` e sotto `\\lezione{%1}{%5}`), compilala finché è pulita, "
-                          "poi chiama chiudi_lezione con la lezione e le fonti, e consegna l'esito.")
+                          "dove due fonti dicono cose diverse scegli la più fedele e dillo nell'esito.\n"
+                          "- Scrivi `%4` (comincia con `\\section{…}` e sotto `\\lezione{%1}{%5}`), compilala finché è pulita, poi chiama "
+                          "chiudi_lezione con la lezione e le fonti.")
         .arg(number).arg(date.isEmpty() ? QString() : " del " + date, sources.join(", "), file, date) + weight;
 }
 
@@ -232,9 +231,7 @@ QString integrateMessage(const QString &lesson, const QStringList &sources)
     return QStringLiteral("Integra in `%1` queste fonti nuove: %2.\n"
                           "- Leggi la lezione e le fonti. Porta nella lezione solo ciò che manca (o le correzioni), vicino al blocco a cui appartiene; "
                           "ciò che c'è già non si riscrive.\n"
-                          "- Prima consegna un piano con consegna_piano: una voce per ogni aggiunta, con il blocco vicino a cui va.\n"
-                          "- Quando il piano è approvato fai le aggiunte, compila finché è pulita, chiama chiudi_lezione con la lezione e le fonti, e "
-                          "consegna l'esito.")
+                          "- Fai le aggiunte, compila finché è pulita, poi chiama chiudi_lezione con la lezione e le fonti.")
         .arg(lesson, sources.join(", "));
 }
 
@@ -285,9 +282,7 @@ QString updateMessage(const QString &lesson, const QString &source, const QStrin
     return QStringLiteral("La fonte %1 è una versione nuova di una fonte già usata in `%2` (la vecchia è in `%3`).\n"
                           "- Confronta la versione nuova con la lezione: porta nella lezione le parti nuove e le correzioni, vicino al blocco a cui "
                           "appartengono; ciò che non è cambiato non si riscrive.\n"
-                          "- Prima consegna un piano con consegna_piano: una voce per ogni parte nuova o corretta.\n"
-                          "- Quando il piano è approvato fai le modifiche, compila finché è pulita, chiama chiudi_lezione con la lezione e la fonte, "
-                          "e consegna l'esito.")
+                          "- Fai le modifiche, compila finché è pulita, poi chiama chiudi_lezione con la lezione e la fonte.")
         .arg(source, lesson, previous);
 }
 

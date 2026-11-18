@@ -66,6 +66,7 @@ struct Convert::Work {
     QDate texDate;                                     // la lezione del .tex, se il file ne ha più d'una
     int texNth = 1;                                    // la prima, la seconda… lezione di quel giorno
     QString note;                                      // dal piano: ciò che il corso spiega già e non si riscrive
+    bool assembled = false;                            // già nel documento da un lavoro interrotto: si riprende dalle figure
 };
 
 int Convert::Result::written() const
@@ -456,10 +457,38 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
     QJsonObject chosen;                                // numero, data e argomento scelti nel piano: valgono anche alla ripresa
     for (auto it = wanted.begin(); it != wanted.end(); ++it)
         chosen.insert(it.key(), QJsonObject{{"numero", it->number}, {"data", it->date}, {"argomento", it->topic}, {"titolo", it->title}, {"dopo", it->after}, {"nota", it->note}});
-    writeJson(m_project.path(RUNNING), QJsonObject{{"fonti", QJsonArray::fromStringList(sources)}, {"scelte", chosen}});
+    // un lavoro ripreso: i nomi dati alle lezioni e quelle già messe nel documento restano (niente lezioni scritte due volte)
+    const QJsonObject before = readJson(m_project.path(RUNNING));
+    QJsonObject names = before.value("nomi").toObject();
+    QStringList assembled;
+    for (const QJsonValue &v : before.value("scritte").toArray())
+        assembled << v.toString();
+    QMutex runningMutex;
+    auto saveRunning = [&] {
+        QMutexLocker lock(&runningMutex);
+        writeJson(m_project.path(RUNNING), QJsonObject{{"fonti", QJsonArray::fromStringList(sources)}, {"scelte", chosen}, {"nomi", names},
+                                                       {"scritte", QJsonArray::fromStringList(assembled)}});
+    };
+    saveRunning();
     auto progress = [&](double fraction, const QString &label) {
         if (m_control)
             m_control->progress(fraction, label);
+    };
+    // per chi guarda: ogni lezione da scrivere è un cantiere, con le sue fasi (Scaletta, Blocchi, Lezione, Figure,
+    // Errori e righe, Impaginazione)
+    auto site = [&](const Work &work, const QString &phase, const QString &state, const QJsonObject &extra = {}) {
+        if (!m_control)
+            return;
+        QJsonObject e{{"tipo", "cantiere"}, {"chiave", work.source}, {"genere", "converti"}, {"fase", phase}, {"stato", state}};
+        if (!work.file.isEmpty())
+            e["file"] = work.file;
+        if (work.lesson.number > 0)
+            e["numero"] = work.lesson.number;
+        if (!work.outline.value("title").toString().trimmed().isEmpty())
+            e["titolo"] = work.outline.value("title").toString().trimmed();
+        for (auto it = extra.begin(); it != extra.end(); ++it)
+            e[it.key()] = it.value();
+        m_control->event(e);
     };
 
     QList<Work> works;
@@ -503,7 +532,9 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
         for (Work &work : works) {
             if (!work.lesson.failure.isEmpty())
                 continue;
-            planning.push_back(std::async(std::launch::async, [this, &work] {
+            planning.push_back(std::async(std::launch::async, [this, &work, &site] {
+                Site here(work.source);
+                site(work, QStringLiteral("Scaletta"), QStringLiteral("in_corso"));
                 try {
                     QFile file(m_project.path(work.path));
                     if (!file.open(QIODevice::ReadOnly))
@@ -517,12 +548,14 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
                         work.pages = Pages::read(m_project.path(work.path), workDir(work.key + "/pagine"));
                     }
                     plan(work);
+                    site(work, QStringLiteral("Scaletta"), QStringLiteral("fatta"));
                 } catch (const Stopped &) {
                     throw;
                 } catch (const LimitReached &) {
                     throw;
                 } catch (const std::exception &e) {
                     work.lesson.failure = QString::fromUtf8(e.what());
+                    site(work, QStringLiteral("Scaletta"), QStringLiteral("fallita"), {{"motivo", work.lesson.failure}});
                 }
             }));
         }
@@ -552,8 +585,31 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
         for (Work &work : works) {
             if (!work.lesson.failure.isEmpty())
                 continue;
-            work.name = QStringLiteral("src%1").arg(++lastFile);
-            work.file = QStringLiteral("src/%1.tex").arg(work.name);
+            // un lavoro ripreso: la lezione già messa nel documento resta com'è, con il suo nome, numero e data
+            const QString kept = names.value(work.source).toString();
+            if (!kept.isEmpty() && assembled.contains(work.source) && m_project.inputs().contains(kept)) {
+                work.file = kept;
+                work.name = QFileInfo(kept).completeBaseName();
+                work.assembled = true;
+                const tx::Lesson there = Project::lessonOf(kept, files::read(m_project.path(kept)));
+                work.lesson.number = there.number;
+                work.lesson.date = there.date;
+                work.lesson.title = there.title;
+                work.outline["title"] = there.title;
+                site(work, QStringLiteral("Blocchi"), QStringLiteral("fatta"));
+                site(work, QStringLiteral("Lezione"), QStringLiteral("fatta"));
+                continue;
+            }
+            if (!kept.isEmpty() && !QFileInfo::exists(m_project.path(kept))) {
+                work.file = kept;                      // lo stesso nome di prima: le schede e la cache lo riconoscono
+                work.name = QFileInfo(kept).completeBaseName();
+            } else {
+                do
+                    work.name = QStringLiteral("src%1").arg(++lastFile);
+                while (QFileInfo::exists(m_project.path("src/" + work.name + ".tex")));
+                work.file = QStringLiteral("src/%1.tex").arg(work.name);
+                names[work.source] = work.file;
+            }
             const int written = work.outline.value("lesson").toString().toInt();
             const QString writtenDate = work.outline.value("date").toString().trimmed();
             work.note = wanted.value(work.source).note;
@@ -572,17 +628,21 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
             taken << work.lesson.number;
             total += work.outline.value("chunks").toArray().size();
             result.cost += work.outline.value("costo").toDouble();
+            site(work, QStringLiteral("Blocchi"), QStringLiteral("in_corso"), {{"fatti", 0}, {"totale", int(work.outline.value("chunks").toArray().size())}});
         }
+        saveRunning();
 
         // i blocchi di tutte le fonti, insieme (quante chiamate alla volta lo decide Model)
         std::atomic<int> done{0};
         progress(0.1, QStringLiteral("scrivo le lezioni"));
         std::vector<std::pair<Work *, std::future<QJsonObject>>> writing;
         for (Work &work : works) {
-            if (work.lesson.failure.isEmpty())
+            if (work.lesson.failure.isEmpty() && !work.assembled)
                 for (int k = 0; k < work.outline.value("chunks").toArray().size(); ++k)
                     writing.emplace_back(&work, std::async(std::launch::async, [&, k, w = &work] {
+                        Site here(w->source);
                         const QJsonObject c = chunk(*w, k, model);
+                        site(*w, QStringLiteral("Blocchi"), QStringLiteral("in_corso"), {{"piu", 1}});
                         progress(0.1 + 0.85 * ++done / qMax(1, total), QStringLiteral("scrivo le lezioni: blocco %1 di %2").arg(done.load()).arg(total));
                         return c;
                     }));
@@ -609,46 +669,64 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
         for (Work &work : works) {
             if (!work.lesson.failure.isEmpty())
                 continue;
+            Site here(work.source);
             try {
-                // una fonte senza scaletta (un testo, una lezione corta di un .tex) non ha ancora un titolo: una chiamata leggera
-                if (work.outline.value("title").toString().trimmed().isEmpty() && !work.chunks.isEmpty()) {
-                    try {
-                        const QString answer = model.ask("outline", prompts::title(), {work.chunks.first().value("tex").toString().left(6000)}, work.name + " titolo");
-                        const QString title = Model::json(answer).toObject().value("title").toString().trimmed();
-                        if (!title.isEmpty()) {
-                            work.outline["title"] = title;
-                            writeJson(workDir(QStringLiteral("%1/scaletta.json").arg(work.key)), work.outline);   // non si richiede due volte
+                if (!work.assembled) {
+                    site(work, QStringLiteral("Lezione"), QStringLiteral("in_corso"));
+                    // una fonte senza scaletta (un testo, una lezione corta di un .tex) non ha ancora un titolo: una chiamata leggera
+                    if (work.outline.value("title").toString().trimmed().isEmpty() && !work.chunks.isEmpty()) {
+                        try {
+                            const QString answer = model.ask("outline", prompts::title(), {work.chunks.first().value("tex").toString().left(6000)}, work.name + " titolo");
+                            const QString title = Model::json(answer).toObject().value("title").toString().trimmed();
+                            if (!title.isEmpty()) {
+                                work.outline["title"] = title;
+                                writeJson(workDir(QStringLiteral("%1/scaletta.json").arg(work.key)), work.outline);   // non si richiede due volte
+                            }
+                        } catch (const Stopped &) {
+                            throw;
+                        } catch (const LimitReached &) {
+                            throw;
+                        } catch (const std::exception &) {     // senza titolo resta il nome del file
                         }
-                    } catch (const Stopped &) {
-                        throw;
-                    } catch (const LimitReached &) {
-                        throw;
-                    } catch (const std::exception &) {     // senza titolo resta il nome del file
                     }
-                }
-                assemble(work);
-                work.lesson.file = work.file;
-                QString main = files::read(m_project.path(Project::MAIN));
-                const qsizetype end = main.lastIndexOf("\\end{document}");
-                const QString input = QStringLiteral("\\input{%1}\n\\clearpage\n\n").arg(work.file);
-                main = end < 0 ? main + '\n' + input : main.left(end) + input + main.mid(end);
-                files::write(m_project.path(Project::MAIN), main);
-                if (work.isTex) {                      // le figure dell'autore: tenute (e adattate alla colonna) o ridisegnate
-                    progress(0.96, QStringLiteral("sistemo le figure dell'autore"));
-                    const figures::Authored a = figures::authored(m_project, m_settings, m_style, model, work.file, QFileInfo(work.path).fileName());
-                    if (a.kept + a.fitted + a.redrawn + a.failed > 0)
-                        m_control->log(QStringLiteral("%1, figure dell'autore: %2 tenute, %3 adattate alla colonna, %4 ridisegnate, %5 che non compilano da sole")
-                                           .arg(work.file).arg(a.kept).arg(a.fitted).arg(a.redrawn).arg(a.failed));
+                    assemble(work);
+                    work.lesson.file = work.file;
+                    QString main = files::read(m_project.path(Project::MAIN));
+                    const qsizetype end = main.lastIndexOf("\\end{document}");
+                    const QString input = QStringLiteral("\\input{%1}\n\\clearpage\n\n").arg(work.file);
+                    main = end < 0 ? main + '\n' + input : main.left(end) + input + main.mid(end);
+                    files::write(m_project.path(Project::MAIN), main);
+                    assembled << work.source;              // da qui una ripresa non la riscrive
+                    saveRunning();
+                    site(work, QStringLiteral("Lezione"), QStringLiteral("fatta"));
+                    if (work.isTex) {                      // le figure dell'autore: tenute (e adattate alla colonna) o ridisegnate
+                        progress(0.96, QStringLiteral("sistemo le figure dell'autore"));
+                        const figures::Authored a = figures::authored(m_project, m_settings, m_style, model, work.file, QFileInfo(work.path).fileName());
+                        if (a.kept + a.fitted + a.redrawn + a.failed > 0)
+                            m_control->log(QStringLiteral("%1, figure dell'autore: %2 tenute, %3 adattate alla colonna, %4 ridisegnate, %5 che non compilano da sole")
+                                               .arg(work.file).arg(a.kept).arg(a.fitted).arg(a.redrawn).arg(a.failed));
+                    }
+                } else {                                 // ripresa: le figure ancora da disegnare sono quelle del registro
+                    work.lesson.file = work.file;
+                    work.figures.clear();
+                    for (const figures::Figure &figure : figures::all(m_project))
+                        if (figure.state == "da_inserire" && figures::lessonOf(m_project, figure.id) == work.file)
+                            work.figures << figure;
                 }
                 // le figure, insieme: ridisegnate o ritagliate dalla pagina; quelle che non riescono restano segnaposto
                 progress(0.97, QStringLiteral("preparo le figure"));
+                site(work, QStringLiteral("Figure"), work.figures.isEmpty() ? QStringLiteral("saltata") : QStringLiteral("in_corso"),
+                     {{"fatti", 0}, {"totale", int(work.figures.size())}});
                 std::vector<std::future<QString>> drawing;
                 for (const figures::Figure &figure : std::as_const(work.figures)) {
                     figures::save(m_project, figure);
                     const QString page = work.pages.full.value(figure.page - 1);
-                    drawing.push_back(std::async(std::launch::async, [this, figure, page, &model] {
-                        return m_settings.scanFigures == "ritaglia" ? figures::crop(m_project, figure, page)
-                                                                    : figures::draw(m_project, m_settings, m_style, model, figure, page);
+                    drawing.push_back(std::async(std::launch::async, [this, figure, page, &model, &site, &work] {
+                        Site here(work.source);
+                        const QString done = m_settings.scanFigures == "ritaglia" ? figures::crop(m_project, figure, page)
+                                                                                 : figures::draw(m_project, m_settings, m_style, model, figure, page);
+                        site(work, QStringLiteral("Figure"), QStringLiteral("in_corso"), {{"piu", 1}});
+                        return done;
                     }));
                 }
                 std::exception_ptr interrupted;
@@ -662,22 +740,31 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
                 }
                 if (interrupted)
                     std::rethrow_exception(interrupted);
+                if (!work.figures.isEmpty())
+                    site(work, QStringLiteral("Figure"), QStringLiteral("fatta"));
                 // errori e righe fuori misura della lezione appena scritta
                 progress(0.98, QStringLiteral("sistemo errori e righe"));
+                site(work, QStringLiteral("Errori e righe"), QStringLiteral("in_corso"));
                 const fix::Result fixed = fix::lesson(m_project, m_settings, m_style, model, work.file, m_control);
                 work.lesson.errors = fixed.errorsAfter;
                 work.lesson.rows = fixed.rowsAfter;
+                site(work, QStringLiteral("Errori e righe"), QStringLiteral("fatta"), {{"errori", fixed.errorsAfter}, {"righe", fixed.rowsAfter}});
                 // l'impaginazione, se il progetto la vuole da sola e la lezione compila
                 if (m_settings.layout == "da_sola" && fixed.errorsAfter == 0 && fixed.failure.isEmpty()) {
                     progress(0.99, QStringLiteral("impagino"));
+                    site(work, QStringLiteral("Impaginazione"), QStringLiteral("in_corso"));
                     const layout::Result paged = layout::lesson(m_project, m_style, work.file, m_control);
                     work.lesson.layoutDone = paged.done;
                     work.lesson.layoutOpen = paged.proposed;
+                    site(work, QStringLiteral("Impaginazione"), QStringLiteral("fatta"), {{"mosse", paged.done}, {"proposte", paged.proposed}});
+                } else {
+                    site(work, QStringLiteral("Impaginazione"), QStringLiteral("saltata"));
                 }
                 const QString used = m_project.path(QStringLiteral("fonti/usate/lezione %1").arg(work.lesson.number));
                 QDir().mkpath(used);
                 if (!work.isTex)                       // un .tex può avere altre lezioni: lo si archivia alla fine, se sono tutte fatte
                     QFile::rename(m_project.path(work.path), files::freeName(used + '/' + work.lesson.source));
+                site(work, QStringLiteral("Fine"), QStringLiteral("fatta"));
             } catch (const Stopped &) {
                 throw;
             } catch (const LimitReached &) {
@@ -686,6 +773,9 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
                 work.lesson.failure = QString::fromUtf8(e.what());
             }
         }
+        for (const Work &work : std::as_const(works))     // ciò che non è diventato una lezione, con il perché
+            if (!work.lesson.failure.isEmpty())
+                site(work, QStringLiteral("Fine"), QStringLiteral("fallita"), {{"motivo", work.lesson.failure}});
         // un .tex di cui sono state scritte tutte le lezioni va fra le fonti usate
         QHash<QString, bool> texDone;
         for (const Work &work : std::as_const(works))

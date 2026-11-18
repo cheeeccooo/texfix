@@ -20,7 +20,7 @@ Rectangle {
 
     // Che cosa si apre in una scheda: text, pdf, image; il resto (vuoto) lo apre un altro programma.
     function kindOf(file) {
-        if (file.startsWith("salvataggi/esiti/") || file.startsWith("rivedi:") || file.startsWith("piano:") || file.startsWith("diff:") || file.startsWith("commit:"))
+        if (file.startsWith("salvataggi/esiti/") || file.startsWith("rivedi:") || file.startsWith("piano:") || file.startsWith("lavoro:") || file.startsWith("diff:") || file.startsWith("commit:"))
             return "review"
         const name = file.substring(file.lastIndexOf("/") + 1).toLowerCase()
         const ext = name.includes(".") ? name.substring(name.lastIndexOf(".") + 1) : ""
@@ -81,6 +81,11 @@ Rectangle {
         const page = current >= 0 ? editors.itemAt(current) : null
         if (page && page.item && page.item.cropById)
             page.item.cropById(id)
+    }
+    function showCall(n) {                              // per le prove: apre una chiamata nella finestra del lavoro
+        const page = current >= 0 ? editors.itemAt(current) : null
+        if (page && page.item && page.item.showCall)
+            page.item.showCall(n)
     }
     function showShots() {                              // per le prove: apre le miniature della prima mossa
         const page = current >= 0 ? editors.itemAt(current) : null
@@ -167,7 +172,7 @@ Rectangle {
                         anchors.leftMargin: Theme.gap + 2
                         anchors.right: close.left
                         anchors.verticalCenter: parent.verticalCenter
-                        text: tab.file.startsWith("diff:") ? "± " + tab.file.substring(tab.file.lastIndexOf("/") + 1).replace("diff:", "") : tab.file.startsWith("commit:") ? "Commit " + tab.file.substring(7) : tab.file.startsWith("piano:") ? "Piano" : tab.file.startsWith("rivedi:") ? "Rivedi " + tab.file.substring(7) : tab.file.substring(tab.file.lastIndexOf("/") + 1)
+                        text: tab.file.startsWith("diff:") ? "± " + tab.file.substring(tab.file.lastIndexOf("/") + 1).replace("diff:", "") : tab.file.startsWith("commit:") ? "Commit " + tab.file.substring(7) : tab.file.startsWith("piano:") ? "Piano" : tab.file.startsWith("lavoro:") ? "Lavoro" : tab.file.startsWith("rivedi:") ? "Rivedi " + tab.file.substring(7) : tab.file.substring(tab.file.lastIndexOf("/") + 1)
                         color: tab.active ? Theme.text : Theme.textMuted
                     }
                     MouseArea { id: tabArea; anchors.fill: parent; hoverEnabled: true; onClicked: root.current = tab.index }
@@ -228,6 +233,8 @@ Rectangle {
                             setSource("DiffView.qml", { what: file })
                         else if (file.startsWith("piano:"))
                             setSource("PlanView.qml", { planId: file.substring(6) })
+                        else if (file.startsWith("lavoro:"))
+                            setSource("RunView.qml", { planId: file.substring(7) })
                         else if (file === "rivedi:impaginazione")
                             setSource("LayoutView.qml", {})
                         else if (file === "rivedi:figure")
@@ -257,6 +264,7 @@ Rectangle {
                             root.jumpAsked(file, line)
                         }
                         function onLineAsked(file, line) { root.openFile(file, line) }
+                        function onReviewAsked(what) { root.openFile(what, 0) }
                     }
                     Connections {
                         target: page.kind === "text" ? page.item : null

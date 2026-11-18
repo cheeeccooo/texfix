@@ -30,12 +30,20 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
 
 // «Avvia»: di ogni fonte si prendono le righe (o le pagine) dei concetti che vanno in un posto, e diventano file fra
 // quelli in arrivo. Una lezione nuova di una fonte sola, o di soli .tex e testi, la scrive la conversione; ciò che va in
-// una lezione che c'è (un'aggiunta, una versione sola di un concetto in comune) e le lezioni nuove che mescolano pagine
-// e testi passano dall'agente, una procedura alla volta. Le fonti smistate vanno fra le usate.
+// una lezione che c'è (un'aggiunta, una versione sola di un concetto in comune, una versione nuova) e le lezioni nuove
+// che mescolano pagine e testi sono compiti dell'agente del lavoro (core/Worker), uno per lezione: le aggiunte alla
+// stessa lezione sono un compito solo. Le fonti smistate vanno fra le usate.
+struct Task {
+    QString kind;                                      // integra | versione | fondi
+    QString lesson;                                    // la lezione che tocca, o quella nuova che scrive
+    QString title;                                     // per chi guarda: «Aggiunte alla lezione 3»
+    QStringList sources;                               // i file in arrivo che usa (relativi alla radice)
+    QString message;                                   // che cosa si chiede all'agente
+};
 struct Prepared {
     QStringList sources;                               // da convertire…
     QHash<QString, Convert::Wanted> wanted;            // …con numero, data e argomento
-    QStringList agent;                                 // i messaggi delle procedure dell'agente, uno alla volta
+    QList<Task> tasks;                                 // i compiti dell'agente
     QStringList done;                                  // ciò che è già fatto (un doppione tolto, un file archiviato)
     QString failure;
     // per argomento: dove vanno le lezioni che scrive l'agente (file → argomento, titolo, dopo); le colloca chiudi_lezione

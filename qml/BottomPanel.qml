@@ -15,13 +15,19 @@ Rectangle {
         const out = []
         if (Workspace.compiling)
             out.push({ title: "Compilazione", detail: Workspace.progressLabel, progress: Workspace.progress, state: "run", stop: true })
+        const run = Workspace.run
         if (Workspace.jobRunning)
-            out.push({ title: Workspace.jobTitle, detail: Workspace.jobLabel, progress: Workspace.jobProgress, state: "run", stop: true })
+            out.push({ title: Workspace.jobTitle, detail: Workspace.pausedUntil !== "" ? "in pausa: limite di utilizzo di Claude, riprende da solo alle " + Workspace.pausedUntil : Workspace.jobLabel,
+                       progress: run.id && Workspace.jobTitle === "Aggiungi materiale" ? run.progress : Workspace.jobProgress, state: Workspace.pausedUntil !== "" ? "wait" : "run", stop: true,
+                       open: run.id && Workspace.jobTitle === "Aggiungi materiale" ? "lavoro:" + run.id : "" })
         if (Chat.running)
             out.push({ title: "Agente" + (Chat.title !== "" ? ": " + Chat.title : ""), detail: Chat.waiting ? "aspetta la tua conferma" : "sta lavorando", progress: -1, state: "run", agent: true })
-        if (Workspace.waitingProcedures > 0)
-            out.push({ title: "Procedure dell'agente in attesa", detail: Workspace.waitingProcedures + (Workspace.waitingProcedures === 1 ? " aspetta il suo turno" : " aspettano il loro turno"), progress: -1, state: "wait" })
-        if (Workspace.resumable)
+        if (run.id && !Workspace.jobRunning && run.state !== "finito")      // il lavoro di «Avvia» fermato o interrotto
+            out.push({ title: "Aggiungi materiale", detail: (run.state === "fermato" ? "fermato" : "interrotto") + ": riprende senza rifare ciò che è già fatto",
+                       progress: -1, state: "wait", resume: true, open: "lavoro:" + run.id })
+        else if (run.id && run.state === "finito")
+            out.push({ title: "Aggiungi materiale", detail: "finito: l'esito è da leggere", progress: -1, state: "done", open: "lavoro:" + run.id })
+        else if (Workspace.resumable)
             out.push({ title: "Scrittura delle lezioni interrotta", detail: "riprende senza rifare ciò che è già fatto", progress: -1, state: "wait", resume: true })
         const unread = Workspace.queue.filter(q => q.state === "errore").length
         if (unread > 0)
@@ -109,6 +115,7 @@ Rectangle {
                     }
                     TxLabel { visible: activity.modelData.state === "run" && activity.modelData.progress >= 0; text: Math.round(activity.modelData.progress * 100) + "%"; color: Theme.textMuted; font.pixelSize: Theme.smallSize }
                     TxLabel { Layout.fillWidth: true; text: activity.modelData.detail || ""; color: Theme.textFaint; font.pixelSize: Theme.smallSize }
+                    TxButton { visible: (activity.modelData.open || "") !== ""; text: "Apri"; implicitHeight: Theme.rowHeight - 4; onClicked: root.issueChosen(activity.modelData.open, 0) }
                     TxButton { visible: activity.modelData.stop === true; text: "Ferma"; implicitHeight: Theme.rowHeight - 4; onClicked: Workspace.stop() }
                     TxButton { visible: activity.modelData.agent === true; text: "Ferma"; implicitHeight: Theme.rowHeight - 4; onClicked: Chat.stop() }
                     TxButton { visible: activity.modelData.resume === true; text: "Riprendi"; implicitHeight: Theme.rowHeight - 4; enabled: !Workspace.busy; onClicked: Workspace.resume() }

@@ -46,6 +46,12 @@ public:
     QString undoTitle();
     QString redoTitle();
 
+    // Una copia dei file seguiti che resta anche dopo la chiusura, in una cartella data: un lavoro intero si annulla da lì
+    // («Annulla tutto il lavoro»). restoreCopy riporta i file com'erano (only: solo questi) e toglie quelli seguiti che non
+    // c'erano; restituisce i file scritti o tolti.
+    static bool saveCopy(const QString &root, const QString &dir);
+    static QStringList restoreCopy(const QString &root, const QString &dir, const QStringList &only = {});
+
 private:
     using State = QHash<QString, QString>;             // file → impronta del contenuto
     struct Entry {

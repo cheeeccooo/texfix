@@ -3,6 +3,7 @@
 #include "Workspace.h"
 #include "core/AgentTools.h"
 #include "core/Files.h"
+#include "core/Model.h"
 #include "core/NewLesson.h"
 #include "core/Tools.h"
 
@@ -82,19 +83,7 @@ Chat::Chat()
                         const QJsonObject result{{"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", QString::fromUtf8(QJsonDocument(decision).toJson(QJsonDocument::Compact))}}}}};
                         socket->write(QJsonDocument(QJsonObject{{"jsonrpc", "2.0"}, {"id", id}, {"result", result}}).toJson(QJsonDocument::Compact) + '\n');
                     };
-                    const QString root = QFileInfo(workspace->root()).canonicalFilePath();
-                    bool outside = false;
-                    for (const char *key : {"file_path", "path", "notebook_path"}) {
-                        const QString given = input.value(QLatin1String(key)).toString();
-                        if (given.isEmpty())
-                            continue;
-                        QFileInfo info(QDir(root).absoluteFilePath(given));
-                        while (!info.exists() && info.absolutePath() != info.absoluteFilePath())    // un file nuovo: conta la cartella che c'è
-                            info = QFileInfo(info.absolutePath());
-                        const QString real = info.canonicalFilePath();
-                        outside = outside || !(real == root || real.startsWith(root + '/'));
-                    }
-                    if (outside) {
+                    if (agent::outside(workspace->root(), input)) {
                         add("note", QStringLiteral("L'agente ha provato a uscire dal progetto (%1): negato.").arg(target));
                         reply(QJsonObject{{"behavior", "deny"}, {"message", "Fuori dal progetto: non è permesso. Lavora solo sui file del progetto."}});
                         continue;
@@ -270,7 +259,19 @@ void Chat::readOutput()
             }
             m_streamed = false;
         } else if (type == "result" && line.value("is_error").toBool()) {
-            add("note", line.value("result").toString());
+            const QString said = line.value("result").toString();
+            QDateTime until;
+            if (Model::limit(said, &until)) {          // il limite di utilizzo: detto con l'ora in cui si può riprendere
+                if (!m_messages.isEmpty() && m_messages.last().toMap().value("role") == "assistant"
+                    && m_messages.last().toMap().value("text").toString().trimmed() == said.trimmed())
+                    m_messages.removeLast();
+                m_answered = true;                     // ha risposto: non è una chat da riprendere da capo
+                add("note", QStringLiteral("Limite di utilizzo di Claude raggiunto: si può riprendere %1. Il messaggio non è stato eseguito: "
+                                           "rimandalo dopo.").arg(until.date() == QDate::currentDate() ? "alle " + until.toString("HH:mm")
+                                                                                                       : "il " + until.toString("dd/MM 'alle' HH:mm")));
+            } else {
+                add("note", said);
+            }
         }
     }
 }

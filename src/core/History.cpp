@@ -6,6 +6,8 @@
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QSet>
 
 namespace tx {
@@ -240,6 +242,69 @@ void History::renameFirst(const QString &title)
 {
     if (!m_steps.isEmpty())
         m_steps.first().title = title;
+}
+
+}
+
+namespace tx {
+
+bool History::saveCopy(const QString &root, const QString &dir)
+{
+    QJsonObject files;
+    for (const QString &file : trackedFiles(root)) {
+        const QString hash = hashFile(root + '/' + file);
+        if (hash.isEmpty())
+            continue;
+        const QString object = QStringLiteral("%1/oggetti/%2/%3").arg(dir, hash.left(2), hash);
+        if (!QFileInfo::exists(object)) {
+            QDir().mkpath(QFileInfo(object).absolutePath());
+            if (!QFile::copy(root + '/' + file, object + ".tmp") || !QFile::rename(object + ".tmp", object))
+                return false;
+        }
+        files.insert(file, hash);
+    }
+    QFile out(dir + "/stato.json");
+    return out.open(QIODevice::WriteOnly | QIODevice::Truncate) && out.write(QJsonDocument(files).toJson()) > 0;
+}
+
+QStringList History::restoreCopy(const QString &root, const QString &dir, const QStringList &only)
+{
+    QFile in(dir + "/stato.json");
+    if (!in.open(QIODevice::ReadOnly))
+        return {};
+    const QJsonObject saved = QJsonDocument::fromJson(in.readAll()).object();
+    QStringList changed;
+    for (const QString &file : trackedFiles(root)) {
+        if (!saved.contains(file) && (only.isEmpty() || only.contains(file)) && QFile::remove(root + '/' + file))
+            changed << file;
+    }
+    for (auto it = saved.begin(); it != saved.end(); ++it) {
+        if (!only.isEmpty() && !only.contains(it.key()))
+            continue;
+        const QString file = root + '/' + it.key(), hash = it.value().toString();
+        if (hashFile(file) == hash)
+            continue;
+        const QString object = QStringLiteral("%1/oggetti/%2/%3").arg(dir, hash.left(2), hash);
+        QDir().mkpath(QFileInfo(file).absolutePath());
+        const QString temp = file + ".texfix-tmp";
+        QFile::remove(temp);
+        if (QFile::copy(object, temp)) {
+            QFile::remove(file);
+            QFile::rename(temp, file);
+            changed << it.key();
+        }
+    }
+    // le cartelle rimaste vuote (le fonti usate di una lezione tolta) si tolgono
+    {
+        QStringList dirs;
+        for (QDirIterator it(root + "/fonti/usate", QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories); it.hasNext();)
+            dirs << it.next();
+        std::sort(dirs.begin(), dirs.end(), [](const QString &a, const QString &b) { return a.size() > b.size(); });
+        for (const QString &d : std::as_const(dirs))
+            QDir().rmdir(d);                           // solo se vuota
+    }
+    changed.sort();
+    return changed;
 }
 
 }

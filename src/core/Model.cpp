@@ -1,5 +1,6 @@
 #include "core/Model.h"
 
+#include "core/Files.h"
 #include "core/Tools.h"
 
 #include <QElapsedTimer>
@@ -11,6 +12,7 @@
 #include <QRegularExpression>
 #include <QSemaphore>
 #include <QThread>
+#include <QTimeZone>
 
 namespace tx {
 
@@ -54,6 +56,100 @@ void JobControl::untrack(qint64 pid)
     m_pids.removeAll(pid);
 }
 
+void JobControl::pause(const QDateTime &until, const QString &message)
+{
+    const qint64 at = until.isValid() ? until.toMSecsSinceEpoch() : QDateTime::currentMSecsSinceEpoch() + 30 * 60 * 1000;
+    qint64 before = m_pausedUntil.load();
+    while (at > before && !m_pausedUntil.compare_exchange_weak(before, at)) {
+    }
+    if (at <= before)
+        return;                                        // un'altra chiamata l'ha già detto
+    log(QStringLiteral("Limite di utilizzo raggiunto: tutto si ferma fino alle %1 (%2)")
+            .arg(QDateTime::fromMSecsSinceEpoch(at).toString("HH:mm"), message.simplified()));
+    if (onPause)
+        onPause(QDateTime::fromMSecsSinceEpoch(at));
+}
+
+void JobControl::waitLimit()
+{
+    bool waited = false;
+    for (qint64 until; (until = m_pausedUntil.load()) > 0;) {
+        check();
+        if (QDateTime::currentMSecsSinceEpoch() >= until) {
+            if (m_pausedUntil.compare_exchange_strong(until, 0)) {   // il primo che se ne accorge lo dice
+                log(QStringLiteral("Riprendo il lavoro dopo la pausa"));
+                if (onPause)
+                    onPause({});
+            }
+            break;
+        }
+        waited = true;
+        QThread::msleep(200);
+    }
+    if (waited)
+        check();
+}
+
+QDateTime JobControl::pausedUntil() const
+{
+    const qint64 at = m_pausedUntil.load();
+    return at > 0 ? QDateTime::fromMSecsSinceEpoch(at) : QDateTime();
+}
+
+void JobControl::wake()
+{
+    if (m_pausedUntil.exchange(0) > 0) {
+        log(QStringLiteral("Riprendo subito, senza aspettare l'ora detta dal limite"));
+        if (onPause)
+            onPause({});
+    }
+}
+
+namespace {
+thread_local QString t_site;
+}
+
+Site::Site(const QString &key) : m_previous(t_site) { t_site = key; }
+Site::~Site() { t_site = m_previous; }
+QString Site::current() { return t_site; }
+
+// «You've hit your 5-hour limit · resets 8:50pm (Europe/Rome)», «resets Nov 20, 7:30pm»: l'ora, nel fuso detto fra
+// parentesi (altrimenti quello del computer), più un minuto di margine. Se l'ora non si legge, fra mezz'ora.
+bool Model::limit(const QString &text, QDateTime *until)
+{
+    static const QRegularExpression said(R"((hit your [^.\n]*limit|usage limit|session limit|weekly limit|rate.?limit|limit reached))",
+                                         QRegularExpression::CaseInsensitiveOption);
+    if (!said.match(text).hasMatch())
+        return false;
+    if (!until)
+        return true;
+    static const QRegularExpression when(R"(resets?\s+(?:(?:on\s+)?([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(?:at\s+)?)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)(?:\s*\(([A-Za-z_]+(?:/[A-Za-z_+-]+)+)\))?)",
+                                         QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch m = when.match(text);
+    const QDateTime now = QDateTime::currentDateTime();
+    if (!m.hasMatch()) {
+        *until = now.addSecs(30 * 60);
+        return true;
+    }
+    const QTimeZone zone = m.captured(6).isEmpty() ? QTimeZone::systemTimeZone() : QTimeZone(m.captured(6).toUtf8());
+    const QDateTime here = now.toTimeZone(zone.isValid() ? zone : QTimeZone::systemTimeZone());
+    int hour = m.captured(3).toInt() % 12;
+    if (m.captured(5).toLower() == "pm")
+        hour += 12;
+    QDate day = here.date();
+    if (!m.captured(1).isEmpty()) {
+        static const QStringList months{"jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"};
+        const int month = int(months.indexOf(m.captured(1).toLower())) + 1;
+        if (month > 0)
+            day = QDate(day.year(), month, m.captured(2).toInt());
+    }
+    QDateTime at(day, QTime(hour, m.captured(4).toInt()), here.timeZone());
+    if (at <= here)
+        at = m.captured(1).isEmpty() ? at.addDays(1) : at.addYears(1);
+    *until = at.addSecs(60).toLocalTime();
+    return true;
+}
+
 Model::Model(const QString &quality, const QString &directory, JobControl *control)
     : m_quality(quality), m_directory(directory), m_control(control)
 {
@@ -75,8 +171,8 @@ QString Model::effortFor(const QString &quality, const QString &stage)
     if (quality == "veloce")
         return stage == "figure" ? "medium" : "low";
     if (quality == "massima")
-        return stage == "fix2" || stage == "fix3" || stage == "concepts" || stage == "map" ? "high" : "medium";
-    if (stage == "transcribe" || stage == "figure" || stage == "fix3" || stage == "concepts" || stage == "map")
+        return stage == "fix2" || stage == "fix3" || stage == "concepts" || stage == "map" || stage == "integrate" ? "high" : "medium";
+    if (stage == "transcribe" || stage == "figure" || stage == "fix3" || stage == "concepts" || stage == "map" || stage == "integrate")
         return "high";
     return stage == "fix" ? "low" : "medium";            // anche «decide»: un dubbio alla volta, con la pagina
 }
@@ -107,7 +203,7 @@ QJsonValue Model::json(const QString &text)
 QString Model::ask(const QString &stage, const QString &system, const QStringList &parts, const QString &tag)
 {
     const QString model = modelFor(m_quality, stage), effort = effortFor(m_quality, stage);
-    QJsonArray content;
+    QJsonArray content, recorded;
     for (const QString &part : parts) {
         if (part.endsWith(".png") && !part.contains('\n')) {
             QFile image(part);
@@ -115,8 +211,10 @@ QString Model::ask(const QString &stage, const QString &system, const QStringLis
                 content.append(QJsonObject{{"type", "image"},
                                            {"source", QJsonObject{{"type", "base64"}, {"media_type", "image/png"},
                                                                   {"data", QString::fromLatin1(image.readAll().toBase64())}}}});
+            recorded.append(QJsonObject{{"immagine", part}});
         } else {
             content.append(QJsonObject{{"type", "text"}, {"text", part}});
+            recorded.append(QJsonObject{{"testo", part}});
         }
     }
     const QByteArray message = QJsonDocument(QJsonObject{{"type", "user"}, {"message", QJsonObject{{"role", "user"}, {"content", content}}}})
@@ -124,8 +222,27 @@ QString Model::ask(const QString &stage, const QString &system, const QStringLis
     const QStringList arguments{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
                                 "--model", model, "--effort", effort, "--no-session-persistence", "--system-prompt", system,
                                 "--tools", "", "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands"};
-    static const QRegularExpression limit(R"((hit your (session|usage|weekly) limit|usage limit|rate limit|resets \d))",
-                                          QRegularExpression::CaseInsensitiveOption);
+
+    // chi guarda il lavoro vede la chiamata partire e finire; il registro ha istruzioni, parti e risposta
+    const int id = m_control ? m_control->nextCall() : 0;
+    const qint64 started = QDateTime::currentMSecsSinceEpoch();
+    QJsonObject event{{"tipo", "chiamata"}, {"id", id}, {"cantiere", Site::current()}, {"etichetta", tag}, {"fase", stage},
+                      {"modello", model}, {"impegno", effort}, {"inizio", double(started)}};
+    const QString record = m_control && !m_control->records.isEmpty() ? QStringLiteral("%1/%2.json").arg(m_control->records).arg(id) : QString();
+    auto report = [&](const QString &state, const QJsonObject &extra = {}) {
+        if (!m_control)
+            return;
+        QJsonObject e = event;
+        e["stato"] = state;
+        for (auto it = extra.begin(); it != extra.end(); ++it)
+            e[it.key()] = it.value();
+        m_control->event(e);
+        if (!record.isEmpty()) {
+            e["istruzioni"] = system;
+            e["parti"] = recorded;
+            files::write(record, QString::fromUtf8(QJsonDocument(e).toJson()));
+        }
+    };
 
     QElapsedTimer timer;
     timer.start();
@@ -133,20 +250,30 @@ QString Model::ask(const QString &stage, const QString &system, const QStringLis
     bool got = false;
     QString reason;                                    // perché non ha risposto, se non risponde
     for (int attempt = 0; attempt < 3 && !(got && !result.value("is_error").toBool()); ++attempt) {
-        if (m_control)
+        if (m_control) {
             m_control->check();
+            m_control->waitLimit();                    // in pausa per il limite: nessuna chiamata nuova parte
+        }
         if (attempt > 0)
             QThread::sleep(5);
         Slot slot;
-        if (m_control)
+        if (m_control) {
             m_control->check();
+            if (m_control->pausedUntil().isValid()) {  // la pausa è cominciata mentre aspettava il suo posto
+                --attempt;
+                continue;
+            }
+        }
+        report(attempt == 0 ? QStringLiteral("in_corso") : QStringLiteral("riprova"));
         QProcess process;
         tools::ownGroup(process);
         process.setProcessEnvironment(tools::environment());
         process.setWorkingDirectory(m_directory);
         process.start(program(), arguments);
-        if (!process.waitForStarted(10000))
+        if (!process.waitForStarted(10000)) {
+            report(QStringLiteral("fallita"), {{"motivo", "Non trovo il programma «claude»"}});
             throw std::runtime_error("Non trovo il programma «claude»: serve Claude Code installato.");
+        }
         const qint64 pid = process.processId();
         if (m_control)
             m_control->track(pid);
@@ -163,6 +290,8 @@ QString Model::ask(const QString &stage, const QString &system, const QStringLis
         }
         if (m_control) {
             m_control->untrack(pid);
+            if (m_control->stopped())
+                report(QStringLiteral("fermata"), {{"secondi", timer.elapsed() / 1000.0}});
             m_control->check();
         }
         got = false;
@@ -175,11 +304,22 @@ QString Model::ask(const QString &stage, const QString &system, const QStringLis
             }
         }
         const QString text = result.value("result").toString();
-        if (text.size() < 300 && limit.match(text).hasMatch())
-            throw LimitReached(text.trimmed().toStdString());
+        const QStringList errors = QString::fromUtf8(process.readAllStandardError()).trimmed().split('\n', Qt::SkipEmptyParts);
+        QDateTime until;
+        if ((got && text.size() < 300 && limit(text, &until)) || (!got && limit(errors.join('\n'), &until))) {
+            const QString said = got ? text.trimmed() : errors.join(' ').trimmed();
+            if (!m_control)
+                throw LimitReached(said.toStdString(), until);
+            // non è un errore e non conta come tentativo: si aspetta la ripresa, poi si rifà
+            report(QStringLiteral("limite"), {{"motivo", said}, {"fino", until.toString(Qt::ISODate)}});
+            m_control->pause(until, said);
+            got = false;
+            result = {};
+            --attempt;
+            continue;
+        }
         if (text.isEmpty())
             got = false;
-        const QStringList errors = QString::fromUtf8(process.readAllStandardError()).trimmed().split('\n', Qt::SkipEmptyParts);
         if (got && result.value("is_error").toBool() && !text.trimmed().isEmpty())
             reason = text.trimmed().left(200);
         else if (!errors.isEmpty())
@@ -196,6 +336,8 @@ QString Model::ask(const QString &stage, const QString &system, const QStringLis
         QMutexLocker lock(&m_mutex);
         m_calls << call;
     }
+    report(call.ok ? QStringLiteral("fatta") : QStringLiteral("fallita"),
+           {{"secondi", call.seconds}, {"costo", call.cost}, {"risposta", result.value("result").toString()}, {"motivo", reason}});
     if (!call.ok)
         throw std::runtime_error(QStringLiteral("Il modello non ha risposto%1").arg(reason.isEmpty() ? QStringLiteral(".") : ": " + reason).toStdString());
     return result.value("result").toString();

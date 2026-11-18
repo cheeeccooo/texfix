@@ -14,6 +14,7 @@ tools/nuova-prova.sh [cartella] [profilo]   # ricrea il progetto di prova (../pr
 ./build.sh misure [--scrivi]  # misura i tempi di ciò che l'interfaccia rifà spesso (build/texfix_bench)
 ./build.sh avvia [cartella]   # compila e apre il programma
 build/Texfix.app/Contents/MacOS/Texfix <cartella> --foto f.png [--gesti "apri src/src1.tex 12; compila"] [--dimensione 1000x620]
+build/Texfix.app/Contents/MacOS/Texfix --strumenti-progetto <cartella>   # gli strumenti dell'agente di un lavoro (li lancia `claude`)
 ```
 
 Dipendenze: `brew install cmake qtbase qtdeclarative qtwebengine` (QtPdf), MacTeX. Niente Python, da nessuna parte.
@@ -43,8 +44,8 @@ Due parti, un processo solo.
 | `core/Rules` | le regole editoriali: predefinite (`regole/editoriali/*.md`, dentro il programma) → Preferenze → progetto; `forPrompt` |
 | `core/Style` | la descrizione di uno stile (ambienti con ruolo e colore, macro, rimandi, figure, convenzioni); `classic()`; `scan` di un `.sty` |
 | `core/StyleSwitch` | importare uno stile nel progetto; cambiare stile riscrivendo le lezioni secondo i ruoli |
-| `core/Job` | `JobControl`: «Ferma», avanzamento e registro di un lavoro che gira in un thread suo; `Stopped`, `LimitReached` |
-| `core/Model` | le chiamate al modello: `claude -p` senza strumenti, al più 6 insieme; modello e impegno per qualità e fase; costi; se non risponde lo dice con il motivo. `TEXFIX_CLAUDE=<programma>` mette un finto modello (prove) |
+| `core/Job` | `JobControl`: «Ferma», avanzamento e registro di un lavoro che gira in un thread suo; la pausa per il limite di utilizzo (`pause`, `waitLimit`, `wake`: tutto il lavoro aspetta l'ora di ripresa); gli eventi per chi guarda (`onEvent`: chiamate e cantieri) e dove registrare le chiamate (`records`); `Site`, il cantiere del thread; `Stopped`, `LimitReached` (solo senza un lavoro) |
+| `core/Model` | le chiamate al modello: `claude -p` senza strumenti, al più 6 insieme; modello e impegno per qualità e fase; costi; se non risponde lo dice con il motivo; `limit` riconosce il limite di utilizzo e ne legge l'ora di ripresa (anche la chat); con un lavoro il limite lo mette in pausa e la chiamata si rifà, senza contare come tentativo; ogni chiamata manda i suoi eventi e lascia il registro (istruzioni, parti, risposta). `TEXFIX_CLAUDE=<programma>` mette un finto modello (prove) |
 | `core/Pages` | una fonte come la vede il modello: pagine in immagini (pdftoppm, sips) o testo |
 | `core/Blocks` | i marcatori dei blocchi `% @L6.3 · fonte p.2`: leggere, aggiungere quelli che mancano |
 | `core/Prompts` | i prompt, in tre parti: strutturale (qui), `rules::forPrompt`, `Style::forPrompt` |
@@ -54,9 +55,11 @@ Due parti, un processo solo.
 | `core/Figures` | il registro delle figure (`salvataggi/figure.json`), anche di quelle scritte fuori (`adopt`); didascalia, resa e originale per Rivedi figure; il segno `% img <lezione>-NN` nella lezione; «Ridisegna» (TikZ: disegno, prova con `pdflatex`, revisione sulla resa) e «Ritaglia dalla fonte» (`imgs/<nome>.png`); i pacchetti chiesti dai disegni vanno in `progetto.json` e da lì in `texfix.sty` |
 | `core/Fix` | errori e righe fuori misura di una lezione: gli errori al modello (sostituzioni esatte), le righe prima spezzando il paragrafo a una fine di frase poi con varianti del modello; ogni mossa resta solo se, compilata (`Compiler::compileSync`), migliora |
 | `core/Layout` | l'impaginazione, con qualunque stile: dove cade ogni blocco nel PDF (SyncTeX, e l'area del testo scritta nel log da `texfix.sty`); un'unità a cavallo di due pagine (o colonne) va a pagina nuova (`\newpage % impaginazione` prima del marcatore) se il vuoto è al più il 25%; altrimenti, o se è più lunga di una colonna, si spezza in un punto scelto: il comando dello stile (`comando_spezza`: `\tcbbreak` per `styles`, `\pagebreak` senza stile) sull'ultima cucitura fra due paragrafi prima del punto in cui passerebbe alla colonna dopo (se le pagine in piccolo del prima e del dopo sono uguali la mossa ha il segno «invariata»: `same`, `invariata` nel registro); se nessuna mossa regge resta proposta; registro `salvataggi/impaginazione.json` |
-| `core/AgentTools` | gli strumenti che l'app dà all'agente (`stato_progetto`, `compila_lezione`, `compila_documento`, `dubbi`, `impagina`), il protocollo a righe (MCP) e il prompt di sistema dell'agente |
+| `core/AgentTools` | gli strumenti che l'app dà all'agente (`stato_progetto`, `compila_lezione`, `compila_documento`, `dubbi`, `impagina`), il protocollo a righe (MCP) e il prompt di sistema dell'agente; `serve`: gli stessi strumenti senza la finestra per l'agente di un lavoro (`WORKER_TOOLS`, permessi dati da sé: dentro il progetto sì); `workerPrompt`; `outside`, l'unica regola del «fuori dal progetto» |
+| `core/Worker` | l'agente dentro un lavoro: il CLI `claude` senza chat, con i file e `--strumenti-progetto`; esegue un compito di un piano approvato, il suo flusso (testo, strumenti, risposte di Texfix) va a chi guarda; al limite il lavoro va in pausa e alla ripresa continua la stessa conversazione |
+| `core/Run` | il lavoro di «Avvia», da orchestratore: una copia del progetto (`build/lavori/esecuzione/<piano>/prima/`, per «Annulla tutto il lavoro»), `sort::prepare` una volta, poi la conversione e i compiti dell'agente insieme (due alla volta, mai due sulla stessa lezione; le fusioni dopo); lo stato in `salvataggi/lavori/<piano>/esecuzione.json`; si riprende senza rifare (un compito interrotto riparte dalla lezione com'era); alla fine l'esito nel piano |
 | `core/Plans` | i lavori con un piano: `salvataggi/lavori/<nome>/piano.json` (voci con spunta e istruzioni, la scelta di una sezione, domande con la risposta proposta, commento, esito); l'agente consegna piano ed esito con gli strumenti `consegna_piano` e `consegna_esito`; l'archivio in `salvataggi/esiti/` |
-| `core/NewLesson` | il numero e il nome del file dopo l'ultimo (`nextNumber`, `lastFile`); i file portati in `fonti/coda`; `settle` chiude una lezione scritta dall'agente (documento, marcatori, fonti usate: lo strumento `chiudi_lezione`); i messaggi delle procedure di fusione e integrazione; `texLectures`: le lezioni di un `.tex` rispetto al corso (contenute, per marcatori o per testo; dello stesso giorno; nuove), la regola unica della conversione, dello smistamento e di `settle`; `forAgent`: le fonti come le legge l'agente (copia in testo o PNG di .docx, .odt, .rtf, HEIC, TIFF in `build/lavori/leggibili/`) |
+| `core/NewLesson` | il numero e il nome del file dopo l'ultimo (`nextNumber`, `lastFile`); i file portati in `fonti/coda`; `settle` chiude una lezione scritta dall'agente (documento, marcatori, fonti usate: lo strumento `chiudi_lezione`); i messaggi dei compiti dell'agente (fusione, integrazione, versione nuova); `texLectures`: le lezioni di un `.tex` rispetto al corso (contenute, per marcatori o per testo; dello stesso giorno; nuove), la regola unica della conversione, dello smistamento e di `settle`; `forAgent`: le fonti come le legge l'agente (copia in testo o PNG di .docx, .odt, .rtf, HEIC, TIFF in `build/lavori/leggibili/`) |
 | `core/Concepts` | i concetti del materiale: il modello legge per intero ogni lezione del corso e ogni fonte nuova (una chiamata ciascuna, tenuta in `build/lavori/concetti/`), poi fa la mappa: concetti in comune, dove va ogni concetto nuovo, che cosa saltare; `survey` fa tutto il giro (gesto `mappa`, `Workspace::conceptSurvey`). il piano lo costruisce `core/Sort`; `textOf` e `extract` danno il testo di una fonte e le righe di alcuni concetti |
 | `core/Sort` | Aggiungi materiale per concetti: senza modello doppioni, versioni nuove, file illeggibili, lezioni di un `.tex` già nel corso; il resto con `core/Concepts`; il piano (formato «concetti»: fonti, corso, concetti, comuni, destinazioni, salta, gia, versioni) e `prepare`, che prende le righe o le pagine dei concetti e dice che cosa si converte e che cosa passa dall'agente |
 | `core/Git` | il version control dell'utente: modifiche, differenze, commit di tutto, cronologia (chiama `git`) |
@@ -66,12 +69,12 @@ Due parti, un processo solo.
 | `core/Profiles` | i profili di partenza: stile (il `.sty` e la descrizione), impostazioni e regole del progetto salvati con un nome fra i dati del programma (`profili/<nome>/`); un progetto nuovo può partire da lì |
 | `core/Provenance` | i tag di provenienza (D5): le fonti con la loro sigla e, per ogni blocco con una fonte nel marcatore, dove cade nel PDF (SyncTeX). Niente nel documento: li disegna la vista del PDF |
 | `app/Chat` | la chat: il CLI `claude` chiuso nel progetto (file sì, shell no, nessuna impostazione dell'utente), messaggi in streaming, strumenti eseguiti dal motore in un thread; `Texfix --strumenti <nome>` è il passacarte fra il CLI e il programma, su un canale locale; storico in `salvataggi/chat/` |
-| `app/Workspace` | il progetto aperto per la finestra (singleton QML): lezioni con lo stato, avvisi, PDF, compilazione |
+| `app/Workspace` | il progetto aperto per la finestra (singleton QML): lezioni con lo stato, avvisi, PDF, compilazione; il lavoro di «Avvia» per la sua finestra (`run`, `runCall`, da `runEvent`; `vista.json` per la riapertura) |
 | `app/Theme` | l'unico posto con colori e misure (singleton QML); chiaro e scuro col sistema, `TEXFIX_TEMA=chiaro\|scuro` |
 | `app/EditorBackend`, `LatexHighlighter`, `LineGutter` | evidenziazione, righe ↔ posizioni, numeri di riga |
 | `app/PdfBackend` (+ `PdfPages`) | pagine e misure di un PDF; le pagine come `image://pdf/<revisione>/<pagina>/<pixel>/<percorso>` |
 | `qml/style/` | lo stile dei controlli, `TexfixStyle` sopra Basic: suggerimenti (cartellino chiaro con ombra, a capo oltre 360 punti) e menu (foglio arrotondato, largo quanto la voce più lunga), colori da `Theme` |
-| `qml/` | `ReviewDeck` (la forma comune delle revisioni: panoramica e scheda, come Rivedi impaginazione; la usano `ReviewView` per dubbi e correzioni e `FiguresView`), `TxRendered` (un pezzo come nel PDF), `TxChoice`; `Main` (finestra, menu, scorciatoie), `Welcome`, `ProjectView` (barra, pannelli), `ProjectPanel`, `EditorPane` (schede: `TexEditor`, `PdfPane`, `ImageView`), `BottomPanel`, `StatusBar`; componenti `Tx…` |
+| `qml/` | `ReviewDeck` (la forma comune delle revisioni: panoramica e scheda, come Rivedi impaginazione; la usano `ReviewView` per dubbi e correzioni e `FiguresView`), `TxRendered` (un pezzo come nel PDF), `TxChoice`; `RunView` (il lavoro di «Avvia»: cantieri, chiamate, dettaglio, esito); `Main` (finestra, menu, scorciatoie), `Welcome`, `ProjectView` (barra, pannelli), `ProjectPanel`, `EditorPane` (schede: `TexEditor`, `PdfPane`, `ImageView`), `BottomPanel`, `StatusBar`; componenti `Tx…` |
 
 ## Il progetto su disco (formato nuovo, D1)
 
@@ -118,7 +121,7 @@ rileggere gli editor senza modifiche in sospeso; una rilettura svuota la pila de
 
 `--gesti`, separati da «;»: `clic X Y` (un clic vero del mouse, in punti della finestra), `passa X Y` (il puntatore fermo lì: i suggerimenti), `destro X Y` (il tasto destro; un menu aperto con `popup()` va dove sta il puntatore vero), `rotella X Y PASSI` (la rotella, in giù; negativi in su), `apri FILE [RIGA]`, `compila`, `tutto`, `salta` (⌘J), `sorgente PAGINA X Y`, `divisore 0|1|2`,
 `avvisi`, `progetto chiuso`, `annulla`, `ripeti`, `passo TITOLO`, `scrivi FILE TESTO`, `fatta FILE`, `impostazioni`,
-`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `ritaglio NOME` (apre il ritaglio a mano), `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `materiale FILE…` (aggiunge e riconosce: il piano), `materiale-lezione LEZIONE FILE…`, `smista` (riconosce ciò che è in arrivo), `versione-nuova USATA FILE`, `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`, `rinomina FILE NOME`, `console`, `argomenti` (propone la scaletta), `applica-argomenti`, `per-data`, `salva-profilo NOME`, `nuovo CARTELLA [PROFILO]`, `nuovo-argomenti CARTELLA [PROFILO]`, `correggo LEZIONE DUBBIO`, `decidi LEZIONE [DUBBIO…]` (costa), `tag [no]` (mostra o nasconde i tag di provenienza), `libreria STILE`, `avvia-piano`, `archivia`, `a-mano` (la prima mossa, a mano), `risolta`, `mossa STATO` (decide la mossa attuale), `annulla-mossa`, `elimina-impaginazioni`, `chiudi-scheda`, `inserisci TESTO`, `miniature`, `ramo LEZIONE` (apre la lezione nell'albero), `pannello PANNELLO LEZIONE`, `cita` (⌘L), `allega FILE`, `foto editor|pdf|finestra`, `invia`, `storico`, `chat`, `attivita`. Ogni gesto parte quando niente lavora; poi la foto.
+`preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `ritaglio NOME` (apre il ritaglio a mano), `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `materiale FILE…` (aggiunge e riconosce: il piano), `materiale-lezione LEZIONE FILE…`, `smista` (riconosce ciò che è in arrivo), `versione-nuova USATA FILE`, `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`, `rinomina FILE NOME`, `console`, `argomenti` (propone la scaletta), `applica-argomenti`, `per-data`, `salva-profilo NOME`, `lavoro` (la finestra del lavoro di «Avvia»), `chiamata [N]` (apre una chiamata), `riprendi`, `nuovo CARTELLA [PROFILO]`, `nuovo-argomenti CARTELLA [PROFILO]`, `correggo LEZIONE DUBBIO`, `decidi LEZIONE [DUBBIO…]` (costa), `tag [no]` (mostra o nasconde i tag di provenienza), `libreria STILE`, `avvia-piano`, `archivia`, `a-mano` (la prima mossa, a mano), `risolta`, `mossa STATO` (decide la mossa attuale), `annulla-mossa`, `elimina-impaginazioni`, `chiudi-scheda`, `inserisci TESTO`, `miniature`, `ramo LEZIONE` (apre la lezione nell'albero), `pannello PANNELLO LEZIONE`, `cita` (⌘L), `allega FILE`, `foto editor|pdf|finestra`, `invia`, `storico`, `chat`, `attivita`. Ogni gesto parte quando niente lavora (un lavoro in pausa per il limite conta come fermo); poi la foto.
 
 ## Regole e stile (SPEC §4)
 
@@ -160,10 +163,18 @@ passano da `Workspace::setPlanField` (comuni, destinazioni, versioni). «Rivedi 
 versione da smistare) rifà solo la mappa, con `previousPlan`. «Avvia» (`sort::prepare`): per ogni destinazione le righe
 dei concetti (`concepts::extract`, allargate al paragrafo) o le pagine diventano un file in arrivo (i testi e i `.tex` di
 più fonti in un `.tex` solo con le macro di tutti, le pagine in un PDF per fonte); una lezione nuova di un file solo e
-senza istruzioni la scrive la conversione (`Convert::Wanted`, per argomento anche titolo e `after`), il resto l'agente
-(aggiunte, «una versione sola» nel corso, fusioni); i doppioni si tolgono per primi, gli originali smistati vanno in
-`fonti/usate/smistate/`. Le procedure in attesa e le collocazioni per argomento stanno in `salvataggi/procedure.json`
-(`settle` colloca con `reorganize::place`). In arrivo (`fonti/coda/`): ogni riga ha uno stato (nel piano, in lavorazione,
+senza istruzioni la scrive la conversione (`Convert::Wanted`, per argomento anche titolo e `after`), il resto sono compiti
+dell'agente del lavoro (`sort::Task`: aggiunte, «una versione sola» nel corso, versioni nuove, fusioni; le aggiunte alla stessa
+lezione sono un compito solo); i doppioni si tolgono per primi, gli originali smistati vanno in `fonti/usate/smistate/`. Le
+collocazioni per argomento stanno in `salvataggi/procedure.json` (`settle` colloca con `reorganize::place`). Tutto ciò che
+segue «Avvia» è un lavoro solo (`core/Run`), nella sua finestra (`qml/RunView.qml`, «lavoro:<piano>», a tutta finestra
+come le revisioni; l'albero apre lì il piano avviato): cantieri con le fasi, chiamate (quelle in corso in cima; un clic apre
+istruzioni, parti con le pagine, flusso e risposta), tempo, costo con la stima, esito con i «Rivedi», «Ferma», «Riprendi»,
+«Annulla tutto il lavoro», «Chiudi e archivia» (via `build/lavori/esecuzione/<piano>/`). Il limite di utilizzo mette in
+pausa tutto fino all'ora letta dal messaggio, poi riparte da solo («Riprendi ora» non aspetta); chiuso il programma, il lavoro
+è interrotto e si riprende con un clic (decisioni del 18/11/2026). La conversione ripresa non riscrive una lezione già nel
+documento (`nomi` e `scritte` in `in-corso.json`): riparte dalle figure. Provato con il finto modello (pausa, chiusura,
+ripresa, fine), non ancora con il modello vero. In arrivo (`fonti/coda/`): ogni riga ha uno stato (nel piano, in lavorazione,
 da riconoscere, non riconosciuto con il perché in `build/lavori/smistamento/non-riconosciuti.json`, da smistare); un clic
 apre il file e il gruppo ha «Riprova» o «Smista»; aprire un progetto non riconosce niente da sé; mentre un lavoro gira il
 riconoscimento aspetta (`nextSort`). Il modello che non risponde lo dice con il motivo (`Model`), in barra, in Attività
@@ -262,12 +273,12 @@ con poco spazio o a richiesta), scelta dei file del commit con la spunta.
 **§3.13 Agente e chat.** Streaming, righe degli strumenti che si aprono (che cosa ha chiesto), Sonnet o Opus, tre modi.
 Allegati con miniature (trascinati o scelti; copiati in `salvataggi/chat/allegati/`), foto di un pezzo della finestra,
 ⌘L porta la selezione nel messaggio, storico con elimina a due clic, una chat con il suo nome per ogni procedura
-(`Chat::startProcedure`). Se la chat di prima non si riprende, riparte con la conversazione nel messaggio. L'agente è
+(`Chat::startProcedure`: l'impaginazione all'agente, «Ricontrolla con le fonti»). Il limite di utilizzo la chat lo dice con l'ora. Se la chat di prima non si riprende, riparte con la conversazione nel messaggio. L'agente è
 chiuso nel progetto in tutti e tre i modi: ogni richiesta di permesso passa da `conferma`, che nega da sé ciò che sta
 fuori dalla cartella (provato con il modello vero); «Autonomo» consente da sé ciò che sta dentro.
 
 **§3.17 Attività.** Nel pannello in basso, accanto ad Avvisi e Console: una riga per la compilazione, il lavoro, l'agente,
-le procedure in attesa, il lavoro da riprendere, i lavori finiti da poco.
+il lavoro di «Avvia» (con la pausa e «Apri»), il lavoro da riprendere, i lavori finiti da poco.
 
 **§3.18 Tag di provenienza.** Li disegna la vista del PDF, dai marcatori dei blocchi; non sono nel PDF su disco (scelta
 confermata dall'utente il 15/11/2026).
@@ -283,7 +294,7 @@ A confronto con la vecchia app sulle stesse pagine (`../prova-texfix`, src4.pdf 
 riquadri, stesso numero di definizioni e di figure; la nuova dà titoli alle sezioni, mette in un riquadro
 un'osservazione che la vecchia lasciava in prosa, e non va a capo nel sorgente. Simili, non uguali.
 
-**§5 Prove.** `./build.sh prove` (53 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
+**§5 Prove.** `./build.sh prove` (55 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
 spesso, contro `tests/misure.txt`; `--scrivi` li riscrive). Dei riferimenti della vecchia app sono portate le formule in display vere (`tests/dati/display.json`), per la mossa
 sulle formule; il resto dipende da prompt e stile, che qui sono cambiati per scelta.
 

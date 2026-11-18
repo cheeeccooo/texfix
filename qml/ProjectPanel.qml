@@ -187,9 +187,11 @@ Rectangle {
                 model: Workspace.jobs
                 TreeRow {
                     required property var modelData
-                    file: "piano:" + modelData.id
+                    file: (modelData.run ? "lavoro:" : "piano:") + modelData.id     // avviato: la finestra del lavoro
                     name: modelData.title
-                    detail: modelData.state === "piano" ? "da approvare" : modelData.state === "esito" ? "esito" : "in corso"
+                    detail: modelData.state === "piano" ? "da approvare" : modelData.state === "esito" ? "esito"
+                          : !modelData.run || Workspace.run.id !== modelData.id ? "in corso"
+                          : ({ in_corso: "in corso", in_pausa: "in pausa", fermato: "fermato", interrotto: "interrotto", finito: "esito" })[Workspace.run.state] || "in corso"
                     dot: modelData.state === "piano" ? Theme.warn : modelData.state === "esito" ? Theme.good : Theme.accent
                 }
             }

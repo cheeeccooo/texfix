@@ -9,7 +9,9 @@
 #include "core/Profiles.h"
 #include "core/Provenance.h"
 #include "core/Prompts.h"
+#include "core/Model.h"
 #include "core/Reorganize.h"
+#include "core/Run.h"
 #include "core/Review.h"
 #include "core/Figures.h"
 #include "core/Files.h"
@@ -38,6 +40,7 @@
 #include <future>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QTimeZone>
 #include <QImage>
 #include <QTest>
 
@@ -1192,7 +1195,8 @@ private slots:
         QVERIFY(!plans::hasInstructions(skipped));
         sort::Prepared prepared = sort::prepare(p, skipped);
         QCOMPARE(prepared.failure, QString());
-        QCOMPARE(prepared.agent.size(), 1);                                               // solo l'aggiunta alla lezione 1
+        QCOMPARE(prepared.tasks.size(), 1);                                               // solo l'aggiunta alla lezione 1
+        QCOMPARE(prepared.tasks[0].kind, "integra");
         // di nuovo da capo: via ciò che ha fatto (altrimenti il materiale rimesso in arrivo sarebbe un doppione di quello smistato)
         QDir(p.path("fonti/usate/smistate")).removeRecursively();
         for (const QString &f : QDir(p.path("fonti/coda")).entryList({"* · *"}, QDir::Files))
@@ -1210,10 +1214,14 @@ private slots:
         QVERIFY(serie.startsWith("\\newcommand{\\RR}{\\mathbb{R}}\n\\begin{document}\n% da A\na3\na4\n"));   // le macro di B, le righe dei concetti
         QVERIFY(serie.contains("% da B · 5 ottobre\n"));
         QVERIFY(!serie.contains("a1"));                                                   // A.1 va nella lezione 1
-        QCOMPARE(prepared.agent.size(), 2);
-        QVERIFY(prepared.agent[0].startsWith("Integra in `src/src1.tex` queste fonti nuove: fonti/coda/insieme · Secondo.tex."));
-        QVERIFY(prepared.agent[0].contains("Sono questi concetti: Secondo; Primo."));
-        QVERIFY(prepared.agent[1].contains("Sono concetti che la lezione ha già: «Il primo» c'è già (Primo): porta solo ciò che aggiunge, uguale."));
+        QCOMPARE(prepared.tasks.size(), 1);                                               // le due aggiunte alla lezione 1: un compito solo
+        QCOMPARE(prepared.tasks[0].lesson, "src/src1.tex");
+        QCOMPARE(prepared.tasks[0].title, "Aggiunte alla lezione 1");
+        QVERIFY(prepared.tasks[0].message.startsWith("Integra in `src/src1.tex` queste fonti nuove: fonti/coda/insieme · Secondo.tex, "));
+        QVERIFY(prepared.tasks[0].message.contains("Sono questi concetti: Secondo; Primo."));
+        QVERIFY(prepared.tasks[0].message.contains("Sono concetti che la lezione ha già: «Il primo» c'è già (Primo): porta solo ciò che aggiunge, uguale."));
+        QVERIFY(!prepared.tasks[0].message.contains("consegna_piano"));                    // il piano l'ha già approvato l'utente
+        QCOMPARE(prepared.tasks[0].sources.size(), 2);
         QVERIFY(QFileInfo::exists(p.path("fonti/usate/smistate/A.md")) && QFileInfo::exists(p.path("fonti/usate/smistate/B.tex")));
         QVERIFY(!QFileInfo::exists(p.path("fonti/coda/A.md")));
 
@@ -1274,8 +1282,9 @@ private slots:
 
         // «Avvia»: la vecchia in «precedenti», la nuova al suo posto, l'agente porta le differenze; il doppione si toglie
         const sort::Prepared prepared = sort::prepare(p, plan);
-        QCOMPARE(prepared.agent.size(), 1);
-        QVERIFY(prepared.agent.first().startsWith("La fonte fonti/coda/appunti.md è una versione nuova di una fonte già usata in `src/src1.tex`"));
+        QCOMPARE(prepared.tasks.size(), 1);
+        QCOMPARE(prepared.tasks.first().kind, "versione");
+        QVERIFY(prepared.tasks.first().message.startsWith("La fonte fonti/coda/appunti.md è una versione nuova di una fonte già usata in `src/src1.tex`"));
         QCOMPARE(files::read(p.path("fonti/usate/lezione 1/appunti.md")), "nuova, con una correzione\n");
         QVERIFY(!QFileInfo::exists(p.path("fonti/coda/Appunti_.md")));
         QVERIFY(QFileInfo::exists(p.path("fonti/coda/x.xyz")));                         // resta in arrivo, con il suo perché
@@ -1305,7 +1314,7 @@ private slots:
         QCOMPARE(prepared.sources, QStringList{"fonti/coda/S · Uno e due.pdf"});
         QCOMPARE(Pages::size(p.path("fonti/coda/S · Uno e due.pdf")), 2);
         QCOMPARE(Pages::size(p.path("fonti/coda/S · Tre.pdf")), 2);
-        QVERIFY(prepared.agent.first().contains("fonti/coda/S · Tre.pdf"));
+        QVERIFY(prepared.tasks.first().message.contains("fonti/coda/S · Tre.pdf"));
         QVERIFY(QFileInfo::exists(p.path("fonti/usate/smistate/S.pdf")));
     }
 
@@ -1354,11 +1363,13 @@ private slots:
         QCOMPARE(fused.sources, QStringList{"fonti/coda/A · Successioni.tex"});
         QCOMPARE(fused.wanted.value("fonti/coda/A · Successioni.tex").title, "Successioni");
         QCOMPARE(fused.wanted.value("fonti/coda/A · Successioni.tex").after, "src/arg2.tex");
-        QCOMPARE(fused.agent.size(), 1);
+        QCOMPARE(fused.tasks.size(), 1);
+        QCOMPARE(fused.tasks.first().kind, "fondi");
         QCOMPARE(fused.placements.size(), 1);
         const QString written = fused.placements.keys().first();
         QVERIFY(written.startsWith("src/src"));
-        QVERIFY(fused.agent.first().contains("`" + written + "`"));
+        QVERIFY(fused.tasks.first().message.contains("`" + written + "`"));
+        QCOMPARE(fused.tasks.first().lesson, written);
         newlesson::addPlacements(p, fused.placements);
         files::write(p.path(written), "\\section{Serie di potenze}\n\\lezione{4}{}\n\\subsection{Raggio}\nIl raggio di convergenza.\n");
         const QStringList closed = newlesson::settle(p, Style::classic().boxes(), Style::classic().figureWrapper(), written, {"fonti/coda/insieme · Serie di potenze.tex"});
@@ -2099,6 +2110,182 @@ private slots:
         const BuildResult r = build(compiler, {});
         QVERIFY(!r.hasErrors());
         QVERIFY(QFileInfo::exists(r.pdf));
+    }
+
+    // Il limite di utilizzo: l'ora di ripresa si legge dal messaggio; con un lavoro non è un errore, tutto aspetta e la
+    // chiamata si rifà (qui «Riprendi ora»); senza un lavoro è LimitReached, con l'ora.
+    void usageLimit()
+    {
+        QDateTime until;
+        QVERIFY(Model::limit("You've hit your 5-hour limit · resets 8:50pm (Europe/Rome)", &until));
+        const QDateTime rome = until.toTimeZone(QTimeZone("Europe/Rome"));
+        QCOMPARE(rome.time(), QTime(20, 51));
+        QVERIFY(until > QDateTime::currentDateTime());
+        QVERIFY(until < QDateTime::currentDateTime().addDays(1).addSecs(120));
+        QVERIFY(Model::limit("Usage limit reached · resets Nov 20, 7:30pm", &until));
+        QCOMPARE(until.date().month(), 11);
+        QCOMPARE(until.date().day(), 20);
+        QCOMPARE(until.time(), QTime(19, 31));
+        QVERIFY(Model::limit("You've hit your weekly limit", &until));             // l'ora non c'è: fra mezz'ora
+        QVERIFY(qAbs(QDateTime::currentDateTime().secsTo(until) - 1800) < 10);
+        QVERIFY(!Model::limit("La lezione 5 ha un limite notevole: resets 3pm"));
+
+        QTemporaryDir dir;
+        files::write(dir.filePath("limite.json"), QString::fromUtf8(QJsonDocument(QJsonObject{{"type", "result"}, {"is_error", true},
+                     {"result", "You've hit your session limit · resets 3am"}}).toJson(QJsonDocument::Compact)) + '\n');
+        files::write(dir.filePath("bene.json"), QString::fromUtf8(QJsonDocument(QJsonObject{{"type", "result"}, {"result", "ciao"},
+                     {"total_cost_usd", 0.1}}).toJson(QJsonDocument::Compact)) + '\n');
+        // la prima chiamata trova il limite, le altre rispondono
+        files::write(dir.filePath("claude"), QString("#!/bin/sh\ncat > /dev/null\nif [ -f '%1/visto' ]; then cat '%1/bene.json'; else touch '%1/visto'; cat '%1/limite.json'; fi\n").arg(dir.path()));
+        QFile(dir.filePath("claude")).setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
+
+        JobControl control;
+        control.records = dir.filePath("chiamate");
+        std::atomic<bool> paused{false};
+        QList<QJsonObject> events;
+        QMutex mutex;
+        control.onPause = [&](const QDateTime &at) { paused = paused || at.isValid(); };
+        control.onEvent = [&](const QJsonObject &e) { QMutexLocker lock(&mutex); events << e; };
+        auto future = std::async(std::launch::async, [&] {
+            Site here("fonti/coda/a.md");
+            return Model("bilanciata", dir.path(), &control).ask("verify", "Sei un verificatore.", {"Controlla."}, "src3#2");
+        });
+        for (int i = 0; i < 100 && !paused; ++i)
+            QTest::qWait(50);
+        QVERIFY(paused);
+        QVERIFY(control.pausedUntil() > QDateTime::currentDateTime());
+        QTest::qWait(400);
+        QVERIFY(future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready);   // aspetta: non fallisce
+        control.wake();
+        QCOMPARE(future.get(), "ciao");
+        QVERIFY(!control.pausedUntil().isValid());
+        QStringList states;
+        for (const QJsonObject &e : std::as_const(events))
+            states << e.value("stato").toString();
+        QCOMPARE(states, (QStringList{"in_corso", "limite", "in_corso", "fatta"}));
+        QCOMPARE(events.first().value("cantiere").toString(), "fonti/coda/a.md");
+        const QJsonObject record = QJsonDocument::fromJson(files::read(dir.filePath("chiamate/1.json")).toUtf8()).object();
+        QCOMPARE(record.value("istruzioni").toString(), "Sei un verificatore.");
+        QCOMPARE(record.value("risposta").toString(), "ciao");
+
+        // senza un lavoro che possa aspettare: LimitReached, con l'ora
+        QFile::remove(dir.filePath("visto"));
+        bool limited = false;
+        try {
+            Model("bilanciata", dir.path(), nullptr).ask("verify", "x", {"y"});
+        } catch (const LimitReached &e) {
+            limited = e.until.isValid();
+        }
+        QVERIFY(limited);
+        qunsetenv("TEXFIX_CLAUDE");
+    }
+
+    // «Avvia» è un lavoro solo: la conversione scrive la lezione nuova e, insieme, l'agente completa la lezione del corso
+    // (senza chat). Il piano resta con l'esito; «Ferma» e la ripresa non rifanno ciò che è fatto; «Annulla tutto il
+    // lavoro» riporta il progetto com'era e il piano da avviare.
+    void wholeRun()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        Settings settings = Settings::load(p);
+        settings.layout = "a_richiesta";
+        settings.save(p);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        files::write(p.path("src/src1.tex"), "\\section{Limiti}\n\\lezione{1}{01/10/2026}\n\nIl limite.\n");
+        files::write(p.path("fonti/coda/A.md"), "Serie geometrica.\nLa somma.\n");
+        files::write(p.path("fonti/coda/B.md"), "Un esempio di limite.\n");
+        const QString mainBefore = files::read(p.path("main.tex")), lessonBefore = files::read(p.path("src/src1.tex"));
+        auto source = [](const QString &key) { return QJsonObject{{"key", key}, {"name", key}, {"source", "fonti/coda/" + key + ".md"}, {"file", key}, {"pagine", false}}; };
+        const QJsonObject plan{{"titolo", "Aggiungi materiale"}, {"stato", "piano"}, {"tipo", "materiale"}, {"formato", "concetti"}, {"stima", 0.4},
+                               {"file", QJsonArray{"fonti/coda/A.md", "fonti/coda/B.md"}},
+                               {"fonti", QJsonArray{source("A"), source("B")}},
+                               {"corso", QJsonArray{QJsonObject{{"key", "L1"}, {"name", "Lezione 1 · Limiti"}, {"source", "src/src1.tex"}}}},
+                               {"concetti", QJsonObject{{"A.1", QJsonObject{{"title", "Serie"}, {"from", 1}, {"to", 2}}},
+                                                        {"B.1", QJsonObject{{"title", "Esempio"}, {"from", 1}, {"to", 1}}}}},
+                               {"destinazioni", QJsonArray{QJsonObject{{"into", "new"}, {"title", "Serie"}, {"date", "05/10/2026"}, {"concepts", QJsonArray{"A.1"}}, {"fare", true}, {"nota", ""}},
+                                                           QJsonObject{{"into", "L1"}, {"concepts", QJsonArray{"B.1"}}, {"fare", true}, {"nota", ""}}}}};
+        QVERIFY(plans::save(p, "20261118-170000", plan));
+
+        // il finto modello: trascrive, verifica, dà il titolo; il finto agente aggiunge una riga alla lezione 1
+        auto line = [](const QJsonObject &o) { return QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)) + '\n'; };
+        files::write(dir.filePath("trascrizione.json"), line({{"type", "result"}, {"total_cost_usd", 0.1},
+            {"result", "```json\n{\"units\": [{\"env\": \"definition\", \"page\": 1}]}\n```\n```latex\n\\begin{definition}[Serie]\n    La somma.\n\\end{definition}\n```\n"}}));
+        files::write(dir.filePath("verifica.json"), line({{"type", "result"}, {"result", "{\"missing\": [], \"wrong\": []}"}, {"total_cost_usd", 0.1}}));
+        files::write(dir.filePath("titolo.json"), line({{"type", "result"}, {"result", "{\"title\": \"La serie geometrica\"}"}, {"total_cost_usd", 0.1}}));
+        files::write(dir.filePath("agente.json"), line({{"type", "system"}, {"subtype", "init"}, {"session_id", "s1"}})
+            + line({{"type", "assistant"}, {"message", QJsonObject{{"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", "Aggiungo l'esempio."}},
+                QJsonObject{{"type", "tool_use"}, {"id", "t1"}, {"name", "Edit"}, {"input", QJsonObject{{"file_path", root + "/src/src1.tex"}}}}}}}}})
+            + line({{"type", "result"}, {"result", "- Aggiunto l'esempio dopo la definizione."}, {"total_cost_usd", 0.5}, {"session_id", "s1"}}));
+        files::write(dir.filePath("claude"), QString("#!/bin/sh\nin=$(cat)\n"
+                                                     "for a; do case \"$a\" in *'Esegui una parte di un piano'*) "
+                                                     "  if [ -f '%1/ferma' ]; then sleep 30; fi; printf '\\nUn esempio di limite.\\n' >> src/src1.tex; cat '%1/agente.json'; exit 0;;\n"
+                                                     "  *'You check LaTeX'*) cat '%1/verifica.json'; exit 0;;\n"
+                                                     "  *'beginning of the LaTeX notes'*) cat '%1/titolo.json'; exit 0;; esac; done\n"
+                                                     "cat '%1/trascrizione.json'\n").arg(dir.path()));
+        QFile(dir.filePath("claude")).setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
+
+        // «Ferma» mentre l'agente lavora: la lezione nuova può essere fatta, il compito resta da riprendere
+        files::write(dir.filePath("ferma"), "");
+        JobControl stopping;
+        QList<QJsonObject> events;
+        QMutex mutex;
+        stopping.onEvent = [&](const QJsonObject &e) { QMutexLocker lock(&mutex); events << e; };
+        auto future = std::async(std::launch::async, [&] { return run::execute(p, Settings::load(p), Style::classic(), "20261118-170000", &stopping); });
+        for (int i = 0; i < 200; ++i) {                // finché l'agente non è partito
+            QTest::qWait(50);
+            QMutexLocker lock(&mutex);
+            if (std::any_of(events.begin(), events.end(), [](const QJsonObject &e) { return e.value("fase").toString() == "integrate"; }))
+                break;
+        }
+        stopping.stop();
+        run::Result r = future.get();
+        QVERIFY(r.stopped);
+        QCOMPARE(run::load(p, "20261118-170000").value("stato").toString(), "fermato");
+        QCOMPARE(plans::load(p, "20261118-170000").value("stato").toString(), "in_corso");     // il piano resta, in corso
+        QVERIFY(QFileInfo::exists(run::folder(p, "20261118-170000") + "/prima/stato.json"));
+        {
+            QMutexLocker lock(&mutex);
+            QVERIFY(std::any_of(events.begin(), events.end(), [](const QJsonObject &e) {
+                return e.value("tipo").toString() == "cantiere" && e.value("chiave").toString() == "compito:1" && e.value("genere").toString() == "integra"; }));
+        }
+
+        // la ripresa: niente due volte
+        QFile::remove(dir.filePath("ferma"));
+        JobControl control;
+        r = run::execute(p, Settings::load(p), Style::classic(), "20261118-170000", &control);
+        QVERIFY(!r.stopped);
+        QCOMPARE(r.failure, QString());
+        QCOMPARE(r.tasksDone, 1);
+        QCOMPARE(p.inputs(), (QStringList{"src/src1.tex", "src/src2.tex"}));
+        QCOMPARE(files::read(p.path("src/src1.tex")).count("Un esempio di limite."), 1);     // la lezione era tornata com'era prima del compito
+        QVERIFY(files::read(p.path("src/src2.tex")).contains("\\section{La serie geometrica}\n\\lezione{2}{05/10/2026}"));
+        QVERIFY(QFileInfo::exists(p.path("fonti/usate/smistate/A.md")));
+        QVERIFY(!QFileInfo::exists(p.path("fonti/coda/B · Esempio.tex")));               // l'ha chiusa Texfix: fra le fonti usate
+        QCOMPARE(run::load(p, "20261118-170000").value("stato").toString(), "finito");
+        const QJsonObject done = plans::load(p, "20261118-170000");
+        QCOMPARE(done.value("stato").toString(), "esito");
+        QVERIFY(done.value("esito").toString().contains("Aggiunto l'esempio dopo la definizione."));
+        QVERIFY(QFileInfo::exists(run::recordsDir(p, "20261118-170000") + "/1.json"));
+        QCOMPARE(run::started(p), QStringList{"20261118-170000"});
+
+        // «Annulla tutto il lavoro»: com'era prima di «Avvia», e il piano di nuovo da avviare
+        QString error;
+        run::undo(p, "20261118-170000", &error);
+        QCOMPARE(error, QString());
+        QCOMPARE(files::read(p.path("main.tex")), mainBefore);
+        QCOMPARE(files::read(p.path("src/src1.tex")), lessonBefore);
+        QVERIFY(!QFileInfo::exists(p.path("src/src2.tex")));
+        QVERIFY(QFileInfo::exists(p.path("fonti/coda/A.md")) && QFileInfo::exists(p.path("fonti/coda/B.md")));
+        QVERIFY(!QFileInfo::exists(p.path("fonti/usate/smistate")));
+        QCOMPARE(plans::load(p, "20261118-170000").value("stato").toString(), "piano");
+        QVERIFY(run::load(p, "20261118-170000").isEmpty());
+        QVERIFY(!QFileInfo::exists(run::folder(p, "20261118-170000")));
+        qunsetenv("TEXFIX_CLAUDE");
     }
 };
 

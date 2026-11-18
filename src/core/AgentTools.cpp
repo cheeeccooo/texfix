@@ -8,8 +8,12 @@
 #include "core/Review.h"
 #include "core/Rules.h"
 
+#include <QDir>
 #include <QFileInfo>
 #include <QJsonDocument>
+
+#include <iostream>
+#include <string>
 
 namespace tx::agent {
 
@@ -207,6 +211,99 @@ Regole che valgono sempre:
 - un lavoro grande (fondere più fonti in una lezione, integrare fonti nuove, riorganizzare, toccare più lezioni) comincia sempre da un piano: consegnalo con consegna_piano e fermati; lo esegui solo quando l'utente lo approva, e alla fine consegni l'esito con consegna_esito;
 - di' sempre che cosa hai cambiato, in quali file, e che cosa resta da decidere all'utente.
 )") + "\nREGOLE EDITORIALI\n\n" + rules::forPrompt(all, settings.rules) + "\n\nSTILE DEL DOCUMENTO\n\n" + style.forPrompt();
+}
+
+}
+
+namespace tx::agent {
+
+QString workerPrompt(const Settings &settings, const Style &style)
+{
+    QStringList all;
+    for (const rules::Section &s : rules::sections())
+        all << s.id;
+    return QStringLiteral(
+               R"(Sei uno degli agenti di Texfix, un programma che trasforma appunti di ogni tipo in appunti LaTeX da studiare. Esegui una parte di un piano che l'utente ha già letto e approvato: nessuno ti risponde mentre lavori, quindi non consegni piani e non fai domande. Fai il compito che ricevi fino in fondo.
+
+Che cosa hai:
+- i file del progetto: li leggi e li modifichi con gli strumenti per i file. Le lezioni sono in `src/`, le fonti in `fonti/`;
+- gli strumenti di Texfix (stato_progetto, compila_lezione, dubbi, chiudi_lezione): sono l'unico modo di compilare. Non hai una shell.
+
+Regole che valgono sempre:
+- tocca solo la lezione del tuo compito (quella da completare, o quella nuova da scrivere); le fonti si leggono e basta. `main.tex`, `texfix.sty`, i `.sty` e `salvataggi/` non si toccano: chiudi_lezione mette nel documento una lezione nuova;
+- altri agenti lavorano nello stesso momento su altre lezioni: non aprire né compilare le loro;
+- dopo ogni modifica chiama compila_lezione sulla tua lezione, finché compila pulita;
+- le righe `% @L3.7 · fonte p.2` sono i marcatori dei blocchi e `% img src3-01` i segni delle figure: restano con il loro blocco, non si tolgono e non si inventano;
+- le aggiunte tue vanno in `addedtext`, le correzioni alla fonte in `correction`;
+- dove le fonti non sono chiare o non concordano scegli la lettura più fedele e dillo nell'esito;
+- alla fine chiama chiudi_lezione con la lezione e le fonti che hai usato;
+- il tuo ultimo messaggio è l'esito per l'utente: in italiano, breve, a punti. Che cosa hai aggiunto o cambiato e dove (vicino a quale blocco), e che cosa resta da decidere a lui.
+)") + "\nREGOLE EDITORIALI\n\n" + rules::forPrompt(all, settings.rules) + "\n\nSTILE DEL DOCUMENTO\n\n" + style.forPrompt();
+}
+
+bool outside(const QString &root, const QJsonObject &input)
+{
+    const QString base = QFileInfo(root).canonicalFilePath();
+    for (const char *key : {"file_path", "path", "notebook_path"}) {
+        const QString given = input.value(QLatin1String(key)).toString();
+        if (given.isEmpty())
+            continue;
+        QFileInfo info(QDir(base).absoluteFilePath(given));
+        while (!info.exists() && info.absolutePath() != info.absoluteFilePath())    // un file nuovo: conta la cartella che c'è
+            info = QFileInfo(info.absolutePath());
+        const QString real = info.canonicalFilePath();
+        if (!(real == base || real.startsWith(base + '/')))
+            return true;
+    }
+    return false;
+}
+
+int serve(const QString &root)
+{
+    const Project project(root);
+    const Settings settings = Settings::load(project);
+    Style style = Style::classic();
+    if (!settings.style.isEmpty()) {
+        bool ok = false;
+        const Style described = Style::load(project.path(Style::descriptionFile(settings.style)), &ok);
+        if (ok)
+            style = described;
+    }
+    std::string line;
+    while (std::getline(std::cin, line)) {
+        const QByteArray request = QByteArray::fromStdString(line);
+        const QJsonObject message = QJsonDocument::fromJson(request).object();
+        const QString method = message.value("method").toString();
+        const QJsonObject params = message.value("params").toObject();
+        QByteArray reply;
+        if (method == "tools/list") {                  // solo gli strumenti di chi lavora dentro un piano, più la conferma
+            QJsonArray shown;
+            for (const QJsonValue &t : tools())
+                if (WORKER_TOOLS.contains(t.toObject().value("name").toString()) || t.toObject().value("name").toString() == "conferma")
+                    shown.append(t);
+            reply = QJsonDocument(QJsonObject{{"jsonrpc", "2.0"}, {"id", message.value("id")}, {"result", QJsonObject{{"tools", shown}}}})
+                        .toJson(QJsonDocument::Compact) + '\n';
+        } else if (method == "tools/call" && params.value("name").toString() == "conferma") {
+            // i file del progetto sì, fuori no; uno strumento di Texfix solo se è fra i suoi
+            const QJsonObject asked = params.value("arguments").toObject(), input = asked.value("input").toObject();
+            const QString tool = asked.value("tool_name").toString();
+            const bool allowed = QStringList{"Read", "Edit", "Write", "MultiEdit", "Grep", "Glob"}.contains(tool)
+                                     ? !outside(root, input)
+                                     : tool.startsWith("mcp__texfix__") && WORKER_TOOLS.contains(tool.mid(13));
+            const QJsonObject decision = allowed ? QJsonObject{{"behavior", "allow"}, {"updatedInput", input}}
+                                                 : QJsonObject{{"behavior", "deny"}, {"message", "Non è permesso: lavora solo sui file del progetto e con gli strumenti che hai."}};
+            const QJsonObject result{{"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", QString::fromUtf8(QJsonDocument(decision).toJson(QJsonDocument::Compact))}}}}};
+            reply = QJsonDocument(QJsonObject{{"jsonrpc", "2.0"}, {"id", message.value("id")}, {"result", result}}).toJson(QJsonDocument::Compact) + '\n';
+        } else if (method == "tools/call" && !WORKER_TOOLS.contains(params.value("name").toString())) {
+            const QJsonObject result{{"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", "Questo strumento non c'è per chi lavora dentro un piano."}}}}, {"isError", true}};
+            reply = QJsonDocument(QJsonObject{{"jsonrpc", "2.0"}, {"id", message.value("id")}, {"result", result}}).toJson(QJsonDocument::Compact) + '\n';
+        } else {
+            reply = handle(project, style, request);
+        }
+        if (!reply.isEmpty())
+            std::cout << reply.toStdString() << std::flush;
+    }
+    return 0;
 }
 
 }

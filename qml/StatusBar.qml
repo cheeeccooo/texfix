@@ -12,9 +12,11 @@ Rectangle {
     property string messageText
     readonly property bool working: Workspace.busy
     // una compilazione chiesta dall'utente si vede anche mentre un lavoro gira
-    readonly property real fraction: Workspace.compiling ? Workspace.progress : Workspace.jobProgress
+    readonly property bool ownRun: Workspace.jobTitle === "Aggiungi materiale" && Workspace.run.id !== undefined
+    readonly property real fraction: Workspace.compiling ? Workspace.progress : ownRun ? Workspace.run.progress : Workspace.jobProgress
     readonly property string activity: Workspace.compiling
         ? "Compilazione" + (Workspace.progressLabel !== "" ? ": " + Workspace.progressLabel : "")
+        : Workspace.pausedUntil !== "" ? Workspace.jobTitle + ": in pausa per il limite di utilizzo, fino alle " + Workspace.pausedUntil
         : Workspace.jobTitle + (Workspace.jobLabel !== "" ? ": " + Workspace.jobLabel : "")
     Connections {
         target: Workspace

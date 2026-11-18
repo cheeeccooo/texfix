@@ -16,8 +16,8 @@ int lastFile(const Project &project);
 // Porta dei file fra le fonti da convertire (un nome già preso diventa «nome (2)»). Restituisce dove sono finiti,
 // relativi alla radice; ciò che è già in fonti/coda resta dov'è.
 QStringList toQueue(const Project &project, const QStringList &paths);
-// Le procedure dell'agente che aspettano il turno («in_attesa») e, in un progetto per argomento, dove vanno le lezioni
-// che scrivono («collocazioni»: file → argomento, titolo, dopo). Restano alla chiusura.
+// In un progetto per argomento, dove vanno le lezioni che scrive l'agente di un lavoro («collocazioni»: file → argomento,
+// titolo, dopo): le colloca chiudi_lezione. Restano alla chiusura.
 constexpr const char *PROCEDURES = "salvataggi/procedure.json";
 void addPlacements(const Project &project, const QJsonObject &placements);
 // Chiude una lezione scritta dall'agente: la mette nel documento se manca, aggiunge i marcatori dei blocchi che
@@ -33,7 +33,7 @@ struct Version {
 };
 Version versionOf(const Project &project, const QString &path);
 QString replaceVersion(const Project &project, const QString &used, const QString &path);
-QString updateMessage(const QString &lesson, const QString &source, const QString &previous);
+QString updateMessage(const QString &lesson, const QString &source, const QString &previous);   // un compito dell'agente di un lavoro
 
 // Più scansioni o PDF di una lezione che si seguono (lo dice il piano di Aggiungi materiale): unite fa di loro un PDF
 // solo, nell'ordine dato, fra quelli in arrivo, e toglie quelli che ha unito.
@@ -56,7 +56,8 @@ QList<TexLecture> texLectures(const Project &project, const QString &file);
 QString readable(const Project &project, const QString &file);   // la copia leggibile, relativa; vuoto se non serve o non riesce
 QStringList forAgent(const Project &project, const QStringList &sources);
 
-// Ciò che si chiede all'agente: fondere più fonti in una lezione nuova, o integrare fonti nuove in una lezione. `main`:
+// Ciò che si chiede all'agente di un lavoro (core/Worker), dentro un piano già approvato: fondere più fonti in una lezione
+// nuova, integrare fonti nuove in una lezione, portare una versione nuova di una fonte. `main`:
 // le fonti principali, quando ce ne sono anche di integrative: danno la struttura e decidono dove le fonti non concordano.
 QString fuseMessage(const QString &file, int number, const QString &date, const QStringList &sources, const QStringList &main = {});
 QString integrateMessage(const QString &lesson, const QStringList &sources);
