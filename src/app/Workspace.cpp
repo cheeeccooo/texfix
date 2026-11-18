@@ -1682,6 +1682,25 @@ void Workspace::setPlanAnswer(const QString &id, int question, const QString &an
     emit planEdited(id);
 }
 
+void Workspace::setPlanField(const QString &id, const QString &list, int index, const QString &key, const QVariant &value)
+{
+    static const QHash<QString, QStringList> values{{"comuni", {"one", "both", "skip"}}, {"versioni", {"porta", "nuovo", "salta"}}};
+    QJsonObject plan = plans::load(m_project, id);
+    QJsonArray items = plan.value(list).toArray();
+    if (!hasProject() || index < 0 || index >= items.size() || !QStringList{"comuni", "destinazioni", "versioni"}.contains(list))
+        return;
+    const bool allowed = (key == "valore" && values.value(list).contains(value.toString())) || (list == "destinazioni" && (key == "fare" || key == "nota"));
+    if (!allowed)
+        return;
+    QJsonObject item = items.at(index).toObject();
+    item[key] = QJsonValue::fromVariant(value);
+    items[index] = item;
+    plan[list] = items;
+    plans::save(m_project, id, plan);
+    if (key != "nota")                                 // un'istruzione si scrive: rileggere a ogni tasto toglierebbe il cursore
+        emit planEdited(id);
+}
+
 void Workspace::setPlanComment(const QString &id, const QString &text)
 {
     QJsonObject plan = plans::load(m_project, id);
@@ -1856,7 +1875,12 @@ void Workspace::startSortPlan(const QString &id)
     if (busy())
         return say(QStringLiteral("C'è già un lavoro in corso."));
     checkpoint(QStringLiteral("Modifiche a mano"));
-    const sort::Prepared prepared = sort::prepare(m_project, plans::load(m_project, id));
+    sort::Prepared prepared;
+    try {
+        prepared = sort::prepare(m_project, plans::load(m_project, id));
+    } catch (const std::exception &e) {               // niente in silenzio, e niente che chiuda il programma
+        return say(QStringLiteral("Non riesco ad avviare il piano: %1").arg(QString::fromUtf8(e.what())));
+    }
     if (!prepared.failure.isEmpty())
         return say(prepared.failure);
     plans::discard(m_project, id);                     // il piano è eseguito da Texfix: l'esito è quello della conversione

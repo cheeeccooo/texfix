@@ -76,9 +76,20 @@ Rectangle {
         }
     }
 
+    // il piano di Aggiungi materiale per concetti ha la sua vista
+    readonly property bool byConcepts: plan.formato === "concetti"
+    Loader {
+        id: concepts
+        anchors.fill: parent
+        active: root.byConcepts
+        Component.onCompleted: setSource("ConceptPlan.qml", { planId: root.planId })
+    }
+    Connections { target: concepts.item; ignoreUnknownSignals: true; function onCloseAsked() { root.closeAsked() } }
+
     TxScroll {
         id: scroll
         anchors.fill: parent
+        visible: !root.byConcepts
         contentHeight: column.implicitHeight + 4 * Theme.gap
         ColumnLayout {
             id: column

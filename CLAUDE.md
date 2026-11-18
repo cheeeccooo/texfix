@@ -57,8 +57,8 @@ Due parti, un processo solo.
 | `core/AgentTools` | gli strumenti che l'app dà all'agente (`stato_progetto`, `compila_lezione`, `compila_documento`, `dubbi`, `impagina`), il protocollo a righe (MCP) e il prompt di sistema dell'agente |
 | `core/Plans` | i lavori con un piano: `salvataggi/lavori/<nome>/piano.json` (voci con spunta e istruzioni, la scelta di una sezione, domande con la risposta proposta, commento, esito); l'agente consegna piano ed esito con gli strumenti `consegna_piano` e `consegna_esito`; l'archivio in `salvataggi/esiti/` |
 | `core/NewLesson` | il numero e il nome del file dopo l'ultimo (`nextNumber`, `lastFile`); i file portati in `fonti/coda`; `settle` chiude una lezione scritta dall'agente (documento, marcatori, fonti usate: lo strumento `chiudi_lezione`); i messaggi delle procedure di fusione e integrazione; `texLectures`: le lezioni di un `.tex` rispetto al corso (contenute, per marcatori o per testo; dello stesso giorno; nuove), la regola unica della conversione, dello smistamento e di `settle`; `forAgent`: le fonti come le legge l'agente (copia in testo o PNG di .docx, .odt, .rtf, HEIC, TIFF in `build/lavori/leggibili/`) |
-| `core/Concepts` | i concetti del materiale: il modello legge per intero ogni lezione del corso e ogni fonte nuova (una chiamata ciascuna, tenuta in `build/lavori/concetti/`), poi fa la mappa: concetti in comune, dove va ogni concetto nuovo, che cosa saltare; `survey` fa tutto il giro (gesto `mappa`, `Workspace::conceptSurvey`). Il piano dei concetti è in costruzione: oggi lo smistamento usa ancora `core/Sort` |
-| `core/Sort` | Aggiungi materiale, la porta sola: riconosce (già nel corso, versione nuova, si sovrappone, lezione o argomento nuovo, da saltare; senza modello dove si può, le pagine con una chiamata per file tenuta in `build/lavori/smistamento/`), poi una chiamata con il corso che dice anche il ruolo delle fonti; il piano (tipo «materiale») e `prepare`, che divide i PDF in pezzi (anche quelli tolti dal piano restano in arrivo; l'originale va in `fonti/usate/divise/`), toglie i doppioni, mette le versioni al loro posto e dice che cosa si converte e che cosa passa dall'agente |
+| `core/Concepts` | i concetti del materiale: il modello legge per intero ogni lezione del corso e ogni fonte nuova (una chiamata ciascuna, tenuta in `build/lavori/concetti/`), poi fa la mappa: concetti in comune, dove va ogni concetto nuovo, che cosa saltare; `survey` fa tutto il giro (gesto `mappa`, `Workspace::conceptSurvey`). il piano lo costruisce `core/Sort`; `textOf` e `extract` danno il testo di una fonte e le righe di alcuni concetti |
+| `core/Sort` | Aggiungi materiale per concetti: senza modello doppioni, versioni nuove, file illeggibili, lezioni di un `.tex` già nel corso; il resto con `core/Concepts`; il piano (formato «concetti»: fonti, corso, concetti, comuni, destinazioni, salta, gia, versioni) e `prepare`, che prende le righe o le pagine dei concetti e dice che cosa si converte e che cosa passa dall'agente |
 | `core/Git` | il version control dell'utente: modifiche, differenze, commit di tutto, cronologia (chiama `git`) |
 | `core/Reorganize` | Riorganizza: le sezioni del corso (fra un `\subsection` e il successivo), gli argomenti proposti dal modello, la scrittura di un file per argomento e il ritorno a un file per lezione, tutti e due del programma; resta uguale il contenuto riga per riga, o non si tocca niente. `startByTopic` (un progetto che nasce per argomento) e `place` (una lezione nuova in un argomento, con `\lezione{N}{data}` davanti) |
 
@@ -148,30 +148,33 @@ con quella regola. Il doppio clic apre con un'altra app ciò che non è testo.
 materiale» (⇧⌘K), i file trascinati sul pannello, «Aggiungi materiale a questa lezione…» (il modello sa dove l'utente
 l'ha messo), «Carica una versione nuova…» (il file arriva con il nome della fonte usata: `Workspace::newVersion`).
 Non ci sono più Nuova lezione, il tasto Converti, «Smista in lezioni», «Fai il piano» né la finestra delle versioni.
-Ogni volta `sort::plan` riconosce e c'è sempre un piano: già nel corso (doppione, lezione di un `.tex` o testo che il
-corso contiene, `texsource::contained`), versione nuova (Porta le differenze · Smistala come materiale nuovo · Salta),
-si sovrappone (Fondi · Lezione a parte · Salta, la `scelta` della sezione), lezione nuova (senza data: in fondo), lezione nuova che riprende in parte una che c'è (l'`intreccio` della sezione: una domanda senza risposta già scelta, «con tutto», «senza ripetere: rimanda», «Fondi»; «senza ripetere» passa a chi scrive una nota, `Convert::Wanted::note`, con ciò che il corso spiega già),
-argomento nuovo dopo un altro. Una domanda per fonte sul ruolo (principale, integrativa, esercizi): cambiarla, o
-scegliere «Smistala come materiale nuovo», rifà il piano (`plans::hasInstructions`). In fondo al piano le impostazioni,
-la stima e «Cambia». «Avvia» (`sort::prepare`): una fonte sola → la conversione (con numero, data e, per argomento, dove
-va: `Convert::Wanted`, poi `reorganize::place`); il resto all'agente, una procedura alla volta, salvate in
-`salvataggi/procedure.json`. In arrivo (`fonti/coda/`): ogni riga ha uno stato (nel piano, in lavorazione, da
-riconoscere, non riconosciuto con il perché in `build/lavori/smistamento/non-riconosciuti.json`, da smistare); un clic apre il file e il
-gruppo ha «Riprova» o «Smista»; aprire un progetto non riconosce niente da sé; mentre un lavoro gira il riconoscimento
-aspetta (`nextSort`). Il modello che non risponde lo dice con il motivo (`Model`: il testo d'errore o l'ultima riga del
-programma), in barra, in Attività e accanto ai file. Per argomento: scelto alla creazione (`ProfileSheet`,
-`reorganize::startByTopic`) e nelle impostazioni (`Workspace::setByTopic`: un progetto senza lezioni cambia e basta,
-gli altri passano da Riorganizza). L'agente riceve una copia leggibile di `.docx`, `.odt`, `.doc`, `.rtf`, HEIC e TIFF
-(`newlesson::forAgent`). Provato con il modello vero su una copia di labss: le cinque lezioni già nel corso
-riconosciute, le due del 10/11 separate; e con un finto modello muto. Una lezione nuova fatta di pezzi di più file
-(tutti pagine) ha la scelta «Unisci e converti, in quest'ordine» o «Fai fondere all'agente»: il modello dello smistamento
-dice se si seguono o si ripetono (nel dubbio: si ripetono), e unire è `newlesson::unite`. Quando l'agente fonde fonti di
-ruoli diversi, le principali danno la struttura (`fuseMessage`, `main`). Per argomento le lezioni che scrive l'agente
-sono lezioni (`src/srcN.tex`): la loro collocazione aspetta in `salvataggi/procedure.json` e `settle` le mette al loro
-posto con `reorganize::place`; i nomi nuovi tengono conto anche dei file che gli argomenti ricordano (`lastFile`). Nel
-piano ogni modifica passa da `Workspace::setPlanEntry|Choice|Answer|Comment` e la vista si rilegge dopo il gestore del clic
-(`Qt.callLater`): rileggere dentro il gestore distrugge la riga che ha ricevuto il clic. La capsula del divisore (PDF
-pieno, alla pari, editor pieno) sta in alto, all'altezza delle schede: in basso copriva «Avvia».
+Si smista **per concetti** (`sort::plan`, formato «concetti»): senza modello i doppioni, le versioni nuove, i file che
+non si leggono, le lezioni di un `.tex` che il corso contiene (`texLectures`); il resto lo legge il modello
+(`concepts::survey`: i concetti di ogni lezione del corso e di ogni fonte, in cache in `build/lavori/concetti/`, poi la
+mappa con il modello più forte). Il piano (`qml/ConceptPlan.qml`, aperto da `PlanView` quando `formato` è «concetti»):
+il grafo delle intersezioni (Canvas per gli archi, i nomi cliccabili filtrano), i concetti in comune con «Una versione
+sola, nella lezione N · Tienile tutte · Salta il nuovo», ciò che resta, il tutto nuovo, versioni, già nel corso, costo.
+Le sigle dei concetti non arrivano all'utente: il prompt lo vieta e `sort::plan` le sostituisce con i nomi. Le modifiche
+passano da `Workspace::setPlanField` (comuni, destinazioni, versioni). «Rivedi piano» (un'istruzione, un commento, una
+versione da smistare) rifà solo la mappa, con `previousPlan`. «Avvia» (`sort::prepare`): per ogni destinazione le righe
+dei concetti (`concepts::extract`, allargate al paragrafo) o le pagine diventano un file in arrivo (i testi e i `.tex` di
+più fonti in un `.tex` solo con le macro di tutti, le pagine in un PDF per fonte); una lezione nuova di un file solo e
+senza istruzioni la scrive la conversione (`Convert::Wanted`, per argomento anche titolo e `after`), il resto l'agente
+(aggiunte, «una versione sola» nel corso, fusioni); i doppioni si tolgono per primi, gli originali smistati vanno in
+`fonti/usate/smistate/`. Le procedure in attesa e le collocazioni per argomento stanno in `salvataggi/procedure.json`
+(`settle` colloca con `reorganize::place`). In arrivo (`fonti/coda/`): ogni riga ha uno stato (nel piano, in lavorazione,
+da riconoscere, non riconosciuto con il perché in `build/lavori/smistamento/non-riconosciuti.json`, da smistare); un clic
+apre il file e il gruppo ha «Riprova» o «Smista»; aprire un progetto non riconosce niente da sé; mentre un lavoro gira il
+riconoscimento aspetta (`nextSort`). Il modello che non risponde lo dice con il motivo (`Model`), in barra, in Attività
+e accanto ai file. Per argomento: scelto alla creazione (`ProfileSheet`, `reorganize::startByTopic`) e nelle impostazioni
+(`Workspace::setByTopic`). L'agente riceve una copia leggibile di `.docx`, `.odt`, `.doc`, `.rtf`, HEIC e TIFF
+(`newlesson::forAgent`). Provato con il modello vero su una copia di labss (lettura del corso e delle nove lezioni nuove
+2,46 $, la mappa da sola 0,49 $): concetti in comune trovati, esercizi di labssex divisi fra le lezioni 3 e 5 e le
+lezioni nuove. «Avvia» provato solo con il finto modello. Nei piani dell'agente (formato di prima) le modifiche passano
+da `Workspace::setPlanEntry|Choice|Answer|Comment`; in tutti e due la vista si rilegge dopo il gestore del clic
+(`Qt.callLater`) e resta dov'era. La capsula del divisore (PDF pieno, alla pari, editor pieno) sta in alto, all'altezza
+delle schede: in basso copriva «Avvia». In QML gli elenchi che vengono dal C++ non sono array JavaScript: `Array.from`
+prima di `concat`.
 
 **§3.6 La conversione.** Scansioni, PDF, immagini, documenti di testo, `.tex` di altri autori. Esito corto con
 «Resoconto completo» (la Console), «Ferma», «Riprendi» (le scelte del piano restano in `build/lavori/converti/in-corso.json`).
@@ -278,7 +281,7 @@ A confronto con la vecchia app sulle stesse pagine (`../prova-texfix`, src4.pdf 
 riquadri, stesso numero di definizioni e di figure; la nuova dà titoli alle sezioni, mette in un riquadro
 un'osservazione che la vecchia lasciava in prosa, e non va a capo nel sorgente. Simili, non uguali.
 
-**§5 Prove.** `./build.sh prove` (55 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
+**§5 Prove.** `./build.sh prove` (53 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
 spesso, contro `tests/misure.txt`; `--scrivi` li riscrive). Dei riferimenti della vecchia app sono portate le formule in display vere (`tests/dati/display.json`), per la mossa
 sulle formule; il resto dipende da prompt e stile, che qui sono cambiati per scelta.
 

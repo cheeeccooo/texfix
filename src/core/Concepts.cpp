@@ -28,9 +28,10 @@ Concepts in reading order; every part of the material belongs to one of them.)";
 const char *const MAP_PROMPT =
     R"(You compare the concepts of a university course with the concepts of new material, to decide where the new material goes. A concept is a unit of content (a definition, a derivation, a circuit with its analysis, an example, an exercise), with an id. The course is made of UNITS (lectures, or topics) whose concepts have ids like L3.2; the new material is made of SOURCES whose concepts have ids like A.4.
 1. "shared": every concept that appears in more than one place, in the course and in the new material, or in two new sources. Two concepts are shared when they explain the same thing (the same definition, derivation, circuit, example), even with other words or another depth; not when one only uses or continues the other. For each: "name" (Italian, at most 8 words), "items" (the ids, at least two), "note" (Italian, at most 25 words: what one adds to the other, what differs), "proposal": "one" when a single version is enough (then "keep": the id of the version whose place should host it, preferably the course's), "both" when they are really different treatments worth keeping, "skip" when the new versions add nothing.
-2. "place": where every new concept goes as its own content: into an existing unit ("into": its key, like "L3": it completes it) or into a new unit ("into": "new", with "title", Italian, at most 40 characters, and, in a course by lectures, "date" GG/MM/AAAA if the sources give it, else empty). One entry per destination; concepts that belong together go in the same new unit even when they come from different sources; concepts in reading order. "why": Italian, at most 15 words.
+2. "place": where every new concept goes as its own content: into an existing unit ("into": its key, like "L3": it completes it) or into a new unit ("into": "new", with "title", Italian, at most 40 characters; in a course by lectures, "date" GG/MM/AAAA if the sources give it, else empty; in a course by topics, "after": the key of the unit it should follow, "first" to put it before all, empty for the end). One entry per destination; concepts that belong together go in the same new unit even when they come from different sources; concepts in reading order. "why": Italian, at most 15 words.
 3. "skip": new concepts with nothing to keep (title pages, indexes, administrative notes), with "why".
 Every new concept is in exactly one entry of "place" or "skip"; a shared new concept too (its place is where it would go if kept).
+The ids are only for you: never write them in "note" or "why" (name the material instead, like "la lezione 5" or "gli appunti del 20 ottobre").
 Return only a JSON object: {"shared": [...], "place": [{"concepts": [ids], "into": "L3" | "new", "title": "...", "date": "...", "why": "..."}], "skip": [{"concepts": [ids], "why": "..."}]})";
 
 QString hashOf(const QByteArray &bytes) { return QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha1).toHex().left(16)); }
@@ -73,6 +74,58 @@ QJsonObject askKept(const Project &project, Model &model, const QString &cacheKe
 }
 }
 
+QString textOf(const Project &project, const QString &source)
+{
+    const texsource::Ref ref = texsource::parseSpec(source);
+    const QString path = project.path(ref.path), kind = Pages::kindOf(ref.path);
+    if (kind == "tex") {
+        const QString document = files::read(path);
+        return ref.date.isValid() ? texsource::workerText(document, ref.date, ref.nth) : texsource::body(document);
+    }
+    if (kind == "testo")
+        return Pages::read(path, project.path("build/lavori/concetti/testi")).text;
+    return {};
+}
+
+QString extract(const QString &text, const QList<std::pair<int, int>> &ranges)
+{
+    const QStringList lines = text.split('\n');
+    const int n = int(lines.size());
+    QList<bool> take(n, false);
+    for (auto [from, to] : ranges) {
+        if (from <= 0 || to <= 0) {                    // dove sta non si sa: tutto
+            take.fill(true);
+            break;
+        }
+        int a = qBound(1, from, n) - 1, b = qBound(a + 1, to, n) - 1;
+        while (a < b && lines[a].trimmed().isEmpty())  // le righe vuote ai bordi non sono del concetto
+            ++a;
+        while (b > a && lines[b].trimmed().isEmpty())
+            --b;
+        if (lines[a].trimmed().isEmpty())              // solo righe vuote: niente
+            continue;
+        while (a > 0 && !lines[a - 1].trimmed().isEmpty())
+            --a;                                       // dall'inizio del paragrafo
+        while (b + 1 < n && !lines[b].trimmed().isEmpty() && !lines[b + 1].trimmed().isEmpty())
+            ++b;                                       // fino alla sua fine
+        for (int i = a; i <= b; ++i)
+            take[i] = true;
+    }
+    QStringList out;
+    bool gap = false;
+    for (int i = 0; i < n; ++i) {
+        if (take[i]) {
+            if (gap && !out.isEmpty())
+                out << QString();
+            out << lines[i];
+            gap = false;
+        } else {
+            gap = true;
+        }
+    }
+    return out.join('\n');
+}
+
 Holder fromText(const Project &project, Model &model, const QString &key, const QString &name, const QString &source, const QString &text, bool course)
 {
     QStringList numbered;
@@ -99,7 +152,7 @@ Holder fromPages(const Project &project, Model &model, const QString &key, const
     return parse(Holder{key, name, source, false, {}, {}}, answer);
 }
 
-QJsonObject map(Model &model, const QList<Holder> &course, const QList<Holder> &fresh, bool byTopic, QString *failure)
+QJsonObject map(Model &model, const QList<Holder> &course, const QList<Holder> &fresh, bool byTopic, QString *failure, const QString &previous)
 {
     QStringList request{QStringLiteral("THE COURSE, BY %1").arg(byTopic ? "TOPICS" : "LECTURES")};
     for (const Holder &h : course) {
@@ -145,6 +198,8 @@ QJsonObject map(Model &model, const QList<Holder> &course, const QList<Holder> &
     QString problem;
     for (int attempt = 0; attempt < 2; ++attempt) {
         QStringList parts{request.join('\n')};
+        if (!previous.isEmpty())
+            parts << "YOUR PREVIOUS MAP, WITH THE USER'S DECISIONS AND INSTRUCTIONS (they win over your own reading; what they do not mention stays as before)\n" + previous;
         if (!problem.isEmpty())
             parts << QStringLiteral("Your previous answer did not hold: %1. Answer again, with every new concept in exactly one entry of place or skip.").arg(problem);
         const QString reply = model.ask("map", QString::fromUtf8(MAP_PROMPT), parts, "mappa");
@@ -178,7 +233,7 @@ QJsonObject Survey::toJson() const
                        {"map", map}, {"failure", failure}, {"cost", cost}};
 }
 
-Survey survey(const Project &project, const QString &quality, const QStringList &files, JobControl *control)
+Survey survey(const Project &project, const QString &quality, const QStringList &files, JobControl *control, const QString &previous)
 {
     Survey out;
     Model model(quality, project.root(), control);
@@ -217,7 +272,7 @@ Survey survey(const Project &project, const QString &quality, const QStringList 
                 const QString document = files::read(path);
                 const QList<newlesson::TexLecture> lectures = newlesson::texLectures(project, file);
                 if (lectures.isEmpty()) {
-                    jobs << Job{nextKey(), base, file, texsource::body(document), {}, false, false};
+                    jobs << Job{nextKey(), base, file, textOf(project, file), {}, false, false};
                     continue;
                 }
                 for (const newlesson::TexLecture &t : lectures) {
@@ -226,10 +281,10 @@ Survey survey(const Project &project, const QString &quality, const QStringList 
                     if (!t.in.isEmpty())
                         out.known << QStringLiteral("%1: già nel corso, tale e quale (%2)").arg(name, lessonName.value(t.in));
                     else
-                        jobs << Job{nextKey(), name, t.spec, texsource::workerText(document, t.lesson.date, t.lesson.nth), {}, false, false};
+                        jobs << Job{nextKey(), name, t.spec, textOf(project, t.spec), {}, false, false};
                 }
             } else if (kind == "testo") {
-                jobs << Job{nextKey(), base, file, Pages::read(path, project.path("build/lavori/concetti/testi")).text, {}, false, false};
+                jobs << Job{nextKey(), base, file, textOf(project, file), {}, false, false};
             } else if (kind == "pagine") {
                 QFile f(path);
                 if (!f.open(QIODevice::ReadOnly))
@@ -273,7 +328,7 @@ Survey survey(const Project &project, const QString &quality, const QStringList 
         if (control)
             control->progress(0.9, QStringLiteral("cerco le intersezioni"));
         QString failure;
-        out.map = map(model, out.course, out.fresh, byTopic, &failure);
+        out.map = map(model, out.course, out.fresh, byTopic, &failure, previous);
         out.failure = failure;
     }
     out.cost = model.cost();

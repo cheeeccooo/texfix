@@ -7,16 +7,14 @@
 #include <QHash>
 #include <QJsonObject>
 
-// Aggiungi materiale, la porta sola del materiale nuovo (SPEC §3.4). Riconoscere: ogni file diviso in unità (le pagine
-// di un PDF o di una scansione, le lezioni di un .tex, un testo intero), e ogni unità con un esito: già nel corso
-// (senza modello: lo stesso file fra le fonti usate, o il testo che c'è già), versione nuova di una fonte usata, che
-// si sovrappone a una lezione (o a un argomento), lezione nuova (o argomento nuovo), da saltare. Il modello serve per
-// le pagine (una chiamata per file, tenuta in build/lavori/smistamento/) e per il piano (una chiamata con il corso), che
-// propone anche il ruolo di ogni fonte: principale, integrativa, esercizi.
+// Aggiungi materiale, la porta sola del materiale nuovo (SPEC §3.4), per concetti. Riconoscere: senza modello ciò che
+// è meccanico e sicuro (un doppione di una fonte usata, una versione nuova, un file che non si legge, le lezioni di un
+// .tex che il corso contiene tali e quali); il resto lo legge il modello e ne fa la mappa dei concetti (core/Concepts):
+// che cosa compare in più punti, dove va ogni concetto nuovo, che cosa saltare.
 //
-// Il risultato è sempre un piano (core/Plans, tipo «materiale») che fa Texfix, non l'agente: una sezione per
-// destinazione, una voce per pezzo con le istruzioni sotto, una scelta dove c'è una sovrapposizione o una versione, una
-// domanda per il ruolo di ogni fonte.
+// Il piano (core/Plans, tipo «materiale», formato «concetti»): fonti, corso, concetti, comuni [{name, items, note,
+// proposta, valore, ospite}], destinazioni [{into, title, date, concepts, why, fare, nota}], salta, gia, versioni,
+// illeggibili, commento, impostazioni, stima. Lo fa e lo esegue Texfix, non l'agente.
 namespace tx::sort {
 
 struct Outcome {
@@ -25,25 +23,27 @@ struct Outcome {
     QHash<QString, QString> unread;        // i file che non si leggono, con il perché (relativi alla radice)
     double cost = 0;
 };
-// previous: il piano di prima con le istruzioni, le scelte e i ruoli dell'utente («Rivedi piano»). target: la lezione
-// (o l'argomento) a cui l'utente ha aggiunto il materiale; vuoto se non l'ha detto.
+// previous: il piano di prima con le decisioni e le istruzioni dell'utente («Rivedi piano»): i concetti letti restano,
+// si rifà la mappa. target: la lezione (o l'argomento) a cui l'utente ha aggiunto il materiale; vuoto se non l'ha detto.
 Outcome plan(const Project &project, const Settings &settings, const QStringList &files, JobControl *control,
              const QJsonObject &previous = {}, const QString &target = {});
 
-// «Avvia»: i pezzi diventano file fra quelli in arrivo. Le lezioni nuove di una fonte sola e senza istruzioni si
-// convertono (con numero, data e, per argomento, dove vanno); il resto passa dall'agente, con un piano suo.
+// «Avvia»: di ogni fonte si prendono le righe (o le pagine) dei concetti che vanno in un posto, e diventano file fra
+// quelli in arrivo. Una lezione nuova di una fonte sola, o di soli .tex e testi, la scrive la conversione; ciò che va in
+// una lezione che c'è (un'aggiunta, una versione sola di un concetto in comune) e le lezioni nuove che mescolano pagine
+// e testi passano dall'agente, una procedura alla volta. Le fonti smistate vanno fra le usate.
 struct Prepared {
     QStringList sources;                               // da convertire…
     QHash<QString, Convert::Wanted> wanted;            // …con numero, data e argomento
     QStringList agent;                                 // i messaggi delle procedure dell'agente, uno alla volta
-    QStringList done;                                  // ciò che è già fatto (un doppione tolto, un .tex archiviato)
+    QStringList done;                                  // ciò che è già fatto (un doppione tolto, un file archiviato)
     QString failure;
     // per argomento: dove vanno le lezioni che scrive l'agente (file → argomento, titolo, dopo); le colloca chiudi_lezione
     QJsonObject placements;
 };
 Prepared prepare(const Project &project, const QJsonObject &planDocument);
 
-// Il piano di prima come lo legge il modello, con le istruzioni dell'utente pezzo per pezzo.
+// Le decisioni e le istruzioni del piano come le legge il modello che rifà la mappa.
 QString previousPlan(const QJsonObject &planDocument);
 
 }

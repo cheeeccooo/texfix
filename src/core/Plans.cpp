@@ -101,6 +101,13 @@ bool hasInstructions(const QJsonObject &plan)
         if (!choice.isEmpty() && choice.value("rifai").toArray().contains(choice.value("valore")))
             return true;
     }
+    // il piano dei concetti: un'istruzione sotto una destinazione, una versione da smistare come materiale nuovo
+    for (const QJsonValue &d : plan.value("destinazioni").toArray())
+        if (!d.toObject().value("nota").toString().trimmed().isEmpty())
+            return true;
+    for (const QJsonValue &v : plan.value("versioni").toArray())
+        if (v.toObject().value("valore").toString() == "nuovo")
+            return true;
     return false;
 }
 

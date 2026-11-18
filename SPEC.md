@@ -129,56 +129,46 @@ nome, `fatta` dentro `salvataggi/lezioni/<srcN>.json`, dubbi come stringhe «P1:
 
 ### 3.4 Aggiungi materiale (decisioni del 18/11/2026)
 Una porta sola per il materiale nuovo. Non ci sono più Nuova lezione, il tasto Converti, «Smista in lezioni» né
-«Fai il piano»: c'è **Aggiungi materiale**, e il resto lo decide Texfix con un piano che l'utente approva.
+«Fai il piano»: c'è **Aggiungi materiale**, e il resto lo decide Texfix con un piano che l'utente approva. Il materiale
+si smista **per concetti**, non per date o per file: un concetto (una definizione, una derivazione, un circuito con la
+sua analisi, un esempio, un esercizio) va dove serve, anche se il file da cui viene ne porta altri altrove.
 
 - **[S]** **Il materiale entra in qualunque modo**: il tasto, file trascinati sul pannello, «Aggiungi materiale a questa
-  lezione…» dal menu di una lezione (il materiale va lì, se le pagine non dicono chiaramente altro), «Carica una versione
-  nuova…» sul menu di una fonte usata. Ogni volta Texfix lo riconosce e **mostra sempre il piano**, anche quando non c'è
-  niente da chiedere.
-- **[S]** **Riconoscere** vuol dire dividere il materiale in unità (le pagine di un PDF o di una scansione, le lezioni di
-  un `.tex` per `\section{Lezione del …}`, un testo intero) e dare a ciascuna un esito:
-  - *già nel corso*: lo stesso file è già fra le fonti usate, o il testo c'è già (per i testi lo dice il confronto senza
-    modello: i marcatori dei blocchi nominano il file, o la lezione ne contiene il testo). Si salta; la voce resta nel
-    piano senza spunta, e con la spunta la si porta nella lezione che la contiene;
-  - *versione nuova di …*: ha il nome di una fonte già usata ma è diversa. Scelte: «Porta le differenze» (la vecchia va
-    in `precedenti/` con la data, l'agente porta nella lezione le parti nuove e le correzioni), «Smistala come materiale
-    nuovo», «Salta»;
-  - *si sovrappone alla lezione N* (o all'argomento): scelte «Fondi nella lezione N» (l'agente, con un suo piano),
-    «Lezione a parte», «Salta»;
-  - *lezione nuova che riprende in parte la lezione N*: un ripasso, la stessa derivazione, gli stessi esempi. È una
-    domanda, senza risposta già scelta: «Lezione nuova, con tutto», «Lezione nuova, senza ripetere: rimanda alla lezione N»
-    (chi la scrive richiama in una frase ciò che la N spiega già e scrive per intero solo il nuovo), «Fondi nella lezione N»;
-  - *lezione nuova* (o argomento nuovo), con data e titolo;
-  - *da saltare*: pagine bianche, copertine, indici, doppioni.
-- **[S]** **Ruoli delle fonti**, proposti dal modello e confermati nel piano (una domanda per fonte):
-  - *principale* (appunti, il `.tex` di un collega): crea le lezioni;
-  - *integrativa* (slide, un capitolo di libro): completa le lezioni a cui si appoggia, e crea una lezione sua solo se
-    non trova niente;
-  - *esercizi*: vanno nella lezione dell'argomento che esercitano, o in una lezione di esercizi.
-  Cambiare un ruolo, scrivere un'istruzione sotto una voce o un commento fa diventare il tasto «Rivedi piano»: si rifà
-  solo l'ultima chiamata.
-- **[S]** **Date.** La data è un indizio fra gli altri (numero, argomento, ordine). Ciò che non ha data in un progetto per
-  data diventa una *lezione senza data*, in fondo, e il piano lo dice; numero e data si correggono con un'istruzione.
-- **[S]** **Il piano** ha una sezione per lezione (o argomento) di destinazione, una voce per pezzo con le istruzioni
-  sotto, le domande sui ruoli, il riepilogo delle impostazioni del progetto con «Cambia» e il costo stimato. «Avvia»
-  sceglie da sé come procedere: una lezione nuova di una fonte sola passa per la conversione (§3.6), il resto (fondere,
-  completare, versioni, lezioni con istruzioni) per l'agente, con un piano suo, una procedura alla volta. Una lezione
-  nuova fatta di pagine di più file si unisce in un PDF solo e si converte se le parti si seguono, la fonde l'agente se si
-  ripetono: lo propone il modello, sceglie l'utente. Fondendo, le fonti principali danno la struttura. Per argomento la
-  lezione scritta dall'agente va dove dice il piano quando la chiude. Le procedure
-  in attesa restano su disco (`salvataggi/procedure.json`) e ripartono alla riapertura. «Butta il piano» chiede conferma.
-- **[S]** **Costo.** Riconoscere le scansioni costa una chiamata leggera per file (tenuta: non si ripaga), più una per
-  il piano. Parte da sola a ogni aggiunta. Aprire un progetto non riconosce niente da sé.
+  lezione…» dal menu di una lezione (i concetti vanno lì, se uno non sta chiaramente altrove), «Carica una versione
+  nuova…» sul menu di una fonte usata. Ogni volta Texfix lo riconosce e **mostra sempre il piano**.
+- **[S]** **Senza modello**, ciò che è meccanico e sicuro: un doppione di una fonte usata (si toglie), una *versione nuova*
+  di una fonte usata («Porta le differenze», «Smistala come materiale nuovo», «Salta»), un file che non si legge (resta
+  in arrivo con il perché), le lezioni di un `.tex` che il corso contiene tali e quali (marcatori dei blocchi, o testo).
+- **[S]** **Con il modello, che legge tutto**: i concetti di ogni lezione del corso (una volta, finché la lezione non
+  cambia) e di ogni fonte nuova (di un `.tex` il testo senza preambolo: lo stile dell'autore non conta, solo il
+  contenuto), poi la **mappa**: quali concetti compaiono in più punti (fra il materiale nuovo e il corso, o fra due fonti
+  nuove) e che cosa li distingue, dove va ogni concetto nuovo (in una lezione che c'è, o in una lezione nuova che può
+  prendere concetti da più file), che cosa saltare. Qualità prima del costo: la mappa la fa il modello più forte.
+- **[S]** **Il piano**, da leggere a colpo d'occhio, senza sigle:
+  1. *Dove il materiale si interseca*: un grafo (a sinistra il materiale nuovo, a destra le lezioni che hai, archi con
+     quanti concetti hanno in comune; un clic su un nome mostra solo i suoi), poi un concetto in comune per riga, con dove
+     compare, che cosa li distingue e la decisione proposta: «Una versione sola, nella lezione N», «Tienile tutte»,
+     «Salta il nuovo»;
+  2. *Ciò che resta di questi file*: le lezioni nuove e le aggiunte, con i loro concetti (quelli in comune sbiaditi);
+  3. *Tutto nuovo*: ciò che non si interseca con niente.
+  In fondo: versioni nuove, già nel corso, parti da saltare, impostazioni del progetto con «Cambia», costo stimato e
+  costo della mappa. Una destinazione si toglie con la spunta (i suoi pezzi restano in arrivo) o si corregge con
+  un'istruzione; un'istruzione o un commento fanno «Rivedi piano»: si rifà solo la mappa.
+- **[S]** **Date.** La data è un indizio fra gli altri. Ciò che non ha data in un progetto per data diventa una lezione
+  senza data, in fondo.
+- **[S]** **«Avvia»**: di ogni fonte si prendono le righe (o le pagine) dei concetti che vanno in un posto, allargate al
+  paragrafo, e diventano un file fra quelli in arrivo. Una lezione nuova di soli testi e `.tex` (anche da più file, con le
+  macro di tutti) la scrive la conversione (§3.6); ciò che va in una lezione che c'è, una versione sola di un concetto in
+  comune che sta nel corso, una lezione nuova che mescola pagine e testi o che ha un'istruzione la fa l'agente, con un
+  piano suo, una procedura alla volta (restano su disco, `salvataggi/procedure.json`). Gli originali smistati vanno in
+  `fonti/usate/smistate/`. Tutto il lavoro è un passo solo della cronologia.
 - **[S]** **In arrivo** (era «Da convertire»): il materiale aspetta in `fonti/coda/` finché un lavoro non lo porta fra le
   fonti usate. Nell'albero c'è solo se c'è qualcosa; un clic apre il file nell'editor, e ogni file dice il suo stato:
   *nel piano* (il piano è sotto Lavori), *in lavorazione*, *non riconosciuto* con il motivo e «Riprova», *da smistare*
-  (rimasto da prima) con «Smista».
+  (rimasto da prima) con «Smista». Aprire un progetto non riconosce niente da sé.
 - **[S]** **Niente fallisce in silenzio.** Se il modello non risponde (connessione, limite d'uso, errore) il materiale resta
-  in arrivo con il motivo scritto accanto e «Riprova»; il messaggio va anche nella barra e in Console. Se il modello
-  risponde ma il piano non torna (pagine perse o doppie), si propone un file per lezione e il riepilogo lo dice.
-- **[S]** A lavoro finito le fonti vanno in `fonti/usate/lezione N/`; un PDF diviso in pezzi in `fonti/usate/divise/`, un
-  `.tex` con più lezioni in `fonti/usate/più lezioni/` quando il corso le ha tutte. Tutto il lavoro è un passo solo della
-  cronologia.
+  in arrivo con il motivo scritto accanto e «Riprova»; il messaggio va anche nella barra e in Console. Se la mappa non
+  torna (un concetto senza posto) si chiede di nuovo dicendo che cosa manca, poi lo si dice.
 - **[S]** Se numero e data letti da una scansione non tornano con quelli del piano, si crea un dubbio sulla riga
   `\lezione` con le due letture.
 
@@ -506,7 +496,8 @@ Decisioni successive (14/11/2026):
 
 Decisioni del 18/11/2026 (§3.4, §3.5): una porta sola per il materiale, Aggiungi materiale, con il piano sempre mostrato;
 il progetto è per data o per argomento, scelto alla creazione e cambiabile quando si vuole; il riconoscimento usa il
-modello a ogni aggiunta, ma niente fallisce in silenzio; le fonti hanno un ruolo: principale, integrativa, esercizi.
+modello a ogni aggiunta, ma niente fallisce in silenzio; si smista per concetti, con il grafo delle intersezioni in cima
+al piano, e la qualità viene prima del costo.
 
 Le domande D8–D10 come erano poste:
 - **D8. Come Texfix conosce uno stile importato.** (a) Lo stile porta un piccolo file di descrizione (ambienti e ruoli, macro, colori) accanto al `.sty`; `styles` lo avrà, per gli altri lo si scrive all'importazione. (b) All'importazione Texfix legge il `.sty`, trova ambienti e macro, il modello propone i ruoli e l'utente li conferma; il risultato si salva come in (a). Proposta: (b), che produce (a), così ogni stile funziona e quelli già descritti non costano niente.

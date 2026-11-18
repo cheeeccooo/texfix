@@ -220,6 +220,8 @@ public:
     Q_INVOKABLE void setPlanChoice(const QString &id, int section, const QString &field, const QString &value);   // field: scelta, intreccio
     Q_INVOKABLE void setPlanAnswer(const QString &id, int question, const QString &answer);
     Q_INVOKABLE void setPlanComment(const QString &id, const QString &text);
+    // Il piano dei concetti: una voce di un elenco (comuni, destinazioni, versioni) e il suo campo (valore, fare, nota).
+    Q_INVOKABLE void setPlanField(const QString &id, const QString &list, int index, const QString &key, const QVariant &value);
     Q_INVOKABLE bool planHasInstructions(const QString &id) const;
     Q_INVOKABLE QString planMessage(const QString &id, const QString &how);
     Q_INVOKABLE void discardPlan(const QString &id);

@@ -87,6 +87,7 @@ qt_add_qml_module(texfix
         qml/LayoutView.qml
         qml/ChatPane.qml
         qml/PlanView.qml
+        qml/ConceptPlan.qml
         qml/GitPanel.qml
         qml/DiffView.qml
         qml/RenameSheet.qml

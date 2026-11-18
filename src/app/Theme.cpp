@@ -56,3 +56,10 @@ QColor Theme::readable(const QColor &color) const
         return m_dark ? QColor::fromHslF(0, 0, 0.72f) : QColor::fromHslF(0, 0, 0.42f);
     return QColor::fromHslF(h, qMax(s, 0.55f), m_dark ? qMax(l, 0.70f) : qMin(l, 0.36f));
 }
+
+QColor Theme::sourceColor(int index) const
+{
+    static const QList<QColor> light{"#2f6fde", "#2e9e5b", "#c2701c", "#8a3fb0"}, dark{"#6fa2ff", "#4cc27c", "#e69a4c", "#c89bea"};
+    const QList<QColor> &palette = m_dark ? dark : light;
+    return palette.at(((index % palette.size()) + palette.size()) % palette.size());
+}
