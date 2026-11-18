@@ -16,11 +16,14 @@
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QQmlApplicationEngine>
+#include <QQmlEngineExtensionPlugin>
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QTimer>
 
 #include <unistd.h>
+
+Q_IMPORT_QML_PLUGIN(TexfixStylePlugin)    // lo stile dei controlli (qml/style)
 
 namespace {
 
@@ -75,6 +78,18 @@ void runHandsFree(QQuickWindow *window, QStringList gestures, const QString &pho
                 QCoreApplication::sendEvent(window, &release);
                 return;
             }
+            if (gesture.startsWith("passa ") || gesture.startsWith("destro ")) {   // il puntatore fermo su X Y; «destro»: un clic col tasto destro
+                const QPointF at(gesture.section(' ', 1, 1).toDouble(), gesture.section(' ', 2, 2).toDouble());
+                QMouseEvent move(QEvent::MouseMove, at, window->mapToGlobal(at), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+                QCoreApplication::sendEvent(window, &move);
+                if (gesture.startsWith("destro ")) {
+                    QMouseEvent press(QEvent::MouseButtonPress, at, window->mapToGlobal(at), Qt::RightButton, Qt::RightButton, Qt::NoModifier);
+                    QCoreApplication::sendEvent(window, &press);
+                    QMouseEvent release(QEvent::MouseButtonRelease, at, window->mapToGlobal(at), Qt::RightButton, Qt::NoButton, Qt::NoModifier);
+                    QCoreApplication::sendEvent(window, &release);
+                }
+                return;
+            }
             if (gesture.startsWith("rotella ")) {      // la rotella del mouse nel punto X Y: PASSI in giù (negativi: in su)
                 const QPointF at(gesture.section(' ', 1, 1).toDouble(), gesture.section(' ', 2, 2).toDouble());
                 const int steps = gesture.section(' ', 3, 3).toInt();
@@ -124,7 +139,7 @@ int main(int argc, char *argv[])
     if (photo.isEmpty() && handedToRunningApp(folder))
         return 0;
 
-    QQuickStyle::setStyle("Basic");
+    QQuickStyle::setStyle("TexfixStyle");          // menu e suggerimenti di Texfix; il resto è Basic
     QQmlApplicationEngine engine;
     engine.addImageProvider("pdf", new PdfPages);
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);

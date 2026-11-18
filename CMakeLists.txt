@@ -50,6 +50,22 @@ target_link_libraries(texfix_core PUBLIC Qt6::Core Qt6::Gui)
 
 option(TEXFIX_APP "Compila anche il programma, non solo il motore e le prove" ON)
 if(TEXFIX_APP)
+# Lo stile dei controlli: menu e suggerimenti come il resto di Texfix (colori e misure da Theme); il resto da Basic.
+set(STYLE_FILES qml/style/ToolTip.qml qml/style/Menu.qml qml/style/MenuItem.qml qml/style/MenuSeparator.qml)
+foreach(f ${STYLE_FILES})
+    get_filename_component(n ${f} NAME)
+    set_source_files_properties(${f} PROPERTIES QT_RESOURCE_ALIAS ${n})
+endforeach()
+qt_add_library(texfix_style STATIC)
+qt_add_qml_module(texfix_style
+    URI TexfixStyle
+    VERSION 1.0
+    OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/TexfixStyle
+    QML_FILES ${STYLE_FILES}
+    IMPORTS QtQuick.Controls.Basic
+)
+target_link_libraries(texfix_style PRIVATE Qt6::Quick Qt6::QuickControls2)
+
 # Il programma: una finestra sola in Qt Quick; i tipi C++ di src/app sono il suo modello.
 qt_add_executable(texfix MACOSX_BUNDLE
     src/app/main.cpp
@@ -104,7 +120,7 @@ qt_add_qml_module(texfix
         src/app/Chat.h src/app/Chat.cpp
 )
 target_include_directories(texfix PRIVATE src src/app)
-target_link_libraries(texfix PRIVATE texfix_core Qt6::Network Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::Pdf)
+target_link_libraries(texfix PRIVATE texfix_core texfix_styleplugin Qt6::Network Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::Pdf)
 set_target_properties(texfix PROPERTIES
     OUTPUT_NAME "Texfix"
     MACOSX_BUNDLE_BUNDLE_NAME "Texfix"

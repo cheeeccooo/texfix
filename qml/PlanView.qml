@@ -162,18 +162,15 @@ Rectangle {
                                 }
                                 TxLabel { Layout.fillWidth: true; text: entry.modelData.testo; wrapMode: Text.WordWrap; elide: Text.ElideNone; opacity: entry.modelData.fare ? 1 : 0.5 }
                             }
-                            TextInput {
+                            TxTextArea {                // va a capo e cresce con il testo
                                 Layout.fillWidth: true
                                 Layout.leftMargin: 18 + Theme.gap
                                 visible: root.editable || text !== ""
                                 readOnly: !root.editable
-                                text: entry.modelData.nota
-                                color: Theme.textMuted
-                                font.pixelSize: Theme.smallSize
-                                selectByMouse: true
-                                clip: true
-                                onTextEdited: root.setEntry(section.index, entry.index, "nota", text)
-                                TxLabel { anchors.fill: parent; visible: parent.text === "" && root.editable; text: "↳ istruzioni per questa voce…"; color: Theme.textFaint; font.pixelSize: Theme.smallSize }
+                                minHeight: Theme.rowHeight + 6
+                                placeholder: "Istruzioni per questa voce…"
+                                Component.onCompleted: text = entry.modelData.nota || ""
+                                onEdited: root.setEntry(section.index, entry.index, "nota", text)
                             }
                         }
                     }

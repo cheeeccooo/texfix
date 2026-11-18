@@ -45,14 +45,29 @@ const QHash<QChar, QString> &greek()
 // Un tratto di prosa fuori dalla matematica: i caratteri che LaTeX non vuole, le lettere greche, «V_CB».
 QString plain(const QString &text)
 {
-    static const RE token(R"(([A-Za-z0-9]+)([_^])([A-Za-z0-9]+))");
+    static const RE token(R"((\\?[A-Za-z0-9]+)([_^])(\{[^{}$]*\}|[A-Za-z0-9]+))");     // «V_CB», «\beta_F», «R_{in}»
     QString out;
     qsizetype at = 0;
     auto escaped = [](const QString &s) {
         QString o;
         for (qsizetype i = 0; i < s.size(); ++i) {
             const QChar c = s[i];
-            if (greek().contains(c)) {
+            if (c == u'\\') {                     // un comando: la matematica che il modello scrive senza $ (\\beta, \\infty)
+                qsizetype end = i + 1;
+                while (end < s.size() && s[end].isLetter())
+                    ++end;
+                const QString name = s.mid(i + 1, end - i - 1);
+                bool known = false;
+                for (const QString &v : greek())
+                    known = known || v == name || v.toLower() == name;
+                known = known || QStringList{"varepsilon", "varphi", "approx", "parallel", "omega", "infty"}.contains(name);
+                if (known) {
+                    o += "$\\" + name + "$";
+                    i = end - 1;
+                } else {
+                    o += "\\textbackslash{}";
+                }
+            } else if (greek().contains(c)) {
                 QString sub;                           // «ω0»: il numero che segue è un pedice
                 while (i + 1 < s.size() && s[i + 1].isDigit())
                     sub += s[++i];
@@ -74,7 +89,12 @@ QString plain(const QString &text)
     for (auto it = token.globalMatch(text); it.hasNext();) {
         const auto m = it.next();
         out += escaped(text.mid(at, m.capturedStart() - at));
-        out += QStringLiteral("$%1%2{%3}$").arg(m.captured(1), m.captured(2), m.captured(3));
+        {
+            QString sub = m.captured(3);
+            if (!sub.startsWith(u'{'))
+                sub = u'{' + sub + u'}';
+            out += QStringLiteral("$%1%2%3$").arg(m.captured(1), m.captured(2), sub);
+        }
         at = m.capturedEnd();
     }
     return out + escaped(text.mid(at));

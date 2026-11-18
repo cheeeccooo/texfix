@@ -70,6 +70,7 @@ Due parti, un processo solo.
 | `app/Theme` | l'unico posto con colori e misure (singleton QML); chiaro e scuro col sistema, `TEXFIX_TEMA=chiaro\|scuro` |
 | `app/EditorBackend`, `LatexHighlighter`, `LineGutter` | evidenziazione, righe ↔ posizioni, numeri di riga |
 | `app/PdfBackend` (+ `PdfPages`) | pagine e misure di un PDF; le pagine come `image://pdf/<revisione>/<pagina>/<pixel>/<percorso>` |
+| `qml/style/` | lo stile dei controlli, `TexfixStyle` sopra Basic: suggerimenti (cartellino chiaro con ombra, a capo oltre 360 punti) e menu (foglio arrotondato, largo quanto la voce più lunga), colori da `Theme` |
 | `qml/` | `ReviewDeck` (la forma comune delle revisioni: panoramica e scheda, come Rivedi impaginazione; la usano `ReviewView` per dubbi e correzioni e `FiguresView`), `TxRendered` (un pezzo come nel PDF), `TxChoice`; `Main` (finestra, menu, scorciatoie), `Welcome`, `ProjectView` (barra, pannelli), `ProjectPanel`, `EditorPane` (schede: `TexEditor`, `PdfPane`, `ImageView`), `BottomPanel`, `StatusBar`; componenti `Tx…` |
 
 ## Il progetto su disco (formato nuovo, D1)
@@ -115,7 +116,7 @@ rileggere gli editor senza modifiche in sospeso; una rilettura svuota la pila de
 
 ## Prove senza mani
 
-`--gesti`, separati da «;»: `clic X Y` (un clic vero del mouse, in punti della finestra), `rotella X Y PASSI` (la rotella, in giù; negativi in su), `apri FILE [RIGA]`, `compila`, `tutto`, `salta` (⌘J), `sorgente PAGINA X Y`, `divisore 0|1|2`,
+`--gesti`, separati da «;»: `clic X Y` (un clic vero del mouse, in punti della finestra), `passa X Y` (il puntatore fermo lì: i suggerimenti), `destro X Y` (il tasto destro; un menu aperto con `popup()` va dove sta il puntatore vero), `rotella X Y PASSI` (la rotella, in giù; negativi in su), `apri FILE [RIGA]`, `compila`, `tutto`, `salta` (⌘J), `sorgente PAGINA X Y`, `divisore 0|1|2`,
 `avvisi`, `progetto chiuso`, `annulla`, `ripeti`, `passo TITOLO`, `scrivi FILE TESTO`, `fatta FILE`, `impostazioni`,
 `preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `ritaglio NOME` (apre il ritaglio a mano), `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `materiale FILE…` (aggiunge e riconosce: il piano), `materiale-lezione LEZIONE FILE…`, `smista` (riconosce ciò che è in arrivo), `versione-nuova USATA FILE`, `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`, `rinomina FILE NOME`, `console`, `argomenti` (propone la scaletta), `applica-argomenti`, `per-data`, `salva-profilo NOME`, `nuovo CARTELLA [PROFILO]`, `nuovo-argomenti CARTELLA [PROFILO]`, `correggo LEZIONE DUBBIO`, `decidi LEZIONE [DUBBIO…]` (costa), `tag [no]` (mostra o nasconde i tag di provenienza), `libreria STILE`, `avvia-piano`, `archivia`, `a-mano` (la prima mossa, a mano), `risolta`, `mossa STATO` (decide la mossa attuale), `annulla-mossa`, `elimina-impaginazioni`, `chiudi-scheda`, `inserisci TESTO`, `miniature`, `ramo LEZIONE` (apre la lezione nell'albero), `pannello PANNELLO LEZIONE`, `cita` (⌘L), `allega FILE`, `foto editor|pdf|finestra`, `invia`, `storico`, `chat`, `attivita`. Ogni gesto parte quando niente lavora; poi la foto.
 
@@ -170,7 +171,7 @@ e accanto ai file. Per argomento: scelto alla creazione (`ProfileSheet`, `reorga
 (`Workspace::setByTopic`). L'agente riceve una copia leggibile di `.docx`, `.odt`, `.doc`, `.rtf`, HEIC e TIFF
 (`newlesson::forAgent`). Provato con il modello vero su una copia di labss (lettura del corso e delle nove lezioni nuove
 2,46 $, la mappa da sola 0,49 $): concetti in comune trovati, esercizi di labssex divisi fra le lezioni 3 e 5 e le
-lezioni nuove. «Avvia» provato solo con il finto modello. Nei piani dell'agente (formato di prima) le modifiche passano
+lezioni nuove. «Avvia» provato solo con il finto modello. Nei riquadri del piano ogni parte ha il suo nome (Dove compare, Che cosa cambia, Che cosa fare, Da, Concetti, Istruzioni); note e «che cosa dice» sono prosa compilata (`TxRendered`, anche nei suggerimenti: `LatexTip`), titoli e nomi passano da `pretty()` (pedici, lettere greche, in RichText: StyledText non ha `<sub>`); le istruzioni vanno a capo e crescono (`TxTextArea` con `minHeight`). I concetti in comune stanno su due colonne che scorrono ognuna per conto suo, le destinazioni su una sola: su due restavano buchi. I prompt chiedono prosa breve e naturale, titoli senza formule. Nei piani dell'agente (formato di prima) le modifiche passano
 da `Workspace::setPlanEntry|Choice|Answer|Comment`; in tutti e due la vista si rilegge dopo il gestore del clic
 (`Qt.callLater`) e resta dov'era. La capsula del divisore (PDF pieno, alla pari, editor pieno) sta in alto, all'altezza
 delle schede: in basso copriva «Avvia». Aprire un piano chiude l'anteprima del PDF e lasciarlo la riapre com'era (`ProjectView.planSaved`, in `syncReview`). La vista segue lo spazio: colonna fino a 1280 punti, concetti e destinazioni su due colonne da 1000, il grafo da 560 (le
