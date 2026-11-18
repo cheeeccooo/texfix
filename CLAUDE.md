@@ -114,7 +114,7 @@ rileggere gli editor senza modifiche in sospeso; una rilettura svuota la pila de
 
 ## Prove senza mani
 
-`--gesti`, separati da «;»: `clic X Y` (un clic vero del mouse, in punti della finestra), `apri FILE [RIGA]`, `compila`, `tutto`, `salta` (⌘J), `sorgente PAGINA X Y`, `divisore 0|1|2`,
+`--gesti`, separati da «;»: `clic X Y` (un clic vero del mouse, in punti della finestra), `rotella X Y PASSI` (la rotella, in giù; negativi in su), `apri FILE [RIGA]`, `compila`, `tutto`, `salta` (⌘J), `sorgente PAGINA X Y`, `divisore 0|1|2`,
 `avvisi`, `progetto chiuso`, `annulla`, `ripeti`, `passo TITOLO`, `scrivi FILE TESTO`, `fatta FILE`, `impostazioni`,
 `preferenze [N]`, `stile FILE.sty` (importa), `usa-stile NOME`, `apri rivedi:dubbi|rivedi:correzioni`, `scegli LEZIONE DUBBIO N`, `apri rivedi:figure`, `figura NOME ridisegna|ritaglia`, `ritaglio NOME` (apre il ritaglio a mano), `risolvi`, `impagina`, `apri rivedi:impaginazione`, `chiedi TESTO` (un messaggio all'agente: costa), `modo auto|chiedi|autonomo`, `rispondi si|no` (a una richiesta di conferma), `materiale FILE…` (aggiunge e riconosce: il piano), `materiale-lezione LEZIONE FILE…`, `smista` (riconosce ciò che è in arrivo), `versione-nuova USATA FILE`, `avvia-materiale`, `versioni` (la linguetta Version control), `apri diff:FILE|commit:HASH`, `rinomina FILE NOME`, `console`, `argomenti` (propone la scaletta), `applica-argomenti`, `per-data`, `salva-profilo NOME`, `nuovo CARTELLA [PROFILO]`, `nuovo-argomenti CARTELLA [PROFILO]`, `correggo LEZIONE DUBBIO`, `decidi LEZIONE [DUBBIO…]` (costa), `tag [no]` (mostra o nasconde i tag di provenienza), `libreria STILE`, `avvia-piano`, `archivia`, `a-mano` (la prima mossa, a mano), `risolta`, `mossa STATO` (decide la mossa attuale), `annulla-mossa`, `elimina-impaginazioni`, `chiudi-scheda`, `inserisci TESTO`, `miniature`, `ramo LEZIONE` (apre la lezione nell'albero), `pannello PANNELLO LEZIONE`, `cita` (⌘L), `allega FILE`, `foto editor|pdf|finestra`, `invia`, `storico`, `chat`, `attivita`. Ogni gesto parte quando niente lavora; poi la foto.
 
@@ -155,7 +155,7 @@ scegliere «Smistala come materiale nuovo», rifà il piano (`plans::hasInstruct
 la stima e «Cambia». «Avvia» (`sort::prepare`): una fonte sola → la conversione (con numero, data e, per argomento, dove
 va: `Convert::Wanted`, poi `reorganize::place`); il resto all'agente, una procedura alla volta, salvate in
 `salvataggi/procedure.json`. In arrivo (`fonti/coda/`): ogni riga ha uno stato (nel piano, in lavorazione, da
-riconoscere, non riconosciuto con il perché in `build/lavori/smistamento/non-riconosciuti.json`, da smistare) e il
+riconoscere, non riconosciuto con il perché in `build/lavori/smistamento/non-riconosciuti.json`, da smistare); un clic apre il file e il
 gruppo ha «Riprova» o «Smista»; aprire un progetto non riconosce niente da sé; mentre un lavoro gira il riconoscimento
 aspetta (`nextSort`). Il modello che non risponde lo dice con il motivo (`Model`: il testo d'errore o l'ultima riga del
 programma), in barra, in Attività e accanto ai file. Per argomento: scelto alla creazione (`ProfileSheet`,

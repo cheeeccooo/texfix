@@ -170,8 +170,9 @@ Una porta sola per il materiale nuovo. Non ci sono più Nuova lezione, il tasto 
 - **[S]** **Costo.** Riconoscere le scansioni costa una chiamata leggera per file (tenuta: non si ripaga), più una per
   il piano. Parte da sola a ogni aggiunta. Aprire un progetto non riconosce niente da sé.
 - **[S]** **In arrivo** (era «Da convertire»): il materiale aspetta in `fonti/coda/` finché un lavoro non lo porta fra le
-  fonti usate. Nell'albero c'è solo se c'è qualcosa, e ogni file ha uno stato e un'azione: *nel piano* (apre il piano),
-  *in lavorazione*, *non riconosciuto* con il motivo e «Riprova», *da smistare* (rimasto da prima) con «Smista».
+  fonti usate. Nell'albero c'è solo se c'è qualcosa; un clic apre il file nell'editor, e ogni file dice il suo stato:
+  *nel piano* (il piano è sotto Lavori), *in lavorazione*, *non riconosciuto* con il motivo e «Riprova», *da smistare*
+  (rimasto da prima) con «Smista».
 - **[S]** **Niente fallisce in silenzio.** Se il modello non risponde (connessione, limite d'uso, errore) il materiale resta
   in arrivo con il motivo scritto accanto e «Riprova»; il messaggio va anche nella barra e in Console. Se il modello
   risponde ma il piano non torna (pagine perse o doppie), si propone un file per lezione e il riepilogo lo dice.

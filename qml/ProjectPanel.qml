@@ -34,7 +34,6 @@ Rectangle {
         property int indent: 0                         // le righe dentro una lezione stanno più a destra
         property string arrow                          // «▸» o «▾» se la riga ha qualcosa dentro; un clic lì apre solo il ramo
         property string panel                          // la riga apre un pannello Rivedi su questa lezione
-        property string plan                           // la riga apre il piano che la contiene (in arrivo)
         property string why                            // perché non si è riconosciuta (in arrivo)
         signal arrowClicked()
         width: parent ? parent.width : 0
@@ -67,7 +66,7 @@ Rectangle {
                 if (mouse.button === Qt.LeftButton && row.arrow !== "" && mouse.x < Theme.gap + 28 + row.indent)
                     return row.arrowClicked()
                 if (mouse.button === Qt.LeftButton)
-                    return row.panel !== "" ? root.panelAsked(row.panel, row.file) : root.fileChosen(row.plan !== "" ? "piano:" + row.plan : row.file)
+                    return row.panel !== "" ? root.panelAsked(row.panel, row.file) : root.fileChosen(row.file)
                 if (row.file.includes(":") || row.panel !== "")
                     return                             // un lavoro, non un file
                 fileMenu.file = row.file
@@ -114,7 +113,6 @@ Rectangle {
                 file: modelData.file
                 name: modelData.name
                 detail: modelData.detail || ""
-                plan: modelData.plan || ""
                 why: modelData.why || ""
                 dot: modelData.state === "errore" ? Theme.bad : modelData.state === "piano" ? Theme.warn : "transparent"
             }
@@ -256,7 +254,7 @@ Rectangle {
                 }
             }
             FileGroup {
-                // ogni file ha uno stato: nel piano (un clic lo apre), in lavorazione, da riconoscere, non riconosciuto
+                // ogni file ha uno stato: nel piano, in lavorazione, da riconoscere, non riconosciuto
                 // (il perché nel suggerimento), da smistare (rimasto da prima)
                 title: "In arrivo"
                 files: Workspace.queue

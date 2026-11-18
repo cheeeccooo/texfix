@@ -15,9 +15,13 @@ Rectangle {
     signal chatAsked()
     color: Theme.window
 
+    // rileggere ricrea le righe: la pagina resta dov'era (il contenuto torna alla sua altezza dopo, e intanto lo
+    // scorrimento si riporterebbe in cima)
     function reload() {
+        const y = scroll.contentY
         plan = Workspace.plan(planId)
         instructions = Workspace.planHasInstructions(planId)
+        Qt.callLater(() => scroll.contentY = Math.max(0, Math.min(y, scroll.contentHeight - scroll.height)))
     }
     // ogni modifica passa da Workspace, che la salva sul piano: qui il piano si rilegge e basta
     function setEntry(s, v, key, value) { Workspace.setPlanEntry(planId, s, v, key, value); instructions = Workspace.planHasInstructions(planId) }
@@ -73,6 +77,7 @@ Rectangle {
     }
 
     TxScroll {
+        id: scroll
         anchors.fill: parent
         contentHeight: column.implicitHeight + 4 * Theme.gap
         ColumnLayout {

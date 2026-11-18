@@ -396,7 +396,6 @@ void Workspace::refreshTree()
             entry["detail"] = QStringLiteral("in lavorazione");
         } else if (inPlan.contains(file)) {
             entry["state"] = "piano";
-            entry["plan"] = inPlan.value(file);
             entry["detail"] = QStringLiteral("nel piano");
         } else if (waiting.contains(file) || (m_jobTitle == QStringLiteral("Riconosco il materiale") && jobRunning())) {
             entry["state"] = "attesa";

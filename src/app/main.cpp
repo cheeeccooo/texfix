@@ -14,6 +14,7 @@
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QMouseEvent>
+#include <QWheelEvent>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
 #include <QQuickWindow>
@@ -72,6 +73,14 @@ void runHandsFree(QQuickWindow *window, QStringList gestures, const QString &pho
                 QCoreApplication::sendEvent(window, &press);
                 QMouseEvent release(QEvent::MouseButtonRelease, at, window->mapToGlobal(at), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
                 QCoreApplication::sendEvent(window, &release);
+                return;
+            }
+            if (gesture.startsWith("rotella ")) {      // la rotella del mouse nel punto X Y: PASSI in giù (negativi: in su)
+                const QPointF at(gesture.section(' ', 1, 1).toDouble(), gesture.section(' ', 2, 2).toDouble());
+                const int steps = gesture.section(' ', 3, 3).toInt();
+                QWheelEvent wheel(at, window->mapToGlobal(at), QPoint(0, -steps * 40), QPoint(0, -steps * 120), Qt::NoButton, Qt::NoModifier,
+                                  Qt::NoScrollPhase, false);
+                QCoreApplication::sendEvent(window, &wheel);
                 return;
             }
             emit Workspace::instance()->gesture(gesture.section(' ', 0, 0), gesture.section(' ', 1));
