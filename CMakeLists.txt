@@ -35,6 +35,7 @@ qt_add_library(texfix_core STATIC
     src/core/Plans.cpp
     src/core/NewLesson.cpp
     src/core/Sort.cpp
+    src/core/Concepts.cpp
     src/core/Git.cpp
     src/core/Reorganize.cpp
     src/core/TexSource.cpp

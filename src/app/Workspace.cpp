@@ -1,6 +1,7 @@
 #include "Workspace.h"
 #include <QJsonObject>
 
+#include "core/Concepts.h"
 #include "core/Figures.h"
 #include "core/Files.h"
 #include "core/Fix.h"
@@ -1812,6 +1813,21 @@ void Workspace::sortJob(const QStringList &sources, const QJsonObject &previous,
         });
     });
     refreshTree();                                     // le righe in arrivo dicono che si sta riconoscendo
+}
+
+void Workspace::conceptSurvey(const QStringList &sources)
+{
+    if (!hasProject() || sources.isEmpty())
+        return;
+    if (busy())
+        return say(QStringLiteral("C'è già un lavoro in corso."));
+    startJob(QStringLiteral("Leggo i concetti"), [sources, project = m_project, quality = m_settings.quality, this](JobControl *control) {
+        const concepts::Survey s = concepts::survey(project, quality, sources, control);
+        return std::function<void()>([this, s] {
+            say(s.failure.isEmpty() ? QStringLiteral("Mappa dei concetti pronta. Costo: %1 $.").arg(QLocale(QLocale::Italian).toString(s.cost, 'f', 2))
+                                    : QStringLiteral("Mappa dei concetti: %1").arg(s.failure));
+        });
+    });
 }
 
 void Workspace::nextSort()

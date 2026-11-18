@@ -65,6 +65,8 @@ QString Model::modelFor(const QString &quality, const QString &stage)
         return OPUS;
     if (quality == "bilanciata" && stage == "figure")  // le figure della qualità bilanciata le disegna il modello più forte
         return OPUS;
+    if (quality != "veloce" && stage == "map")         // la mappa dei concetti è un giudizio su tutto il corso: il più forte
+        return OPUS;
     return SONNET;
 }
 
@@ -73,8 +75,8 @@ QString Model::effortFor(const QString &quality, const QString &stage)
     if (quality == "veloce")
         return stage == "figure" ? "medium" : "low";
     if (quality == "massima")
-        return stage == "fix2" || stage == "fix3" ? "high" : "medium";
-    if (stage == "transcribe" || stage == "figure" || stage == "fix3")
+        return stage == "fix2" || stage == "fix3" || stage == "concepts" || stage == "map" ? "high" : "medium";
+    if (stage == "transcribe" || stage == "figure" || stage == "fix3" || stage == "concepts" || stage == "map")
         return "high";
     return stage == "fix" ? "low" : "medium";            // anche «decide»: un dubbio alla volta, con la pagina
 }

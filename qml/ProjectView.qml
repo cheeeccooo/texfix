@@ -281,6 +281,8 @@ Item {
             } else if (name === "materiale-lezione") {
                 const a = argument.split(" ")
                 Workspace.addMaterial(a.slice(1), a[0])
+            } else if (name === "mappa") {
+                Workspace.conceptSurvey(Workspace.queue.map(q => q.file))
             } else if (name === "smista") {
                 Workspace.sortMaterial(Workspace.queue.map(q => q.file))
             } else if (name === "avvia-materiale") {

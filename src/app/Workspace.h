@@ -240,6 +240,9 @@ public:
     Q_INVOKABLE void startSortPlan(const QString &id);
     Q_INVOKABLE void reviseSortPlan(const QString &id);
     Q_INVOKABLE void askSettings() { emit settingsAsked(); }
+    // I concetti di ciò che è in arrivo e la mappa delle intersezioni (core/Concepts): un lavoro; il risultato in
+    // build/lavori/concetti/ultima-mappa.json. Il piano dei concetti lo userà.
+    Q_INVOKABLE void conceptSurvey(const QStringList &sources);
 
     // Version control: lo usa solo l'utente. changeCount: quante modifiche non salvate (nel titolo della linguetta).
     Q_PROPERTY(int changeCount READ changeCount NOTIFY treeChanged)
