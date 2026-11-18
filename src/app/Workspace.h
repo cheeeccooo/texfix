@@ -394,6 +394,7 @@ private:
     void decided(const QString &lesson, const QString &title, const QString &error);
     void sortJob(const QStringList &sources, const QString &previous, const QString &replaces);
     void nextProcedure();                              // la prossima procedura dell'agente in coda, se niente lavora
+    void saveProcedures();                             // la coda delle procedure in salvataggi/procedure.json
     void loadSettings();                               // impostazioni e stile, dal disco
 
     tx::Project m_project;

@@ -1220,6 +1220,24 @@ private slots:
         QVERIFY(QFileInfo::exists(p.path("fonti/usate/divise/S.pdf")));
     }
 
+    // Le fonti come le legge l'agente: di un .docx una copia in testo, di una lezione di un .tex la sua \section.
+    void agentReadable()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        files::write(dir.filePath("n.txt"), "Appunti sul teorema di Rolle.\n");
+        QVERIFY(tools::run("textutil", {"-convert", "docx", "-output", p.path("fonti/coda/n.docx"), dir.filePath("n.txt")}, dir.path(), 60000).ok);
+        files::write(p.path("fonti/coda/a.tex"), "\\begin{document}\n\\section{Lezione del 3 novembre 2026}\nx\n\\end{document}\n");
+        files::write(p.path("fonti/coda/b.md"), "y\n");
+        const QStringList named = newlesson::forAgent(p, {"fonti/coda/n.docx", "fonti/coda/a.tex@2026-11-03", "fonti/coda/b.md"});
+        QCOMPARE(named[0], "`fonti/coda/n.docx` (non lo puoi aprire: leggi la copia `build/lavori/leggibili/n.docx.txt`)");
+        QVERIFY(files::read(p.path("build/lavori/leggibili/n.docx.txt")).contains("teorema di Rolle"));
+        QCOMPARE(named[1], "`fonti/coda/a.tex` (solo la parte `\\section{Lezione del 3 novembre 2026}`)");
+        QCOMPARE(named[2], "fonti/coda/b.md");
+    }
+
     // Aggiungi materiale con un .tex di un altro autore: le sue lezioni, senza quelle che il corso ha già, sono le «pagine».
     void sortTex()
     {
@@ -1229,11 +1247,23 @@ private slots:
         const Project p(root);
         QString main = files::read(p.path("main.tex"));
         files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
-        files::write(p.path("src/src1.tex"), "\\section{Limiti}\n\\lezione{1}{01/10/2026}\n");
-        files::write(p.path("fonti/coda/C.tex"), "\\begin{document}\n\\section{Lezione del 1 ottobre 2026}\nGià nel corso.\n"
+        files::write(p.path("src/src1.tex"), "\\section{Limiti}\n\\lezione{1}{01/10/2026}\nIl limite di una successione reale descrive il comportamento dei termini quando l'indice cresce senza fine.\n");
+        const QString known = "Il limite di una successione reale descrive il comportamento dei termini quando l'indice cresce senza fine.";
+        files::write(p.path("fonti/coda/C.tex"), "\\begin{document}\n\\section{Lezione del 1 ottobre 2026}\n" + known + "\n"
                                                   "\\section{Lezione del 5 ottobre 2026}\nSerie.\n\\subsection{Criteri}\nx\n"
                                                   "\\section{Lezione del 6 ottobre 2026}\nAncora limiti.\n\\section{Lezione del 6 ottobre 2026}\nDerivate.\n\\end{document}\n");
-        files::write(p.path("fonti/coda/D.tex"), "\\begin{document}\n\\section{Lezione del 1 ottobre 2026}\nGià nel corso.\n\\end{document}\n");
+        files::write(p.path("fonti/coda/D.tex"), "\\begin{document}\n\\section{Lezione del 1 ottobre 2026}\n" + known + "\n\\end{document}\n");
+
+        // una lezione del .tex che il corso contiene (il suo testo è in src1, senza marcatori che lo dicano); una dello
+        // stesso giorno che non c'è: si fonde, Converti non la elenca
+        files::write(p.path("fonti/coda/G.tex"), "\\begin{document}\n\\section{Lezione del 1 ottobre 2026}\nLe serie di potenze convergono dentro il raggio di convergenza.\n\\end{document}\n");
+        QCOMPARE(newlesson::texLectures(p, "fonti/coda/C.tex").first().in, "src/src1.tex");
+        const newlesson::TexLecture other = newlesson::texLectures(p, "fonti/coda/G.tex").first();
+        QCOMPARE(other.in, QString());
+        QCOMPARE(other.sameDate, "src/src1.tex");
+        for (const Convert::Source &s : Convert::queue(p))
+            QVERIFY(!s.file.contains("G.tex") && !s.file.contains("D.tex") && !s.file.endsWith("C.tex@2026-10-01"));
+        QFile::remove(p.path("fonti/coda/G.tex"));
         const QJsonObject answer{{"groups", QJsonArray{
             QJsonObject{{"dest", "new"}, {"date", "05/10/2026"}, {"title", "Serie"}, {"pieces", QJsonArray{QJsonObject{{"file", "C.tex"}, {"from", 1}, {"to", 1}}}}},
             QJsonObject{{"dest", "lesson"}, {"lesson", 1}, {"pieces", QJsonArray{QJsonObject{{"file", "C.tex"}, {"from", 2}, {"to", 2}}}}},
@@ -1428,10 +1458,6 @@ private slots:
         QCOMPARE(texsource::label(second), "seconda lezione del 10/11/2026");
         QCOMPARE(texsource::workerText(twice, second.date, second.nth), "Porte logiche.");
         QCOMPARE(texsource::workerText(twice, second.date), "Filtri.");
-        const QList<texsource::Lesson> left = texsource::missing(both, {"10/11/2026"});
-        QCOMPARE(left.size(), 2);
-        QCOMPARE(left[0].nth, 2);
-        QCOMPARE(left[1].date, QDate(2026, 11, 11));
 
         QTemporaryDir dir;
         const QString root = dir.filePath("prova");

@@ -107,21 +107,18 @@ QStringList settle(const Project &project, const QStringList &boxes, const QStri
         did << QStringLiteral("lezione aggiunta al documento");
     }
     const QString used = project.path(QStringLiteral("fonti/usate/lezione %1").arg(info.number));
-    QStringList have;                                  // le date del corso, con la lezione appena aggiunta
-    for (const Lesson &lesson : project.lessons())
-        have << lesson.date;
     for (const QString &source : sources) {
         const QString file = texsource::parseSpec(source).path, from = project.path(file), name = QFileInfo(file).fileName();
         if (!file.startsWith("fonti/coda/") || !QFileInfo::exists(from))
             continue;
         QString to = used;
         if (Pages::kindOf(file) == "tex") {            // un .tex con più lezioni resta finché il corso non le ha tutte
-            const QList<texsource::Lesson> lessons = texsource::lessons(files::read(from));
-            if (!texsource::missing(lessons, have).isEmpty()) {
+            const QList<TexLecture> lectures = texLectures(project, file);         // con la lezione appena aggiunta
+            if (std::any_of(lectures.begin(), lectures.end(), [](const TexLecture &t) { return t.in.isEmpty() && t.sameDate.isEmpty(); })) {
                 did << QStringLiteral("%1 resta fra le fonti da convertire: ha altre lezioni").arg(name);
                 continue;
             }
-            if (lessons.size() > 1)
+            if (lectures.size() > 1)
                 to = project.path("fonti/usate/più lezioni");
         }
         QDir().mkpath(to);
@@ -129,6 +126,91 @@ QStringList settle(const Project &project, const QStringList &boxes, const QStri
             did << QStringLiteral("%1 portata fra le fonti usate").arg(name);
     }
     return did.isEmpty() ? QStringList{QStringLiteral("era già tutto a posto")} : did;
+}
+
+QList<TexLecture> texLectures(const Project &project, const QString &file)
+{
+    const QList<texsource::Lesson> all = texsource::lessons(files::read(project.path(file)));
+    if (all.isEmpty())
+        return {};
+    // il corso: di ogni lezione le fonti che i marcatori nominano e il testo, per confronto
+    static const QRegularExpression marker(R"(^% @L\d+\.\d+ · (.+?)(?: (?:pp?\.|r\.)\s*[\d-]+)?\s*$)", QRegularExpression::MultilineOption);
+    struct Course {
+        Lesson info;
+        QSet<QString> named, words;
+    };
+    QList<Course> course;
+    for (const Lesson &lesson : project.lessons()) {
+        const QString text = files::read(project.path(lesson.file));
+        Course c{lesson, {}, texsource::shingles(text)};
+        for (auto it = marker.globalMatch(text); it.hasNext();)
+            c.named << files::bare(it.next().captured(1));
+        course << c;
+    }
+    const QString bare = files::bare(QFileInfo(file).fileName());
+    QList<TexLecture> out;
+    for (const texsource::Lesson &lecture : all) {
+        TexLecture t{lecture, texsource::spec(file, lecture.date, lecture.nth), {}, {}};
+        QList<const Course *> sameDay, named;
+        for (const Course &c : std::as_const(course))
+            if (c.info.date == lecture.date.toString("dd/MM/yyyy")) {
+                sameDay << &c;
+                if (c.named.contains(bare))
+                    named << &c;
+            }
+        if (named.size() >= lecture.nth) {
+            t.in = named[lecture.nth - 1]->info.file;
+        } else {                                       // senza marcatori che lo dicano: il testo
+            const QSet<QString> words = texsource::shingles(lecture.text);
+            double best = texsource::CONTAINED;
+            for (const Course &c : std::as_const(course))
+                if (const double share = texsource::contained(words, c.words); share >= best) {
+                    best = share;
+                    t.in = c.info.file;
+                }
+        }
+        if (t.in.isEmpty() && sameDay.size() >= lecture.nth)
+            t.sameDate = sameDay[lecture.nth - 1]->info.file;
+        out << t;
+    }
+    return out;
+}
+
+QString readable(const Project &project, const QString &file)
+{
+    static const QStringList documents{"docx", "doc", "odt", "rtf"}, images{"heic", "heif", "tif", "tiff"};
+    const QFileInfo source(project.path(file));
+    const QString ext = source.suffix().toLower();
+    if (!documents.contains(ext) && !images.contains(ext))
+        return {};
+    const QString copy = QStringLiteral("build/lavori/leggibili/%1.%2").arg(source.fileName(), documents.contains(ext) ? "txt" : "png");
+    const QFileInfo made(project.path(copy));
+    if (made.exists() && made.lastModified() >= source.lastModified())
+        return copy;
+    QDir().mkpath(made.path());
+    const bool ok = documents.contains(ext)
+        ? tools::run("textutil", {"-convert", "txt", "-output", made.filePath(), source.filePath()}, made.path(), 60000).ok
+        : tools::run("sips", {"-s", "format", "png", "-Z", "2000", source.filePath(), "--out", made.filePath()}, made.path(), 60000).ok;
+    return ok && QFileInfo::exists(made.filePath()) ? copy : QString();
+}
+
+QStringList forAgent(const Project &project, const QStringList &sources)
+{
+    QStringList out;
+    for (const QString &source : sources) {
+        const texsource::Ref ref = texsource::parseSpec(source);
+        QString named = ref.path;
+        if (ref.date.isValid()) {                      // una lezione di un .tex: il file e la sua \section
+            for (const texsource::Lesson &lesson : texsource::lessons(files::read(project.path(ref.path))))
+                if (lesson.date == ref.date && lesson.nth == ref.nth)
+                    named = QStringLiteral("`%1` (solo la parte `\\section{%2}`%3)")
+                                .arg(ref.path, lesson.heading, ref.nth > 1 ? QStringLiteral(", la %1 con questo titolo").arg(texsource::label(ref).section(' ', 0, 0)) : QString());
+        } else if (const QString copy = readable(project, source); !copy.isEmpty()) {
+            named = QStringLiteral("`%1` (non lo puoi aprire: leggi la copia `%2`)").arg(source, copy);
+        }
+        out << named;
+    }
+    return out;
 }
 
 QString fuseMessage(const QString &file, int number, const QString &date, const QStringList &sources, const QStringList &important)
@@ -197,7 +279,7 @@ QString replaceVersion(const Project &project, const QString &used, const QStrin
 
 QString updateMessage(const QString &lesson, const QString &source, const QString &previous)
 {
-    return QStringLiteral("La fonte `%1` è una versione nuova di una fonte già usata in `%2` (la vecchia è in `%3`).\n"
+    return QStringLiteral("La fonte %1 è una versione nuova di una fonte già usata in `%2` (la vecchia è in `%3`).\n"
                           "- Confronta la versione nuova con la lezione: porta nella lezione le parti nuove e le correzioni, vicino al blocco a cui "
                           "appartengono; ciò che non è cambiato non si riscrive.\n"
                           "- Prima consegna un piano con consegna_piano: una voce per ogni parte nuova o corretta.\n"

@@ -48,18 +48,6 @@ QString lectureLabels(const QJsonArray &specs)
     return labels.join(", ");
 }
 
-// Una lezione di un .tex come la legge l'agente: il file e la sua \section.
-QString forAgent(const Project &project, const QString &source)
-{
-    const texsource::Ref ref = texsource::parseSpec(source);
-    if (!ref.date.isValid())
-        return source;
-    for (const texsource::Lesson &lesson : texsource::lessons(files::read(project.path(ref.path))))
-        if (lesson.date == ref.date && lesson.nth == ref.nth)
-            return QStringLiteral("`%1` (solo la parte `\\section{%2}`%3)").arg(ref.path, lesson.heading, ref.nth > 1 ? QStringLiteral(", la %1 con questo titolo").arg(texsource::label(ref).section(' ', 0, 0)) : QString());
-    return ref.path;
-}
-
 // Ogni pagina di ogni file in un pezzo solo, o fra quelle lasciate.
 bool coversOnce(const QJsonObject &answer, const QHash<QString, int> &sizes)
 {
@@ -97,9 +85,9 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
         QStringList course;
         static const QRegularExpression sub(R"(\\subsection\*?\{([^}]*)\})");
         QHash<int, QString> titles;
-        QStringList have;                              // le date del corso: le lezioni di un .tex che ha già non si smistano
+        QHash<QString, int> numbers;                   // file → numero, per dire al modello quale lezione ha lo stesso giorno
         for (const Lesson &lesson : project.lessons()) {
-            have << lesson.date;
+            numbers.insert(lesson.file, lesson.number);
             QStringList sections;
             for (auto it = sub.globalMatch(files::read(project.path(lesson.file))); it.hasNext();)
                 sections << it.next().captured(1);
@@ -118,7 +106,11 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
             const QString kind = Pages::kindOf(name);
             if (kind == "tex") {                       // le lezioni del file, senza modello: data, titolo, sezioni, l'inizio
                 const QString document = files::read(path);
-                const QList<texsource::Lesson> all = texsource::lessons(document), missing = texsource::missing(all, have);
+                QList<newlesson::TexLecture> missing;  // quelle che il corso non contiene (anche se ha una lezione di quel giorno)
+                const QList<newlesson::TexLecture> all = newlesson::texLectures(project, files[i]);
+                for (const newlesson::TexLecture &t : all)
+                    if (t.in.isEmpty())
+                        missing << t;
                 if (all.isEmpty()) {                   // non diviso in lezioni: un pezzo, come un testo
                     sizes.insert(name, 1);
                     material << QStringLiteral("FILE %1 (LaTeX notes, one piece)\n%2").arg(name, texsource::body(document).left(1200));
@@ -126,11 +118,11 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
                     already << name;
                 } else {
                     static const QRegularExpression heading(R"(\\(?:sub)*section\*?\{([^}]*)\})");
-                    QStringList lines{QStringLiteral("FILE %1 (LaTeX notes by another author: %2 lectures the course does not have yet, each P is a whole lecture)")
+                    QStringList lines{QStringLiteral("FILE %1 (LaTeX notes by another author: %2 lectures the course does not contain yet, each P is a whole lecture)")
                                           .arg(name).arg(missing.size())};
                     QJsonArray specs;
                     for (qsizetype k = 0; k < missing.size(); ++k) {
-                        const texsource::Lesson &lesson = missing[k];
+                        const texsource::Lesson &lesson = missing[k].lesson;
                         QStringList sections;
                         for (auto it = heading.globalMatch(lesson.text); it.hasNext();)
                             sections << it.next().captured(1);
@@ -138,7 +130,9 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
                         const QString start = lesson.text.left(first < 0 ? 400 : qMin<qsizetype>(400, first)).simplified();
                         lines << QStringLiteral("- P%1: date %2, \"%3\". Sections: %4. Beginning: %5")
                                      .arg(k + 1).arg(lesson.date.toString("dd/MM/yyyy"), lesson.heading, sections.join("; "), start);
-                        specs << texsource::spec(files[i], lesson.date, lesson.nth);
+                        if (!missing[k].sameDate.isEmpty())
+                            lines.last() += QStringLiteral(" (the course has lecture %1 on the same day, not written from this one)").arg(numbers.value(missing[k].sameDate));
+                        specs << missing[k].spec;
                     }
                     sizes.insert(name, int(missing.size()));
                     lectures.insert(name, specs);
@@ -385,9 +379,7 @@ Prepared prepare(const Project &project, const QJsonObject &document)
         }
         if (sources.isEmpty())
             continue;
-        QStringList named;                             // per l'agente: una lezione di un .tex è il file e la sua \section
-        for (const QString &source : std::as_const(sources))
-            named << forAgent(project, source);
+        const QStringList named = newlesson::forAgent(project, sources);   // come le legge l'agente
         if (group.value("dest").toString() == "lesson") {
             const QString lesson = lessonFiles.value(group.value("lesson").toInt());
             if (!lesson.isEmpty())

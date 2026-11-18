@@ -1,6 +1,7 @@
 #pragma once
 #include "core/Job.h"
 #include "core/Project.h"
+#include "core/TexSource.h"
 
 #include <QStringList>
 
@@ -43,6 +44,23 @@ struct Overlap {
 };
 Overlap overlap(const Project &project, const QString &quality, const QStringList &sources, JobControl *control);
 QString unite(const Project &project, const QStringList &sources, const QList<int> &order, int number);
+
+// Le lezioni di un .tex di un altro autore rispetto al corso. `in` è la lezione del corso che viene da lei: i suoi
+// marcatori nominano il file e ha la sua data, o ne contiene il testo (texsource::contained). `sameDate`: il corso ha
+// una lezione di quel giorno che non viene da lei (la seconda lezione del giorno nel file guarda la seconda del corso).
+struct TexLecture {
+    texsource::Lesson lesson;
+    QString spec;                          // «fonti/coda/a.tex@2026-11-10.2»
+    QString in;                            // la lezione del corso che la contiene; vuoto se nessuna
+    QString sameDate;                      // la lezione del corso dello stesso giorno, se non è `in`
+};
+QList<TexLecture> texLectures(const Project &project, const QString &file);
+
+// Le fonti come le legge l'agente, che apre testo, PDF, PNG e JPEG ma non .docx, .odt, .doc, .rtf, HEIC o TIFF: di
+// questi fa una copia leggibile in build/lavori/leggibili/ e la nomina accanto; di una lezione di un .tex nomina la sua
+// \section. Il nome resta quello della fonte, che è ciò che si passa a chiudi_lezione.
+QString readable(const Project &project, const QString &file);   // la copia leggibile, relativa; vuoto se non serve o non riesce
+QStringList forAgent(const Project &project, const QStringList &sources);
 
 // Ciò che si chiede all'agente: fondere più fonti in una lezione nuova, o integrare fonti nuove in una lezione.
 QString fuseMessage(const QString &file, int number, const QString &date, const QStringList &sources, const QStringList &important = {});

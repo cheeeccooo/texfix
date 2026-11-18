@@ -1,6 +1,7 @@
 #pragma once
 #include <QDate>
 #include <QList>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 
@@ -22,10 +23,6 @@ QList<Lesson> lessons(const QString &document);        // vuoto: il documento no
 QStringList macros(const QString &preamble);           // le definizioni dell'autore (\newcommand, \DeclareMathOperator…)
 QDate dateIn(const QString &heading);                  // «Lezione del 20 ottobre 2026», «20/10/2026»; non valida se non c'è
 
-// Le lezioni del file che il corso non ha ancora: have sono le date delle lezioni del corso (GG/MM/AAAA), una per
-// lezione; se il corso ha una lezione del 10/11 e il file due, manca la seconda.
-QList<Lesson> missing(const QList<Lesson> &lessons, const QStringList &have);
-
 struct Ref {
     QString path;                          // il file, senza «@…»
     QDate date;                            // non valida: tutto il file
@@ -34,6 +31,13 @@ struct Ref {
 QString spec(const QString &file, const QDate &date, int nth = 1);
 Ref parseSpec(const QString &spec);
 QString label(const Ref &ref);                         // «lezione del 10/11/2026», «seconda lezione del 10/11/2026»; vuoto senza data
+
+// Quanto di un testo sta in un altro, senza modello: le sequenze di quattro parole di `part` (senza comandi, formule e
+// commenti) che si ritrovano in `whole`, da 0 a 1. Una lezione convertita da un .tex ne tiene il 30-60%; due lezioni
+// diverse, sullo stesso argomento, meno del 3%.
+QSet<QString> shingles(const QString &latex);
+double contained(const QSet<QString> &part, const QSet<QString> &whole);
+constexpr double CONTAINED = 0.15;                     // da qui in su il testo c'è già
 
 // Ciò che il modello riceve per una lezione (o per tutto il documento, se la data non è valida): le macro dell'autore
 // in testa come commenti, poi il testo.

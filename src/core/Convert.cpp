@@ -6,6 +6,7 @@
 #include "core/Fix.h"
 #include "core/Layout.h"
 #include "core/Model.h"
+#include "core/NewLesson.h"
 #include "core/Pages.h"
 #include "core/Prompts.h"
 #include "core/TexSource.h"
@@ -93,14 +94,12 @@ QList<Convert::Source> Convert::queue(const Project &project)
         if (name.startsWith('.'))
             continue;
         const QString kind = Pages::kindOf(name);
-        if (kind == "tex") {                           // una riga per lezione, in ordine di calendario; quelle che il corso ha già non si elencano
-            const QList<texsource::Lesson> lessons = texsource::lessons(files::read(dir.filePath(name)));
-            QStringList have;
-            for (const tx::Lesson &lesson : project.lessons())
-                have << lesson.date;
-            for (const texsource::Lesson &lesson : texsource::missing(lessons, have))
-                out << Source{texsource::spec("fonti/coda/" + name, lesson.date, lesson.nth), kind, lesson.lines};
-            if (lessons.isEmpty())
+        if (kind == "tex") {                           // una riga per lezione, in ordine di calendario; quelle che il corso ha già
+            const QList<newlesson::TexLecture> lectures = newlesson::texLectures(project, "fonti/coda/" + name);   // o del giorno, no
+            for (const newlesson::TexLecture &t : lectures)
+                if (t.in.isEmpty() && t.sameDate.isEmpty())
+                    out << Source{t.spec, kind, t.lesson.lines};
+            if (lectures.isEmpty())
                 out << Source{"fonti/coda/" + name, kind, Pages::size(dir.filePath(name))};
             continue;
         }

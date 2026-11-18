@@ -61,15 +61,6 @@ QList<Lesson> lessons(const QString &document)
     return out;
 }
 
-QList<Lesson> missing(const QList<Lesson> &all, const QStringList &have)
-{
-    QList<Lesson> out;
-    for (const Lesson &lesson : all)
-        if (have.count(lesson.date.toString("dd/MM/yyyy")) < lesson.nth)
-            out << lesson;
-    return out;
-}
-
 QStringList macros(const QString &preambleText)
 {
     static const RE definition(R"(^[ \t]*\\(?:newcommand|renewcommand|providecommand|DeclareMathOperator|NewDocumentCommand|def|let)\b[^\n]*$)", RE::MultilineOption);
@@ -115,6 +106,30 @@ QString workerText(const QString &document, const QDate &date, int nth)
     for (const QString &macro : macros(preamble(document)))
         head << "% " + macro;
     return head.isEmpty() ? text : "% Macro dell'autore (non si copiano: si scrive nella notazione del progetto)\n" + head.join('\n') + "\n\n" + text;
+}
+
+QSet<QString> shingles(const QString &latex)
+{
+    static const RE comment(R"((?<!\\)%[^\n]*)"), math(R"(\$[^$]*\$)"), command(R"(\\[a-zA-Z]+\*?)"), word(R"(\p{L}{3,})");
+    QString text = latex;
+    text.remove(comment).remove(math).remove(command);
+    QStringList words;
+    for (auto it = word.globalMatch(text.toLower()); it.hasNext();)
+        words << it.next().captured(0);
+    QSet<QString> out;
+    for (qsizetype i = 0; i + 3 < words.size(); ++i)
+        out.insert(words.mid(i, 4).join(' '));
+    return out;
+}
+
+double contained(const QSet<QString> &part, const QSet<QString> &whole)
+{
+    if (part.isEmpty())
+        return 0;
+    qsizetype found = 0;
+    for (const QString &s : part)
+        found += whole.contains(s);
+    return double(found) / double(part.size());
 }
 
 }

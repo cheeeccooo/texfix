@@ -3,6 +3,7 @@
 #include "Workspace.h"
 #include "core/AgentTools.h"
 #include "core/Files.h"
+#include "core/NewLesson.h"
 #include "core/Tools.h"
 
 #include <QCoreApplication>
@@ -190,7 +191,7 @@ void Chat::send(const QString &typed, const QStringList &attachments)
             kept << workspace->project().relative(to);
     }
     if (!kept.isEmpty())
-        text += QStringLiteral("\n\nFile allegati (leggili):\n- ") + kept.join("\n- ");
+        text += QStringLiteral("\n\nFile allegati (leggili):\n- ") + newlesson::forAgent(workspace->project(), kept).join("\n- ");
     if (m_title.isEmpty())
         m_title = typed.simplified().left(48);
     m_messages << QVariantMap{{"role", "user"}, {"text", typed.trimmed()}, {"attachments", kept}};

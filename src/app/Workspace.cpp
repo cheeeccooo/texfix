@@ -42,6 +42,7 @@ using namespace tx;
 
 namespace {
 const char *const STATES = "build/stato-lezioni.json"; // lo stato dell'ultima compilazione di ogni lezione: si rifà
+const char *const PROCEDURES = "salvataggi/procedure.json";   // le procedure dell'agente che aspettano il turno: restano alla chiusura
 
 QString plural(int n, const char *one, const char *many)
 {
@@ -177,6 +178,8 @@ void Workspace::open(const QString &path)
     if (!closed.isEmpty() && closed != m_history->digest())
         m_history->renameFirst(QStringLiteral("Modifiche fuori da Texfix"));
     loadSettings();
+    for (const QJsonValue &v : QJsonDocument::fromJson(files::read(m_project.path(PROCEDURES)).toUtf8()).object().value("in_attesa").toArray())
+        m_agentQueue << v.toString();
 
     const QJsonObject saved = QJsonDocument::fromJson(files::read(m_project.path(STATES)).toUtf8()).object();
     for (auto it = saved.begin(); it != saved.end(); ++it) {
@@ -208,6 +211,7 @@ void Workspace::closeProject()
         m_watcher.removePaths(m_watcher.files());
     if (!m_watcher.directories().isEmpty())
         m_watcher.removePaths(m_watcher.directories());
+    m_agentQueue.clear();                              // sono del progetto: restano nel suo file
     m_project = Project();
     m_compiler.setProject(m_project);
     m_lessons.clear();
@@ -1709,7 +1713,7 @@ void Workspace::acceptVersion(const QString &path, const QString &used, bool isN
     if (lesson.isEmpty())
         sortMaterial({copy});
     else
-        emit agentAsked(newlesson::updateMessage(lesson, copy, previous), QStringLiteral("Versione nuova di %1").arg(QFileInfo(used).fileName()));
+        emit agentAsked(newlesson::updateMessage(lesson, newlesson::forAgent(m_project, {copy}).first(), previous), QStringLiteral("Versione nuova di %1").arg(QFileInfo(used).fileName()));
 }
 
 QString Workspace::createLesson(int number, const QString &date, const QStringList &paths, const QStringList &important)
@@ -1742,7 +1746,7 @@ QString Workspace::createLesson(int number, const QString &date, const QStringLi
         for (const QString &source : sources)
             if (files::bare(QFileInfo(path).fileName()) == files::bare(QFileInfo(source).fileName()))
                 weighty << source;
-    const QString fuse = newlesson::fuseMessage(QStringLiteral("src/src%1.tex").arg(last + 1), number, date, sources, weighty);
+    const QString fuse = newlesson::fuseMessage(QStringLiteral("src/src%1.tex").arg(last + 1), number, date, newlesson::forAgent(m_project, sources), weighty);
     const QString title = QStringLiteral("Lezione %1: fusione delle fonti").arg(number);
     bool pages = sources.size() > 1;
     for (const QString &source : sources)
@@ -1785,7 +1789,7 @@ void Workspace::integrateSources(const QString &lesson, const QStringList &paths
         return say(QStringLiteral("C'è già un lavoro in corso."));
     const QStringList sources = addSources(paths);
     if (!sources.isEmpty())
-        emit agentAsked(newlesson::integrateMessage(lesson, sources), QStringLiteral("Fonti aggiunte a %1").arg(QFileInfo(lesson).completeBaseName()));
+        emit agentAsked(newlesson::integrateMessage(lesson, newlesson::forAgent(m_project, sources)), QStringLiteral("Fonti aggiunte a %1").arg(QFileInfo(lesson).completeBaseName()));
 }
 
 void Workspace::sortMaterial(const QStringList &sources) { sortJob(sources, {}, {}); }
@@ -1828,6 +1832,7 @@ void Workspace::startSortPlan(const QString &id)
         return say(prepared.failure);
     plans::discard(m_project, id);                     // il piano è eseguito da Texfix: l'esito è quello di Converti
     m_agentQueue += prepared.agent;
+    saveProcedures();
     refreshTree();
     if (!prepared.sources.isEmpty())
         convert(prepared.sources, prepared.wanted);    // le lezioni semplici, tutte insieme; poi le procedure dell'agente
@@ -1844,7 +1849,18 @@ void Workspace::nextProcedure()
     for (const plans::Info &info : plans::open(m_project))
         if (info.state != "esito")
             return;                                    // una procedura aspetta che il piano aperto sia deciso ed eseguito
-    emit agentAsked(m_agentQueue.takeFirst(), QStringLiteral("Materiale da sistemare"));
+    const QString next = m_agentQueue.takeFirst();
+    saveProcedures();
+    emit agentAsked(next, QStringLiteral("Materiale da sistemare"));
+}
+
+void Workspace::saveProcedures()
+{
+    if (m_agentQueue.isEmpty())
+        QFile::remove(m_project.path(PROCEDURES));
+    else
+        files::write(m_project.path(PROCEDURES), QString::fromUtf8(QJsonDocument(QJsonObject{{"in_attesa", QJsonArray::fromStringList(m_agentQueue)}}).toJson()));
+    emit jobChanged();
 }
 
 bool Workspace::hasRepository() const { return hasProject() && git::hasRepository(m_project); }
@@ -2206,16 +2222,13 @@ QVariantList Workspace::texAlreadyThere() const
     QVariantList out;
     if (!hasProject())
         return out;
-    QStringList have;
-    for (const Lesson &lesson : m_project.lessons())
-        have << lesson.date;
+    // le lezioni di un .tex con lo stesso giorno di una lezione del corso che non viene da loro: c'è da fonderle
     const QDir dir(m_project.path("fonti/coda"));
     for (const QString &name : dir.entryList({"*.tex"}, QDir::Files, QDir::Name)) {
         QStringList dates;
-        const QList<texsource::Lesson> lessons = texsource::lessons(files::read(dir.filePath(name))), missing = texsource::missing(lessons, have);
-        for (const texsource::Lesson &lesson : lessons)
-            if (!std::any_of(missing.begin(), missing.end(), [&](const texsource::Lesson &m) { return m.date == lesson.date && m.nth == lesson.nth; }))
-                dates << lesson.date.toString("dd/MM/yyyy");
+        for (const newlesson::TexLecture &t : newlesson::texLectures(m_project, "fonti/coda/" + name))
+            if (!t.sameDate.isEmpty())
+                dates << t.lesson.date.toString("dd/MM/yyyy");
         if (!dates.isEmpty())
             out << QVariantMap{{"file", "fonti/coda/" + name}, {"name", name}, {"count", int(dates.size())}, {"dates", dates}};
     }
@@ -2232,7 +2245,7 @@ void Workspace::integrateTex(const QString &file)
             dates = v.toMap().value("dates").toStringList();
     if (dates.isEmpty())
         return;
-    emit agentAsked(QStringLiteral("Il file `%1` ha lezioni che il corso ha già, per data: %2.\n"
+    emit agentAsked(QStringLiteral("Il file `%1` ha lezioni dello stesso giorno di una lezione del corso che non è stata scritta da loro: %2.\n"
                                    "- Per ognuna leggi la parte del file (`\\section{Lezione del …}`) e la lezione del corso con quella data. Porta "
                                    "nella lezione solo ciò che manca o le correzioni, vicino al blocco a cui appartiene; ciò che c'è già non si riscrive.\n"
                                    "- Prima consegna un piano con consegna_piano: una sezione per lezione, una voce per ogni aggiunta.\n"
