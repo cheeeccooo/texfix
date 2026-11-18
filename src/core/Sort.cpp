@@ -321,46 +321,67 @@ Prepared prepare(const Project &project, const QJsonObject &document)
     for (const Lesson &lesson : project.lessons())
         lessonFiles.insert(lesson.number, lesson.file);
 
+    // un pezzo di un PDF diventa un file suo fra le fonti da convertire; se qualcosa non va, i pezzi fatti si tolgono
     int pieceCount = 0;
+    QStringList made;
+    QSet<QString> cutUp;                               // i PDF divisi: alla fine vanno fra le fonti usate
+    auto cut = [&](const QString &name, const QString &source, int from, int to) -> QString {
+        const QString work = project.path(QStringLiteral("build/lavori/smistamento/pezzo%1").arg(++pieceCount));
+        QDir(work).removeRecursively();
+        QDir().mkpath(work);
+        const QString target = files::freeName(project.path(QStringLiteral("fonti/coda/%1 p%2-%3.pdf").arg(QFileInfo(name).completeBaseName()).arg(from).arg(to)));
+        if (!tools::run("pdfseparate", {"-f", QString::number(from), "-l", QString::number(to), project.path(source), work + "/p%04d.pdf"}, work, 120000).ok) {
+            out.failure = QStringLiteral("Non riesco a dividere %1 (serve poppler).").arg(name);
+            return {};
+        }
+        QStringList parts;
+        for (const QString &p : QDir(work).entryList({"p*.pdf"}, QDir::Files, QDir::Name))
+            parts << work + '/' + p;
+        if (parts.size() == 1 ? !QFile::copy(parts.first(), target) : !tools::run("pdfunite", parts + QStringList{target}, work, 120000).ok) {
+            out.failure = QStringLiteral("Non riesco a mettere insieme le pagine di %1.").arg(name);
+            return {};
+        }
+        made << target;
+        cutUp.insert(source);
+        return project.relative(target);
+    };
+    auto fail = [&] {
+        for (const QString &file : std::as_const(made))
+            QFile::remove(file);
+        return Prepared{{}, {}, {}, out.failure};
+    };
+
     for (const QJsonValue &s : document.value("sezioni").toArray()) {
         const QJsonObject group = s.toObject().value("gruppo").toObject();
         QStringList sources, notes;
         for (const QJsonValue &v : s.toObject().value("voci").toArray()) {
             const QJsonObject entry = v.toObject(), piece = entry.value("pezzo").toObject();
-            if (!entry.value("fare").toBool())
-                continue;
             const QString name = piece.value("file").toString(), source = paths.value(name);
             if (source.isEmpty() || !QFileInfo::exists(project.path(source)))
                 continue;
+            const int from = piece.value("from").toInt(), to = piece.value("to").toInt();
+            const bool part = !piece.contains("lezioni") && Pages::kindOf(name) == "pagine" && name.endsWith(".pdf", Qt::CaseInsensitive)
+                              && (from > 1 || to < Pages::size(project.path(source)));
+            if (!entry.value("fare").toBool()) {      // tolto dal piano: un pezzo di un PDF resta da convertire, da solo
+                if (part && cut(name, source, from, to).isEmpty())
+                    return fail();
+                continue;
+            }
             if (!entry.value("nota").toString().trimmed().isEmpty())
                 notes << QStringLiteral("%1: %2").arg(name, entry.value("nota").toString().trimmed());
-            const int from = piece.value("from").toInt(), to = piece.value("to").toInt();
             if (piece.contains("lezioni")) {          // le lezioni di un .tex: si indicano, il file resta com'è
                 for (const QJsonValue &spec : piece.value("lezioni").toArray())
                     sources << spec.toString();
                 continue;
             }
-            if (Pages::kindOf(name) != "pagine" || !name.endsWith(".pdf", Qt::CaseInsensitive) || (from <= 1 && to >= Pages::size(project.path(source)))) {
+            if (!part) {
                 sources << source;                     // il file intero
                 continue;
             }
-            // un pezzo di un PDF diventa un file suo fra le fonti da convertire
-            const QString work = project.path(QStringLiteral("build/lavori/smistamento/pezzo%1").arg(++pieceCount));
-            QDir(work).removeRecursively();
-            QDir().mkpath(work);
-            const QString target = files::freeName(project.path(QStringLiteral("fonti/coda/%1 p%2-%3.pdf").arg(QFileInfo(name).completeBaseName()).arg(from).arg(to)));
-            if (!tools::run("pdfseparate", {"-f", QString::number(from), "-l", QString::number(to), project.path(source), work + "/p%04d.pdf"}, work, 120000).ok) {
-                out.failure = QStringLiteral("Non riesco a dividere %1 (serve poppler).").arg(name);
-                return out;
-            }
-            QStringList parts;
-            for (const QString &p : QDir(work).entryList({"p*.pdf"}, QDir::Files, QDir::Name))
-                parts << work + '/' + p;
-            if (parts.size() == 1 ? !QFile::copy(parts.first(), target) : !tools::run("pdfunite", parts + QStringList{target}, work, 120000).ok) {
-                out.failure = QStringLiteral("Non riesco a mettere insieme le pagine di %1.").arg(name);
-                return out;
-            }
-            sources << project.relative(target);
+            const QString target = cut(name, source, from, to);
+            if (target.isEmpty())
+                return fail();
+            sources << target;
         }
         if (sources.isEmpty())
             continue;
@@ -384,6 +405,11 @@ Prepared prepare(const Project &project, const QJsonObject &document)
             out.agent << newlesson::fuseMessage(QStringLiteral("src/src%1.tex").arg(++lastFile + int(out.sources.size())), n, date, named)
                              + (notes.isEmpty() ? QString() : "\nIstruzioni dell'utente: " + notes.join("; "));
         }
+    }
+    // un PDF diviso non resta fra quelle da convertire accanto ai suoi pezzi
+    for (const QString &source : std::as_const(cutUp)) {
+        QDir().mkpath(project.path("fonti/usate/divise"));
+        QFile::rename(project.path(source), files::freeName(project.path("fonti/usate/divise/" + QFileInfo(source).fileName())));
     }
     return out;
 }

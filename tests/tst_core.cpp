@@ -4,6 +4,7 @@
 #include "core/Compiler.h"
 #include "core/Convert.h"
 #include "core/NewLesson.h"
+#include "core/Pages.h"
 #include "core/Plans.h"
 #include "core/Profiles.h"
 #include "core/Provenance.h"
@@ -1191,6 +1192,32 @@ private slots:
         o = sort::plan(p, Settings(), {"fonti/coda/A.md", "fonti/coda/B.md"}, &control, sort::previousPlan(plan));
         QVERIFY(files::read(dir.filePath("richiesta")).contains("YOUR PREVIOUS PLAN, WITH THE USER'S INSTRUCTIONS"));
         qunsetenv("TEXFIX_CLAUDE");
+    }
+
+    // «Avvia» con un PDF diviso: i pezzi vanno fra le fonti da convertire (anche quello tolto dal piano), l'originale fra le usate.
+    void sortPdfPieces()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        files::write(dir.filePath("s.tex"), "\\documentclass{article}\\begin{document}Uno\\newpage Due\\newpage Tre\\newpage Quattro\\end{document}\n");
+        QVERIFY(tools::run("pdflatex", {"-interaction=nonstopmode", "s.tex"}, dir.path(), 60000).ok);
+        QVERIFY(QFile::copy(dir.filePath("s.pdf"), p.path("fonti/coda/S.pdf")));
+        auto entry = [](bool doIt, int from, int to) {
+            return QJsonObject{{"fare", doIt}, {"pezzo", QJsonObject{{"file", "S.pdf"}, {"from", from}, {"to", to}}}};
+        };
+        const QJsonObject plan{{"file", QJsonArray{"fonti/coda/S.pdf"}}, {"sezioni", QJsonArray{
+            QJsonObject{{"gruppo", QJsonObject{{"dest", "new"}, {"date", "05/10/2026"}}}, {"voci", QJsonArray{entry(true, 1, 2)}}},
+            QJsonObject{{"gruppo", QJsonObject{{"dest", "new"}, {"date", "06/10/2026"}}}, {"voci", QJsonArray{entry(false, 3, 4)}}}}}};
+        const sort::Prepared prepared = sort::prepare(p, plan);
+        QCOMPARE(prepared.failure, QString());
+        QCOMPARE(prepared.sources, QStringList{"fonti/coda/S p1-2.pdf"});
+        QVERIFY(prepared.agent.isEmpty());
+        QCOMPARE(Pages::size(p.path("fonti/coda/S p1-2.pdf")), 2);
+        QCOMPARE(Pages::size(p.path("fonti/coda/S p3-4.pdf")), 2);
+        QVERIFY(!QFileInfo::exists(p.path("fonti/coda/S.pdf")));
+        QVERIFY(QFileInfo::exists(p.path("fonti/usate/divise/S.pdf")));
     }
 
     // Aggiungi materiale con un .tex di un altro autore: le sue lezioni, senza quelle che il corso ha già, sono le «pagine».

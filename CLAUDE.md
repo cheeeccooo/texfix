@@ -57,7 +57,7 @@ Due parti, un processo solo.
 | `core/AgentTools` | gli strumenti che l'app dà all'agente (`stato_progetto`, `compila_lezione`, `compila_documento`, `dubbi`, `impagina`), il protocollo a righe (MCP) e il prompt di sistema dell'agente |
 | `core/Plans` | i lavori con un piano: `salvataggi/lavori/<nome>/piano.json` (voci con spunta e istruzioni, domande, commento, esito); l'agente consegna piano ed esito con gli strumenti `consegna_piano` e `consegna_esito`; l'archivio in `salvataggi/esiti/` |
 | `core/NewLesson` | numero e data proposti o letti dai nomi e dal testo delle fonti (senza modello); i file portati in `fonti/coda`; `settle` chiude una lezione scritta dall'agente (documento, marcatori, fonti usate: lo strumento `chiudi_lezione`); i messaggi delle procedure di fusione e integrazione |
-| `core/Sort` | Aggiungi materiale: data e argomento di ogni pagina (una chiamata per file, tenuta in `build/lavori/smistamento/`; di un `.tex` le sue lezioni che il corso non ha, senza modello), poi una chiamata con le lezioni del corso; il piano (tipo «materiale») e `prepare`, che divide i PDF in pezzi e dice che cosa si converte e che cosa passa dall'agente |
+| `core/Sort` | Aggiungi materiale: data e argomento di ogni pagina (una chiamata per file, tenuta in `build/lavori/smistamento/`; di un `.tex` le sue lezioni che il corso non ha, senza modello), poi una chiamata con le lezioni del corso; il piano (tipo «materiale») e `prepare`, che divide i PDF in pezzi (anche quelli tolti dal piano restano da convertire; l'originale va in `fonti/usate/divise/`) e dice che cosa si converte e che cosa passa dall'agente |
 | `core/Git` | il version control dell'utente: modifiche, differenze, commit di tutto, cronologia (chiama `git`) |
 | `core/Reorganize` | Riorganizza: le sezioni del corso (fra un `\subsection` e il successivo), gli argomenti proposti dal modello, la scrittura di un file per argomento e il ritorno a un file per lezione, tutti e due del programma; resta uguale il contenuto riga per riga, o non si tocca niente |
 | `core/TexSource` | le fonti `.tex` di altri autori: le lezioni per data (`\section{Lezione del …}`), le macro dell'autore, il testo per il modello; una lezione si indica con `file.tex@AAAA-MM-GG` (la seconda dello stesso giorno `@AAAA-MM-GG.2`); `missing`: quelle che il corso non ha ancora |
@@ -259,7 +259,7 @@ A confronto con la vecchia app sulle stesse pagine (`../prova-texfix`, src4.pdf 
 riquadri, stesso numero di definizioni e di figure; la nuova dà titoli alle sezioni, mette in un riquadro
 un'osservazione che la vecchia lasciava in prosa, e non va a capo nel sorgente. Simili, non uguali.
 
-**§5 Prove.** `./build.sh prove` (49 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
+**§5 Prove.** `./build.sh prove` (50 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
 spesso, contro `tests/misure.txt`; `--scrivi` li riscrive). Dei riferimenti della vecchia app sono portate le formule in display vere (`tests/dati/display.json`), per la mossa
 sulle formule; il resto dipende da prompt e stile, che qui sono cambiati per scelta.
 
