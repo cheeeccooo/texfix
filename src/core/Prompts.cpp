@@ -73,9 +73,10 @@ Output exactly two fenced blocks and nothing else:
 "units": one entry per top-level environment of the list you open (nested ones excluded), plus "text" for significant plain passages, in order. "page" is the P number of the page. "box": the figure's position on its page as fractions 0-1, origin top-left, generous. "doubts": only what a person must decide looking at the source, nothing you could settle from the context or the mathematics. "what": the question, in Italian, at most 15 words. "latex": a short excerpt of your fragment, copied verbatim (at most one line, unique in the fragment), that contains your reading. "readings": 2 or 3 possible readings in Italian, yours first; each with "latex", the same excerpt as it would be written with that reading (for yours, identical to "latex").
 )").arg(stem, figure, envs.join(", ")).replace("@PREFIXES@", style.prefixes().join(", "));
 
-    const QStringList sections = faithful ? QStringList{"notazione", "riquadri", "sorgente", "larghezza"}
-                                          : QStringList{"scrittura", "aggiunte", "riquadri", "notazione", "rimandi", "sorgente", "larghezza"};
-    p += QStringLiteral("\nEDITORIAL RULES\n\n") + rules::forPrompt(sections, settings.rules);
+    const QStringList sections = faithful ? QStringList{"notazione", "riquadri", "rimandi", "sorgente", "larghezza", "impaginazione"}
+                                          : QStringList{"scrittura", "controlli", "aggiunte", "riquadri", "notazione", "rimandi", "sorgente",
+                                                        "larghezza", "impaginazione"};
+    p += QStringLiteral("\nEDITORIAL RULES\n\n") + rules::forPrompt(sections, settings.profile);
     p += QStringLiteral("\n\nDOCUMENT STYLE\n\n") + style.forPrompt();
     return p;
 }

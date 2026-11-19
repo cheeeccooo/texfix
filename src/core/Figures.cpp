@@ -238,7 +238,7 @@ What the program needs (binding):
 - Output only one ```latex block containing exactly one tikzpicture environment, at most %1 wide.
 - The document loads TikZ and pgfplots with the libraries arrows.meta, calc, angles, quotes, intersections: no positioning, decorations, patterns or shapes. Never write \usepackage or \usetikzlibrary. If the figure needs a TikZ-based package of its own (a circuit: circuitikz), declare it with a comment line `% package: circuitikz` as the first line inside the tikzpicture.
 )").arg("0.95\\linewidth")
-           + "\nEDITORIAL RULES\n\n" + rules::forPrompt({"figure"}, settings.rules) + "\n\nDOCUMENT STYLE\n\n" + style.forPrompt();
+           + "\nEDITORIAL RULES\n\n" + rules::forPrompt({"figure"}, settings.profile) + "\n\nDOCUMENT STYLE\n\n" + style.forPrompt();
 }
 
 QString draw(const Project &project, const Settings &settings, const Style &style, Model &model, Figure figure, const QString &pageImage,

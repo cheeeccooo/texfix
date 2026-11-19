@@ -7,8 +7,7 @@ Questo file descrive il codice com'è: si aggiorna insieme al codice.
 ## Comandi
 
 ```sh
-tools/nuova-prova.sh [cartella] [profilo]   # ricrea il progetto di prova (../prova-texfix-nuovo) con lo stile styles;
-                                           # con «profilo» salva il primo profilo di partenza fra i dati veri
+tools/nuova-prova.sh [cartella]   # ricrea il progetto di prova (../prova-texfix-nuovo) con lo stile styles
 ./install.sh | install.bat    # installa ciò che manca (dice prima che cosa), compila, prova; poi avvia, update, uninstall
 ./build.sh                    # configura (la prima volta) e compila in build/, al massimo 4 processi (macOS, Linux)
 ./build.sh prove              # compila e lancia le prove del motore (build/texfix_tests)
@@ -53,8 +52,8 @@ Due parti, un processo solo.
 | `core/Compiler` | latexmk: il documento, o una lezione da sola con il main ridotto; avanzamento, «Ferma», sorveglianza |
 | `core/SyncTex` | il salto sorgente ↔ PDF, con il programma `synctex` e il `.synctex.gz` accanto al PDF |
 | `core/History` | la cronologia del progetto: passi in memoria, contenuti in `build/cronologia/`, buttati alla chiusura |
-| `core/Settings` | `salvataggi/progetto.json`: le cinque scelte del progetto, le regole del progetto, lo stile, le lezioni fatte |
-| `core/Rules` | le regole editoriali: predefinite (`regole/editoriali/*.md`, dentro il programma) → Preferenze → progetto; `forPrompt` |
+| `core/Settings` | `salvataggi/progetto.json`: le cinque scelte del progetto, lo stile, il programma del corso, le lezioni fatte; e il profilo del progetto (`Project::PROFILE`, letto con le impostazioni) |
+| `core/Rules` | le regole in due parti: le strutturali (`regole/strutturali/*.md`, dentro il programma, uguali per ogni corso: aggiunte e correzioni, rimandi, figure, sorgente, larghezza, impaginazione) e il formato del profilo (`Profile`: cinque sezioni, «Come si scrive», «Riquadri», «Controlli», «Notazione», «Figure», più le regole in più; un file Markdown); `forPrompt` mette per ogni argomento la strutturale e la sezione del profilo, le regole in più per ultime |
 | `core/Style` | la descrizione di uno stile (ambienti con ruolo e colore, macro, rimandi, figure, convenzioni); `classic()`; `scan` di un `.sty`; i ruoli sono parole libere (`roles()` sono solo i più comuni, con il loro prefisso): ogni ambiente ha il suo prefisso delle etichette (`prefixOf`, `prefixes`, nel prompt della trascrizione); «fulcro» (un riquadro dentro un riquadro: `formula` nelle descrizioni di prima) e «altro» hanno un senso per il programma |
 | `core/StyleSwitch` | importare uno stile nel progetto; cambiare stile riscrivendo le lezioni secondo i ruoli |
 | `core/Job` | `JobControl`: «Ferma», avanzamento e registro di un lavoro che gira in un thread suo; i numeri di chiamate e passi (`nextCall`; ripreso continua dopo i vecchi: `callsAfter`); il limite di utilizzo (`pause`, `checkLimit`: nessuna chiamata nuova parte, `LimitPause`, e il lavoro si ferma da sé; `pausedUntil` dice quando si può riprendere); gli eventi per chi guarda (`onEvent`: chiamate e cantieri) e dove registrare le chiamate (`records`); `Site`, il cantiere del thread; `Step`, un passo che non è una chiamata (lo manda `Compiler::compileSync`, se non è dentro un passo che lo copre); `Stopped`, `LimitReached` (solo senza un lavoro) |
@@ -79,7 +78,7 @@ Due parti, un processo solo.
 | `core/Reorganize` | Riorganizza: le sezioni del corso (fra un `\subsection` e il successivo), gli argomenti proposti dal modello, la scrittura di un file per argomento e il ritorno a un file per lezione, tutti e due del programma; resta uguale il contenuto riga per riga, o non si tocca niente. `startByTopic` (un progetto che nasce per argomento) e `place` (una lezione nuova in un argomento, con `\lezione{N}{data}` davanti); `anchor`: gli argomenti nuovi di uno stesso piano vanno nell'ordine del piano, anche se le lezioni sono pronte in disordine |
 
 | `core/TexSource` | le fonti `.tex` di altri autori: le lezioni per data (`\section{Lezione del …}`), le macro dell'autore, il testo per il modello; una lezione si indica con `file.tex@AAAA-MM-GG` (la seconda dello stesso giorno `@AAAA-MM-GG.2`); `shingles` e `contained`: quanto del testo di una lezione sta in un'altra, senza modello; `gist`: il titolo e l'inizio di ogni sezione, quello che il modello dello smistamento vede del corso e delle lezioni dei `.tex` |
-| `core/Profiles` | i profili di partenza: stile (il `.sty` e la descrizione), impostazioni e regole del progetto salvati con un nome fra i dati del programma (`profili/<nome>/`); un progetto nuovo può partire da lì |
+| `core/Profiles` | i profili: i predefiniti (Neutro, Scientifico, Umanistico, in `profili/` dentro il programma), la libreria dell'utente (fra i dati del programma, `profili/<nome>.profilo.md`), la copia del progetto (`salvataggi/profilo.md`): cambiata resta del progetto; `saveToLibrary` con un nome unico (anche fra i predefiniti), importa, esporta, togli; un progetto nuovo parte dal Neutro, uno di prima riceve `myprofile` (le regole di prima, `profili/myprofile.profilo.md`) con le sue regole del progetto, e `keepMine` lo mette anche nella libreria |
 | `core/Provenance` | i tag di provenienza (D5): le fonti con la loro sigla e, per ogni blocco con una fonte nel marcatore, dove cade nel PDF (SyncTeX). Niente nel documento: li disegna la vista del PDF |
 | `app/Chat` | la chat: il CLI `claude` chiuso nel progetto (file sì, shell no, nessuna impostazione dell'utente), messaggi in streaming, strumenti eseguiti dal motore in un thread; `Texfix --strumenti <nome>` è il passacarte fra il CLI e il programma, su un canale locale; storico in `salvataggi/chat/` |
 | `app/Workspace` | il progetto aperto per la finestra (singleton QML): lezioni con lo stato, avvisi, PDF, compilazione; il lavoro di «Avvia» per la sua finestra (`run`, `runCall`, da `runEvent`; `vista.json` per la riapertura) |
@@ -145,13 +144,17 @@ rileggere gli editor senza modifiche in sospeso; una rilettura svuota la pila de
 
 ## Regole e stile (SPEC §4)
 
-- **Regole editoriali**: otto sezioni neutre rispetto allo stile (parlano di ruoli, «un'osservazione», non di nomi di
-  ambienti). Le Preferenze le mostrano impaginate, le fanno modificare e riportare al predefinito; quelle cambiate
-  stanno in `~/Library/Application Support/Texfix/Texfix (nuovo)/regole/<id>.md`.
+- **Regole strutturali**: ciò che serve a Texfix per funzionare, in `regole/strutturali/` (sorgente, rimandi,
+  larghezza, figure, aggiunte e correzioni, impaginazione): uguali per ogni corso, non si cambiano.
+- **Profilo**: le regole editoriali di un corso, cinque sezioni che parlano di ruoli e non di nomi di ambienti, più le
+  regole in più (quelle che erano le regole del progetto). Un progetto ne ha una copia; la si cambia (oggi dalle
+  Preferenze, sezione per sezione: `Workspace::ruleSections`, `setRuleText`, `resetRule` che rimette la sezione del
+  profilo da cui viene) senza toccare la libreria.
 - **Stile**: `Workspace::style()` è la descrizione dello stile del progetto. Da lì vengono i colori di begin ed end
   nell'editor (`Theme::readable` li rende leggibili sullo sfondo) e, con `Style::forPrompt`, le convenzioni per i
   prompt. Cambiare stile (`styleswitch::apply`) è un passo solo della cronologia.
-- I prompt si compongono da tre parti: strutturale (nel codice), `rules::forPrompt`, `Style::forPrompt`.
+- I prompt si compongono da tre parti: strutturale (nel codice), `rules::forPrompt` (strutturali e profilo),
+  `Style::forPrompt`.
 
 ## Stato
 

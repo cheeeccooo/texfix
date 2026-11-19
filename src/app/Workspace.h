@@ -115,7 +115,7 @@ public:
     QString pausedUntil() const;
     bool offline() const { return m_offline; }
     bool pausedForConnection() const { return m_pauseConnection; }
-    QStringList projectRules() const { return m_settings.rules; }
+    QStringList projectRules() const { return m_settings.profile.extra; }
     void setProjectRules(const QStringList &rules);
     QString styleName() const { return m_style.name; }
     QString breakCommand() const { return m_style.breakCommand; }

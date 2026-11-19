@@ -101,7 +101,7 @@ Return only JSON: [{"card": <n>, "old": "<the whole text paragraph of the card, 
 - Mathematics stays identical: same formulas and symbols. You may move an inline formula into a display or split a display into align*, never change it.
 - Never use \newpage, \linebreak, \vspace, \hspace, font-size commands or \resizebox. Keep the subject of the sentence and the connectives that introduce a formula.
 - `old` must be copied exactly from src and occur once in the file. Never include marker lines (`% @…`).
-)") + "\nEDITORIAL RULES\n\n" + rules::forPrompt({"larghezza"}, settings.rules);
+)") + "\nEDITORIAL RULES\n\n" + rules::forPrompt({"larghezza", "notazione"}, settings.profile);
 }
 
 // Le sostituzioni esatte di una risposta: applicate solo se il testo vecchio c'è una volta sola e non tocca un marcatore.

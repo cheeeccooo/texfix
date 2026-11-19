@@ -156,7 +156,7 @@ QString Workspace::newProject(const QString &path, const QString &profile, bool 
         return error;
     QString problem;
     if (!profile.isEmpty())
-        problem = profiles::apply(Project(path), profile);
+        problem = profiles::setForProject(Project(path), profile);
     if (byTopic)
         reorganize::startByTopic(Project(path));
     open(path);
@@ -165,23 +165,30 @@ QString Workspace::newProject(const QString &path, const QString &profile, bool 
     return {};
 }
 
-QStringList Workspace::profiles() const { return profiles::list(); }
+QStringList Workspace::profiles() const { return profiles::builtin() + profiles::library(); }
 
 QString Workspace::saveProfile(const QString &name)
 {
-    const QString error = profiles::save(m_project, name);
-    if (error.isEmpty())
-        say(QStringLiteral("Profilo «%1» salvato: un progetto nuovo può partire da qui.").arg(name.trimmed()));
+    const QString error = profiles::saveToLibrary(m_project, name);
+    if (error.isEmpty()) {
+        loadSettings();
+        say(QStringLiteral("Profilo «%1» salvato nella libreria: un progetto nuovo può partire da qui.").arg(name.trimmed()));
+    }
     return error;
 }
 
-void Workspace::removeProfile(const QString &name) { profiles::remove(name); }
+void Workspace::removeProfile(const QString &name)
+{
+    if (const QString error = profiles::remove(name); !error.isEmpty())
+        say(error);
+}
 
 void Workspace::open(const QString &path)
 {
     closeProject();
     m_project = Project(path);
     m_project.complete();                              // un progetto a cui manca qualcosa si completa da sé
+    profiles::keepMine(m_project);                     // un progetto di prima: le sue regole anche nella libreria
     m_compiler.setProject(m_project);
     m_history = std::make_unique<History>(m_project.root());
     // com'era alla chiusura: se da allora i file sono cambiati, il primo passo lo dice
@@ -709,10 +716,10 @@ void Workspace::setProjectRules(const QStringList &rules)
     for (const QString &rule : rules)
         if (!rule.trimmed().isEmpty())
             clean << rule.trimmed();
-    if (!hasProject() || clean == m_settings.rules)
+    if (!hasProject() || clean == m_settings.profile.extra)
         return;
-    m_settings.rules = clean;
-    m_settings.save(m_project);
+    m_settings.profile.extra = clean;
+    profiles::saveToProject(m_project, m_settings.profile);
     emit settingsChanged();
 }
 
@@ -731,13 +738,30 @@ void Workspace::setDone(const QString &lesson, bool done)
 QVariantList Workspace::ruleSections() const
 {
     QVariantList out;
-    for (const rules::Section &s : rules::sections())
-        out << QVariantMap{{"id", s.id}, {"title", s.title}, {"text", s.text}, {"custom", s.custom}};
+    const rules::Profile origin = profiles::load(m_settings.profile.name);
+    for (const rules::Heading &h : rules::profileSections()) {
+        const QString id = QString::fromUtf8(h.id), text = m_settings.profile.sections.value(id);
+        out << QVariantMap{{"id", id}, {"title", QString::fromUtf8(h.title)}, {"text", text}, {"custom", text != origin.sections.value(id)}};
+    }
     return out;
 }
 
-void Workspace::setRuleText(const QString &id, const QString &text) { rules::setText(id, text); }
-void Workspace::resetRule(const QString &id) { rules::reset(id); }
+void Workspace::setRuleText(const QString &id, const QString &text)
+{
+    if (!hasProject() || m_settings.profile.sections.value(id) == text.trimmed())
+        return;
+    m_settings.profile.sections.insert(id, text.trimmed());
+    profiles::saveToProject(m_project, m_settings.profile);
+    emit settingsChanged();
+}
+
+void Workspace::resetRule(const QString &id)
+{
+    bool ok = false;
+    const rules::Profile origin = profiles::load(m_settings.profile.name, &ok);
+    if (ok)
+        setRuleText(id, origin.sections.value(id));
+}
 
 QVariantMap Workspace::importStyle(const QString &styPath)
 {
@@ -2764,7 +2788,7 @@ void Workspace::addProjectRule(const QString &rule)
 {
     if (rule.trimmed().isEmpty())
         return;
-    setProjectRules(m_settings.rules + QStringList{rule.trimmed()});
+    setProjectRules(m_settings.profile.extra + QStringList{rule.trimmed()});
     say(QStringLiteral("Regola del progetto aggiunta."));
 }
 

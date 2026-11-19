@@ -77,9 +77,7 @@ Settings Settings::load(const Project &project)
     const QJsonObject choices = root.value("impostazioni").toObject();
     for (const char *key : KEYS)
         s.setValue(key, choices.value(QLatin1String(key)).toString());   // un valore sconosciuto lascia il predefinito
-    for (const QJsonValue &rule : root.value("regole").toArray())
-        if (!rule.toString().trimmed().isEmpty())
-            s.rules << rule.toString().trimmed();
+    s.profile = rules::Profile::parse(files::read(project.path(Project::PROFILE)));
     s.style = root.value("stile").toString();
     s.topics = root.value("argomenti").toObject();
     s.program = root.value("programma").toString();
@@ -100,7 +98,7 @@ bool Settings::save(const Project &project) const
         choices.insert(QLatin1String(key), value(key));
     for (auto it = done.begin(); it != done.end(); ++it)
         doneObject.insert(it.key(), it.value());
-    QJsonObject root{{"formato", Project::FORMAT}, {"impostazioni", choices}, {"regole", QJsonArray::fromStringList(rules)}, {"fatte", doneObject}};
+    QJsonObject root{{"formato", Project::FORMAT}, {"impostazioni", choices}, {"fatte", doneObject}};
     if (!style.isEmpty())
         root.insert("stile", style);
     if (!topics.isEmpty())

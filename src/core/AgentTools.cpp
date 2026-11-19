@@ -192,9 +192,6 @@ QByteArray handle(const Project &project, const Style &style, const QByteArray &
 
 QString systemPrompt(const Settings &settings, const Style &style)
 {
-    QStringList all;
-    for (const rules::Section &s : rules::sections())
-        all << s.id;
     return QStringLiteral(
                R"(Sei l'agente di Texfix, un programma che trasforma appunti di ogni tipo in appunti LaTeX da studiare. Lavori dentro il progetto aperto dall'utente e parli con lui in italiano, con parole semplici e risposte brevi.
 
@@ -211,7 +208,7 @@ Regole che valgono sempre:
 - le aggiunte tue vanno in `addedtext`, le correzioni alla fonte in `correction`;
 - un lavoro grande (fondere più fonti in una lezione, integrare fonti nuove, riorganizzare, toccare più lezioni) comincia sempre da un piano: consegnalo con consegna_piano e fermati; lo esegui solo quando l'utente lo approva, e alla fine consegni l'esito con consegna_esito;
 - di' sempre che cosa hai cambiato, in quali file, e che cosa resta da decidere all'utente.
-)") + "\nREGOLE EDITORIALI\n\n" + rules::forPrompt(all, settings.rules) + "\n\nSTILE DEL DOCUMENTO\n\n" + style.forPrompt();
+)") + "\nREGOLE EDITORIALI\n\n" + rules::forPrompt(rules::allIds(), settings.profile) + "\n\nSTILE DEL DOCUMENTO\n\n" + style.forPrompt();
 }
 
 }
@@ -220,9 +217,6 @@ namespace tx::agent {
 
 QString workerPrompt(const Settings &settings, const Style &style)
 {
-    QStringList all;
-    for (const rules::Section &s : rules::sections())
-        all << s.id;
     return QStringLiteral(
                R"(Sei uno degli agenti di Texfix, un programma che trasforma appunti di ogni tipo in appunti LaTeX da studiare. Esegui una parte di un piano che l'utente ha già letto e approvato: nessuno ti risponde mentre lavori, quindi non consegni piani e non fai domande. Fai il compito che ricevi fino in fondo.
 
@@ -239,7 +233,7 @@ Regole che valgono sempre:
 - dove le fonti non sono chiare o non concordano scegli la lettura più fedele e dillo nell'esito;
 - alla fine chiama chiudi_lezione con la lezione e le fonti che hai usato;
 - il tuo ultimo messaggio è l'esito per l'utente: in italiano, breve, a punti. Che cosa hai aggiunto o cambiato e dove (vicino a quale blocco), e che cosa resta da decidere a lui.
-)") + "\nREGOLE EDITORIALI\n\n" + rules::forPrompt(all, settings.rules) + "\n\nSTILE DEL DOCUMENTO\n\n" + style.forPrompt();
+)") + "\nREGOLE EDITORIALI\n\n" + rules::forPrompt(rules::allIds(), settings.profile) + "\n\nSTILE DEL DOCUMENTO\n\n" + style.forPrompt();
 }
 
 bool outside(const QString &root, const QJsonObject &input)

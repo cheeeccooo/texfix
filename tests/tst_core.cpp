@@ -104,41 +104,42 @@ private slots:
         QVERIFY(s.setValue("qualita", "massima"));
         QVERIFY(!s.setValue("qualita", "infinita"));
         QVERIFY(!s.setValue("non_esiste", "x"));
-        s.rules = {"I vettori si scrivono con la freccia."};
         s.setDone("src/src1.tex", true);
         QVERIFY(s.save(p));
         const Settings back = Settings::load(p);
         QCOMPARE(back.quality, "massima");
-        QCOMPARE(back.rules, s.rules);
+        QCOMPARE(back.profile.name, "myprofile");                                     // una cartella di prima: le sue regole
         QVERIFY(back.isDone("src/src1.tex"));
         QVERIFY(!back.isDone("src/src2.tex"));
         QVERIFY(Project::isProject(dir.path()));
         QCOMPARE(Settings::choices("scrittura").size(), 2);
     }
 
-    // Le regole editoriali: predefinite, cambiate nelle Preferenze, riportate al predefinito; il progetto in fondo.
+    // Le regole: le strutturali dentro Texfix, il profilo in un file Markdown che si legge e si riscrive uguale; nel
+    // prompt per ogni argomento la strutturale e la sezione del profilo, e le regole in più per ultime.
     void editorialRules()
     {
-        QTemporaryDir dir;
-        rules::setHome(dir.path());
-        QCOMPARE(rules::sections().size(), 8);
-        for (const rules::Section &s : rules::sections()) {
+        QCOMPARE(rules::structural().size(), 6);
+        for (const rules::Section &s : rules::structural())
             QVERIFY2(!s.text.isEmpty(), qPrintable(s.id));
-            QVERIFY(!s.custom);
+        for (const QString &name : profiles::builtin() + QStringList{"myprofile"}) {
+            const rules::Profile p = name == "myprofile" ? rules::Profile::parse(files::read(":/profili/myprofile.profilo.md")) : profiles::load(name);
+            QCOMPARE(p.name, name);
+            for (const rules::Heading &h : rules::profileSections())
+                QVERIFY2(!p.sections.value(h.id).isEmpty(), qPrintable(name + " " + h.id));
+            QCOMPARE(rules::Profile::parse(p.markdown()), p);
         }
-        QVERIFY(rules::setText("sorgente", "Indentazione: 2 spazi."));
-        QVERIFY(rules::section("sorgente").custom);
-        QCOMPARE(rules::section("sorgente").text, "Indentazione: 2 spazi.");
-        QVERIFY(!rules::setText("non_esiste", "x"));
-        const QString prompt = rules::forPrompt({"sorgente", "scrittura"}, {"Mai il passivo."});
-        QVERIFY(prompt.startsWith("## Stile del sorgente\n\nIndentazione: 2 spazi.\n\n## Come si scrive\n\n"));
-        QVERIFY(prompt.endsWith("## Regole di questo progetto\n\nValgono più di tutte le altre.\n\n- Mai il passivo."));
-        QVERIFY(rules::setText("sorgente", rules::defaultText("sorgente") + "\n"));   // uguale alla predefinita: non è più cambiata
-        QVERIFY(!rules::section("sorgente").custom);
-        rules::setText("sorgente", "x");
-        rules::reset("sorgente");
-        QCOMPARE(rules::section("sorgente").text, rules::defaultText("sorgente"));
-        rules::setHome({});
+        QCOMPARE(profiles::builtin(), (QStringList{"Neutro", "Scientifico", "Umanistico"}));
+        rules::Profile p = profiles::load("Scientifico");
+        p.extra = {"Mai il passivo."};
+        QCOMPARE(rules::Profile::parse(p.markdown()).extra, p.extra);
+        const QString prompt = rules::forPrompt({"sorgente", "scrittura", "figure"}, p);
+        QVERIFY(prompt.startsWith("## Stile del sorgente\n\n" + rules::structuralSection("sorgente").text + "\n\n## Come si scrive\n\n"));
+        QVERIFY(prompt.contains("## Figure: dove e come\n\n") && prompt.contains("## Figure\n\n- Grafici di funzioni con pgfplots"));
+        QVERIFY(prompt.endsWith("## Regole di questo corso\n\nValgono più di tutte le altre.\n\n- Mai il passivo."));
+        bool ok = true;
+        rules::Profile::parse("niente titolo\n## Riquadri\nx\n", &ok);
+        QVERIFY(!ok);
     }
 
     void style()
@@ -432,10 +433,9 @@ private slots:
     // I prompt hanno le tre parti, una volta sola ciascuna.
     void promptParts()
     {
-        QTemporaryDir dir;
-        rules::setHome(dir.path());
         Settings s;
-        s.rules = {"Mai il passivo."};
+        s.profile = profiles::load("Neutro");
+        s.profile.extra = {"Mai il passivo."};
         const QString studio = prompts::transcribe("src/src4.tex", s, Style::classic());
         QVERIFY(studio.contains("one fragment of `src/src4.tex`"));
         QVERIFY(studio.contains("\\label{<prefix>:src4-c<chunk>-<word>}"));
@@ -451,7 +451,6 @@ private slots:
         QVERIFY(!faithful.contains("## Come si scrive"));
         QVERIFY(!faithful.contains("\\begin{addedtext}"));
         QVERIFY(prompts::verify(s).contains("strict one-to-one"));
-        rules::setHome({});
     }
 
     // Rivedi: una lettura scelta riscrive il passo, riaprire lo rimette; un'aggiunta si tiene, si toglie, si rimette.
@@ -1926,42 +1925,55 @@ private slots:
         QVERIFY(files::read(p.path("main.tex")).startsWith("\\documentclass[11pt,a4paper]{article}"));
     }
 
-    // I profili di partenza: le scelte di un progetto salvate, e un progetto nuovo che parte da lì.
-    void startingProfiles()
+    // I profili: un progetto nuovo parte dal Neutro; la sua copia cambia senza toccare la libreria; nella libreria un nome
+    // c'è una volta sola; si salva, si esporta, si importa, si toglie; un progetto di prima riceve myprofile.
+    void profileLibrary()
     {
-        QTemporaryDir dir, outside, home;
+        QTemporaryDir dir, home;
         profiles::setHome(home.path());
         const Project first(dir.filePath("primo"));
         QCOMPARE(Project::create(first.root()), QString());
-        files::write(outside.filePath("styles.sty"), "\\ProvidesPackage{styles}\n");
-        styleswitch::import(first, outside.filePath("styles.sty"));
-        QCOMPARE(styleswitch::apply(first, "styles").error, QString());
-        Settings s = Settings::load(first);
-        s.setValue("qualita", "massima");
-        s.rules = {"I vettori con la freccia."};
-        s.setDone("src/src1.tex", true);
-        s.save(first);
-
-        QVERIFY(profiles::list().isEmpty());
-        QVERIFY(!profiles::save(first, " ").isEmpty());
-        QCOMPARE(profiles::save(first, "Come la vecchia Texfix"), QString());
-        QCOMPARE(profiles::list(), QStringList{"Come la vecchia Texfix"});
+        QCOMPARE(profiles::ofProject(first).name, "Neutro");
+        QVERIFY(profiles::library().isEmpty());
+        QCOMPARE(profiles::setForProject(first, "Umanistico"), QString());
+        rules::Profile mine = profiles::ofProject(first);
+        mine.sections["notazione"] = "Le date sempre per esteso.";
+        mine.extra = {"Kant si cita dall'edizione dell'Accademia."};
+        QCOMPARE(profiles::saveToProject(first, mine), QString());
+        QCOMPARE(Settings::load(first).profile, mine);
+        QVERIFY(profiles::load("Umanistico").sections.value("notazione") != "Le date sempre per esteso.");   // la libreria non cambia
+        QVERIFY(!profiles::saveToLibrary(first, "Umanistico").isEmpty());              // un nome di Texfix
+        QVERIFY(!profiles::saveToLibrary(first, " ").isEmpty());
+        QCOMPARE(profiles::saveToLibrary(first, "Filosofia"), QString());
+        QCOMPARE(profiles::library(), QStringList{"Filosofia"});
+        QCOMPARE(profiles::ofProject(first).name, "Filosofia");                         // la copia prende il nome
+        QVERIFY(!profiles::saveToLibrary(first, "filosofia").isEmpty());               // c'è già
+        QCOMPARE(profiles::saveToLibrary(first, "Filosofia", true), QString());        // sostituirlo si può, se si chiede
 
         const Project second(dir.filePath("secondo"));
         QCOMPARE(Project::create(second.root()), QString());
-        QCOMPARE(profiles::apply(second, "Come la vecchia Texfix"), QString());
-        const Settings got = Settings::load(second);
-        QCOMPARE(got.quality, "massima");
-        QCOMPARE(got.rules, QStringList{"I vettori con la freccia."});
-        QCOMPARE(got.style, "styles");
-        QVERIFY(got.done.isEmpty());                                                   // le lezioni fatte non sono una scelta da riusare
-        QVERIFY(QFileInfo::exists(second.path("styles.sty")));
-        QVERIFY(QFileInfo::exists(second.path("styles.stile.json")));
-        QVERIFY(files::read(second.path("texfix.sty")).contains("\\RequirePackage{styles}"));
-        QVERIFY(files::read(second.path("main.tex")).contains("twocolumn"));
-        QVERIFY(!profiles::apply(second, "non esiste").isEmpty());
-        profiles::remove("Come la vecchia Texfix");
-        QVERIFY(profiles::list().isEmpty());
+        QCOMPARE(profiles::setForProject(second, "Filosofia"), QString());
+        QCOMPARE(profiles::ofProject(second).extra, mine.extra);
+        QVERIFY(!profiles::setForProject(second, "non esiste").isEmpty());
+        QCOMPARE(profiles::exportFile(second, dir.filePath("f.profilo.md")), QString());
+        QVERIFY(!profiles::importFile(dir.filePath("f.profilo.md")).isEmpty());        // stesso nome: no
+        QCOMPARE(profiles::remove("Filosofia"), QString());
+        QVERIFY(!profiles::remove("Neutro").isEmpty());
+        QCOMPARE(profiles::importFile(dir.filePath("f.profilo.md")), QString());
+        QCOMPARE(profiles::library(), QStringList{"Filosofia"});
+
+        // un progetto di prima: myprofile, con le sue regole del progetto, e myprofile anche nella libreria
+        const Project old(dir.filePath("vecchio"));
+        QVERIFY(QDir().mkpath(old.path("salvataggi")));
+        files::write(old.path(Project::STATE), "{\"formato\": 1, \"regole\": [\"I vettori con la freccia.\"]}\n");
+        old.complete();
+        const rules::Profile migrated = profiles::ofProject(old);
+        QCOMPARE(migrated.name, "myprofile");
+        QCOMPARE(migrated.extra, QStringList{"I vettori con la freccia."});
+        QVERIFY(migrated.sections.value("notazione").contains("Il grassetto è un tipo"));
+        profiles::keepMine(old);
+        QCOMPARE(profiles::library(), (QStringList{"Filosofia", "myprofile"}));
+        QVERIFY(profiles::load("myprofile").extra.isEmpty());                         // nella libreria senza le regole di quel progetto
         profiles::setHome({});
     }
 

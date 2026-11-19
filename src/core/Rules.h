@@ -1,28 +1,44 @@
 #pragma once
 #include <QList>
+#include <QMap>
 #include <QString>
 #include <QStringList>
 
-// Le regole editoriali: come l'utente vuole i suoi appunti. Una gerarchia sola: le predefinite del programma
-// (regole/editoriali/, dentro il programma), le Preferenze (una sezione alla volta, per tutti i progetti), le regole
-// del progetto (Settings::rules). Le regole strutturali, senza cui il programma non funziona, stanno nel codice.
+// Le regole che arrivano a chi scrive, in due parti.
+// - Le strutturali (regole/strutturali/, dentro il programma): ciò che serve a Texfix per funzionare (sorgente,
+//   rimandi, larghezza, figure, aggiunte e correzioni, impaginazione). Uguali per ogni corso, non si cambiano.
+// - Il profilo: le regole editoriali di un corso (come si scrive, riquadri, controlli, notazione, figure della materia)
+//   e le regole in più. Un progetto ne ha una copia (core/Profiles); qui c'è il suo formato.
 namespace tx::rules {
 
 struct Section {
     QString id, title, text;
-    bool custom = false;                   // cambiata nelle Preferenze
 };
 
-QList<Section> sections();                 // in ordine di lettura, con le Preferenze applicate
-Section section(const QString &id);
-QString defaultText(const QString &id);
-bool setText(const QString &id, const QString &text);   // uguale alla predefinita: torna predefinita
-void reset(const QString &id);
+// Le strutturali, in ordine di lettura; vuota se l'id non è di una strutturale.
+QList<Section> structural();
+Section structuralSection(const QString &id);
 
-// Il blocco delle regole editoriali per un prompt: le sezioni chieste, poi le regole del progetto, che valgono di più.
-QString forPrompt(const QStringList &ids, const QStringList &projectRules);
+// Le sezioni di un profilo: id e titolo, in ordine.
+struct Heading {
+    const char *id, *title;
+};
+const QList<Heading> &profileSections();
+// Tutti gli argomenti, per chi le legge tutte (l'agente): ognuno porta la sua strutturale e la sua sezione del profilo.
+QStringList allIds();
 
-// Dove stanno le sezioni cambiate nelle Preferenze (per le prove: una cartella a parte).
-void setHome(const QString &dir);
+// Un profilo, in un file Markdown: «# Nome», poi una sezione «## Titolo» per ognuna di profileSections(), e «## Regole
+// in più» con una regola per voce («- …»). Una sezione che manca è vuota.
+struct Profile {
+    QString name;
+    QMap<QString, QString> sections;       // id → testo
+    QStringList extra;                     // le regole in più: valgono più di tutte le altre
+    bool operator==(const Profile &) const = default;
+    static Profile parse(const QString &markdown, bool *ok = nullptr);
+    QString markdown() const;
+};
+
+// Il blocco delle regole per un prompt: per ogni id la strutturale e la sezione del profilo, poi le regole in più.
+QString forPrompt(const QStringList &ids, const Profile &profile);
 
 }

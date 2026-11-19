@@ -1,6 +1,7 @@
 #include "core/Project.h"
 
 #include "core/Files.h"
+#include "core/Rules.h"
 #include "core/Tools.h"
 
 #include <QDir>
@@ -135,7 +136,11 @@ QString Project::create(const QString &dir)
         return QStringLiteral("La cartella non è vuota.");
     if (!QDir().mkpath(dir))
         return QStringLiteral("Non riesco a creare la cartella.");
-    Project(dir).complete();
+    const Project project(dir);
+    QDir().mkpath(project.path("salvataggi"));
+    QFile::copy(":/profili/neutro.profilo.md", project.path(PROFILE));
+    QFile::setPermissions(project.path(PROFILE), QFile::ReadOwner | QFile::WriteOwner | QFile::ReadGroup | QFile::ReadOther);
+    project.complete();
     return isProject(dir) ? QString() : QStringLiteral("Non riesco a scrivere nella cartella.");
 }
 
@@ -188,6 +193,15 @@ QStringList Project::complete() const
             if (files::write(path(STATE), QString::fromUtf8(QJsonDocument(state).toJson())))
                 added << style + ".sty";
         }
+    }
+    // un progetto di prima, senza profilo: le regole con cui è stato scritto (myprofile), con le sue in più
+    if (!QFileInfo::exists(path(PROFILE))) {
+        rules::Profile mine = rules::Profile::parse(files::read(":/profili/myprofile.profilo.md"));
+        for (const QJsonValue &rule : state.value("regole").toArray())
+            if (!rule.toString().trimmed().isEmpty())
+                mine.extra << rule.toString().trimmed();
+        if (files::write(path(PROFILE), mine.markdown()))
+            added << QString::fromUtf8(PROFILE);
     }
     // texfix.sty è del programma: se non è quello di questa versione e di questo stile, lo riscrive
     QStringList packages;

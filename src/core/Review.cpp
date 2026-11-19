@@ -359,8 +359,8 @@ QString decide(const Project &project, const Settings &settings, Model &model, c
         "mathematics around the passage, and decide what is written. Return only a JSON object: {\"latex\": \"<the excerpt as it should be "
         "written: one of the candidate readings, another one if none fits, or exactly the current one if it is already right>\", "
         "\"why\": \"<Italian, one short sentence: what you saw that decides it>\"}. Change nothing but the uncertain symbols.");
-    if (!settings.rules.isEmpty())
-        system += "\nRules of this project, which win over everything else:\n- " + settings.rules.join("\n- ");
+    if (!settings.profile.extra.isEmpty())
+        system += "\nRules of this course, which win over everything else:\n- " + settings.profile.extra.join("\n- ");
     const QJsonObject answer = Model::json(model.ask("decide", system, parts, id)).toObject();
     const QString wanted = answer.value("latex").toString(), why = answer.value("why").toString().trimmed();
     if (wanted.isEmpty())

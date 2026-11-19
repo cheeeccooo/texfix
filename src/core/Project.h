@@ -28,6 +28,9 @@ public:
     static constexpr const char *PACKAGE = "texfix.sty";
     // Lo stile di un progetto che non ne ha uno (quelli di prima): il documento classico, article con amsthm.
     static constexpr const char *DEFAULT_STYLE = "science_default";
+    // Il profilo del progetto, la sua copia (core/Profiles). Un progetto nuovo parte dal Neutro; uno di prima, senza,
+    // riceve all'apertura «myprofile» (le regole con cui è stato scritto) con le sue regole del progetto in più.
+    static constexpr const char *PROFILE = "salvataggi/profilo.md";
     static constexpr const char *STATE = "salvataggi/progetto.json";
     static constexpr int FORMAT = 1;
 

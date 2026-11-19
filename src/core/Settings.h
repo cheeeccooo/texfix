@@ -1,4 +1,5 @@
 #pragma once
+#include "core/Rules.h"
 #include "core/Project.h"
 
 #include <QJsonObject>
@@ -16,7 +17,7 @@ struct Settings {
     QString scanFigures = "ridisegna";     // figure delle scansioni: ridisegna | ritaglia
     QString texFigures = "tieni";          // figure dei .tex: tieni | ridisegna
     QString layout = "da_sola";            // impaginazione: da_sola (dopo Converti) | a_richiesta
-    QStringList rules;                     // le regole del progetto, una per voce
+    rules::Profile profile;                // il profilo del progetto (Project::PROFILE): le regole editoriali del corso
     QString style;                         // lo stile importato (<nome>.sty nella radice); vuoto: nessuno
     QStringList packages;                  // i pacchetti che le figure chiedono oltre lo stile (circuitikz…)
     QStringList carried;                   // le definizioni delle macro dello stile di prima che le lezioni usano ancora
