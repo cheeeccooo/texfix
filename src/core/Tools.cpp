@@ -35,8 +35,13 @@ QStringList extraPaths()
     return {"/Library/TeX/texbin", "/opt/homebrew/bin", "/usr/local/bin", home + "/.local/bin"};
 #elif defined(Q_OS_WIN)
     const QString local = qEnvironmentVariable("LOCALAPPDATA"), programs = qEnvironmentVariable("ProgramFiles");
-    QStringList out{home + "/.local/bin", local + "/Programs/MiKTeX/miktex/bin/x64", programs + "/MiKTeX/miktex/bin/x64",
-                    programs + "/Git/cmd", qEnvironmentVariable("APPDATA") + "/npm"};
+    QStringList out{home + "/.local/bin", local + "/Microsoft/WinGet/Links", local + "/Programs/MiKTeX/miktex/bin/x64",
+                    programs + "/MiKTeX/miktex/bin/x64", programs + "/Git/cmd", programs + "/Git/bin", programs + "/Pandoc",
+                    qEnvironmentVariable("APPDATA") + "/npm"};
+    // Poppler di winget: la sua cartella ha la versione nel nome
+    for (const QString &dir : QDir(local + "/Microsoft/WinGet/Packages").entryList({"oschwartz10612.Poppler_*"}, QDir::Dirs))
+        for (const QString &version : QDir(local + "/Microsoft/WinGet/Packages/" + dir).entryList({"poppler-*"}, QDir::Dirs, QDir::Name | QDir::Reversed))
+            out << local + "/Microsoft/WinGet/Packages/" + dir + "/" + version + "/Library/bin";
     for (const QString &year : QDir("C:/texlive").entryList({"20*"}, QDir::Dirs, QDir::Name | QDir::Reversed))
         out << "C:/texlive/" + year + "/bin/windows" << "C:/texlive/" + year + "/bin/win64";
     for (QString &p : out)

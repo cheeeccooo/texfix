@@ -1,0 +1,119 @@
+# Compila e prova Texfix sui tre sistemi a ogni push e a ogni pull request: gli installer (che mostrano il piano e
+# rispondono no), il motore con le sue prove, e il programma aperto senza mani su un progetto nuovo, con la foto.
+name: build
+
+on: [push, pull_request, workflow_dispatch]
+
+env:
+  QT_VERSION: 6.12.0
+  # aqtinstall al commit che conosce la disposizione dei file di Qt 6.11+ su Windows (come install.sh e install.ps1)
+  AQT_SOURCE: git+https://github.com/miurahr/aqtinstall.git@5a49f2b391ae8ee1d3c0dd87f8b33c1d49a4deb7
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            qt_arch: clang_64
+            app: build/Texfix.app/Contents/MacOS/Texfix
+            tests: build/texfix_tests
+          - os: ubuntu-latest
+            qt_arch: linux_gcc_64
+            app: build/Texfix
+            tests: build/texfix_tests
+          - os: windows-latest
+            qt_arch: win64_msvc2022_64
+            app: build/Release/Texfix.exe
+            tests: build/Release/texfix_tests.exe
+    runs-on: ${{ matrix.os }}
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QT_QUICK_BACKEND: software
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Controllo dell'installer (mostra il piano e risponde no)
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then echo n | pwsh -NoProfile -File install.ps1; else echo n | ./install.sh; fi
+      # L'aggiornamento vuole un branch che segue GitHub: con un tag o una pull request git non è su un branch, e lì
+      # si ferma apposta. Si prova solo quando si fa push su un branch
+      - name: Controllo dell'aggiornamento (risponde no)
+        if: github.event_name == 'push' && github.ref_type == 'branch'
+        shell: bash
+        run: |
+          git fetch --quiet --unshallow || true
+          git branch --set-upstream-to="origin/${GITHUB_REF_NAME}" || true
+          if [ "$RUNNER_OS" = Windows ]; then pwsh -NoProfile -File update.ps1 </dev/null; else ./update.sh </dev/null; fi
+      - name: Controllo della disinstallazione (risponde no)
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then pwsh -NoProfile -File uninstall.ps1 </dev/null; else ./uninstall.sh </dev/null; fi
+
+      - name: Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: ${{ matrix.qt_arch }}
+          modules: qtpdf
+          aqtsource: ${{ env.AQT_SOURCE }}
+          cache: true
+
+      - name: TeX Live
+        uses: TeX-Live/setup-texlive-action@v4
+        with:
+          packages: |
+            scheme-basic
+            collection-latexrecommended
+            collection-latexextra
+            collection-pictures
+            collection-fontsrecommended
+            collection-langitalian
+            latexmk
+            synctex
+            preview
+            plex
+            raleway
+            fontaxes
+            mweights
+
+      - name: Poppler (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      - name: Poppler (macOS)
+        if: runner.os == 'macOS'
+        run: brew install poppler
+      - name: Poppler (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/oschwartz10612/poppler-windows/releases/download/v26.09.0-0/Release-26.09.0-0.zip -OutFile poppler.zip
+          Expand-Archive poppler.zip -DestinationPath $env:RUNNER_TEMP\poppler
+          $bin = Get-ChildItem "$env:RUNNER_TEMP\poppler" -Recurse -Directory -Filter bin | Where-Object { Test-Path "$($_.FullName)\pdftoppm.exe" } | Select-Object -First 1
+          $bin.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Configura
+        shell: bash
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+      - name: Compila
+        run: cmake --build build --config Release --parallel 4
+      - name: Prove del motore
+        shell: bash
+        run: ${{ matrix.tests }}
+      - name: Il programma, senza mani (un progetto nuovo, compilato)
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          export TEXFIX_PREFERENZE="$RUNNER_TEMP/preferenze.ini" TEXFIX_DATI="$RUNNER_TEMP/dati"
+          ${{ matrix.app }} --foto foto-${{ runner.os }}.png --dimensione 1200x800 --gesti "nuovo $RUNNER_TEMP/prova; tutto"
+          test -s foto-${{ runner.os }}.png
+          test -s "$RUNNER_TEMP/prova/build/main.pdf"
+      - name: La foto
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: foto-${{ runner.os }}
+          path: foto-*.png
+          if-no-files-found: ignore

@@ -1,0 +1,7 @@
+# Su Windows git converte i fine riga: i sorgenti, le regole e gli stili restano con LF (le prove li confrontano),
+# gli script di Windows con CRLF.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.png binary
+*.pdf binary

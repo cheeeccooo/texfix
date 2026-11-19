@@ -9,7 +9,8 @@ Questo file descrive il codice com'è: si aggiorna insieme al codice.
 ```sh
 tools/nuova-prova.sh [cartella] [profilo]   # ricrea il progetto di prova (../prova-texfix-nuovo) con lo stile styles;
                                            # con «profilo» salva il primo profilo di partenza fra i dati veri
-./build.sh                    # configura (la prima volta) e compila in build/, al massimo 4 processi
+./install.sh | install.bat    # installa ciò che manca (dice prima che cosa), compila, prova; poi avvia, update, uninstall
+./build.sh                    # configura (la prima volta) e compila in build/, al massimo 4 processi (macOS, Linux)
 ./build.sh prove              # compila e lancia le prove del motore (build/texfix_tests)
 ./build.sh misure [--scrivi]  # misura i tempi di ciò che l'interfaccia rifà spesso (build/texfix_bench)
 ./build.sh avvia [cartella]   # compila e apre il programma
@@ -17,7 +18,19 @@ build/Texfix.app/Contents/MacOS/Texfix <cartella> --foto f.png [--gesti "apri sr
 build/Texfix.app/Contents/MacOS/Texfix --strumenti-progetto <cartella>   # gli strumenti dell'agente di un lavoro (li lancia `claude`)
 ```
 
-Dipendenze: `brew install cmake qtbase qtdeclarative qtwebengine` (QtPdf), MacTeX. Niente Python, da nessuna parte.
+Dipendenze: Qt 6.8+ con QtPdf e Qt Quick, CMake, TeX (latexmk, synctex), Poppler, git, claude; sul Mac
+`brew install cmake qtbase qtdeclarative qtwebengine` e MacTeX. Niente Python nel programma; gli installer lo usano solo
+per scaricare Qt (aqtinstall, in `.strumenti/`) dove non c'è un pacchetto: Windows e le distribuzioni Linux vecchie.
+
+## Sistemi
+
+macOS, Linux e Windows, con una CI (`.github/workflows/build.yml`) che su tutti e tre compila con Qt 6.12, lancia le prove,
+prova gli installer rispondendo «no» e apre il programma senza mani su un progetto nuovo (`QT_QPA_PLATFORM=offscreen`).
+Ciò che cambia da un sistema all'altro sta in `core/Tools` (processi, PATH, immagini e documenti), in
+`Workspace::revealFile`, nel nome del canale locale (`main.cpp`) e in `Theme::keys` (le scorciatoie scritte «⌘» sul Mac,
+«Ctrl+» altrove; nel codice le scorciatoie sono `Ctrl`, che Qt fa diventare ⌘ sul Mac). Su Windows uno script senza
+estensione (i finti modelli delle prove) lo esegue lo `sh` di Git. Gli installer seguono quelli di Studify: piano,
+conferma, `.installati` per la disinstallazione.
 
 ## Architettura
 
@@ -34,7 +47,7 @@ Due parti, un processo solo.
 | Modulo | Che cosa fa |
 |---|---|
 | `core/Files` | letture; scritture sicure (`QSaveFile`); nomi liberi «nome (2)» |
-| `core/Tools` | il PATH dei programmi esterni; processi a capo di un gruppo (`ownGroup`, `stopGroup`: lui e i figli) |
+| `core/Tools` | il PATH dei programmi esterni (con le cartelle di TeX, Homebrew, Git, claude di ogni sistema); `start` (su Windows uno script passa da `sh`, un `.cmd` da `cmd`); processi a capo di un gruppo (`ownGroup`, `stopGroup`: lui e i figli; su Windows `taskkill /T`); immagini e documenti per il modello (`imageToPng`, `imageToPdf`, `documentText`: sips e textutil sul Mac, Qt e pandoc altrove) |
 | `core/Project` | il progetto su disco: crea, adotta una cartella, completa ciò che manca; la regola delle lezioni (`inputs`) |
 | `core/TexLog` | gli avvisi di un `.log`: errori con file e riga, righe troppo larghe o vuote |
 | `core/Compiler` | latexmk: il documento, o una lezione da sola con il main ridotto; avanzamento, «Ferma», sorveglianza |
