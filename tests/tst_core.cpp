@@ -147,7 +147,7 @@ private slots:
         QCOMPARE(classic.environmentFor("teorema"), "theorem");
         QCOMPARE(classic.environmentFor("attenzione"), QString());
         QVERIFY(classic.undecided().isEmpty());
-        QVERIFY(classic.forPrompt().contains("- Definizione: `definition`, titolo opzionale"));
+        QVERIFY(classic.forPrompt().contains("- Definizione: `definition`, etichetta `\\label{def:…}`, titolo opzionale"));
         QVERIFY(classic.forPrompt().contains("\\cref{etichetta}"));
 
         const QString sty = "\\definecolor{defgreen}{RGB}{164,225,174} % \\newtcolorbox{finto}\n"
@@ -182,6 +182,52 @@ private slots:
         QVERIFY(s.forPrompt().endsWith("Il fulcro va in evidenza."));
         Style::load(dir.filePath("manca.json"), &ok);
         QVERIFY(!ok);
+    }
+
+    // I ruoli sono parole libere con il loro prefisso: si caricano e si salvano uguali, arrivano al prompt, e due stili con
+    // un ruolo in comune si accoppiano senza domande.
+    void freeRoles()
+    {
+        QTemporaryDir dir;
+        files::write(dir.filePath("a.stile.json"), R"({"formato": 1, "nome": "a", "ambienti": [
+            {"nome": "maxbox", "ruolo": "massima", "prefisso": "mas"},
+            {"nome": "thmbox", "ruolo": "teorema"},
+            {"nome": "notebox", "ruolo": "osservazione", "prefisso": ""},
+            {"nome": "eqbox", "ruolo": "formula"}]})");
+        bool ok = false;
+        const Style a = Style::load(dir.filePath("a.stile.json"), &ok);
+        QVERIFY(ok);
+        QCOMPARE(a.prefixOf(*a.environment("maxbox")), "mas");
+        QCOMPARE(a.prefixOf(*a.environment("thmbox")), "thm");                       // senza prefisso: quello del ruolo
+        QCOMPARE(a.prefixOf(*a.environment("notebox")), "");                         // detto vuoto: nessuno
+        QCOMPARE(a.environment("eqbox")->role, "fulcro");                            // le descrizioni di prima
+        QVERIFY(!a.boxes().contains("eqbox"));
+        QCOMPARE(a.prefixes(), (QStringList{"mas", "thm", "fig", "eq"}));
+        QVERIFY(a.forPrompt().contains("- Massima: `maxbox`, etichetta `\\label{mas:…}`"));
+        QVERIFY(a.save(dir.filePath("b.stile.json")));
+        const Style again = Style::load(dir.filePath("b.stile.json"), &ok);
+        QCOMPARE(again.prefixOf(*again.environment("notebox")), "");
+        QCOMPARE(again.prefixOf(*again.environment("thmbox")), "thm");
+        QCOMPARE(again.prefixes(), a.prefixes());
+        const QString prompt = prompts::transcribe("src/src1.tex", Settings(), a);
+        QVERIFY2(prompt.contains("(prefixes mas, thm, fig, eq:"), qPrintable(prompt.section("Labels:", 1, 1).left(200)));
+
+        // due stili con un ruolo in comune: le lezioni si riscrivono senza domande
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QCOMPARE(styleswitch::apply(p, "prose_default").error, QString());
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/a.tex}\n\\end{document}"));
+        files::write(p.path("src/a.tex"), "\\begin{thesis}[Il cogito]\nPenso.\n\\end{thesis}\n\\begin{passage}[Cartesio]\nx\n\\end{passage}\n");
+        files::write(p.path("mia.sty"), "\\ProvidesPackage{mia}\n\\RequirePackage{amsthm}\n\\newtheorem{thesisbox}{Tesi}\n\\newenvironment{quotebox}[1][]{}{}\n");
+        files::write(p.path("mia.stile.json"), R"({"formato": 1, "nome": "mia", "ambienti": [
+            {"nome": "thesisbox", "ruolo": "tesi", "prefisso": "tes"}, {"nome": "quotebox", "ruolo": "citazione", "prefisso": "cit"}]})");
+        QVERIFY(styleswitch::orphans(p, "mia").isEmpty());
+        const styleswitch::Outcome o = styleswitch::apply(p, "mia");
+        QCOMPARE(o.error, QString());
+        QCOMPARE(o.unmatched, QStringList());
+        QCOMPARE(files::read(p.path("src/a.tex")), "\\begin{thesisbox}[Il cogito]\nPenso.\n\\end{thesisbox}\n\\begin{quotebox}[Cartesio]\nx\n\\end{quotebox}\n");
     }
 
     // Ogni progetto ha uno stile: uno di prima, senza, riceve all'apertura lo stile predefinito delle materie scientifiche

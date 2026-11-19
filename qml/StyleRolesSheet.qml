@@ -5,7 +5,7 @@ import QtQml.Models
 import Texfix
 
 // Le domande all'importazione di uno stile: a che cosa serve ogni ambiente trovato nel .sty. Il ruolo proposto viene
-// dal nome; l'utente conferma o cambia.
+// dal nome (o dal modello); l'utente conferma, ne sceglie uno dei più comuni o ne scrive uno suo («massima»).
 TxSheet {
     id: root
     title: "Lo stile «" + styleName + "»: a che cosa serve ogni ambiente?"
@@ -26,7 +26,7 @@ TxSheet {
         for (const r of roles)
             if (r.value === role)
                 return r.label
-        return "Da decidere"
+        return role === "" ? "Da decidere" : role.charAt(0).toUpperCase() + role.slice(1)
     }
     function setRole(index, role) {
         const copy = environments.slice()
@@ -36,7 +36,7 @@ TxSheet {
 
     TxLabel {
         Layout.fillWidth: true
-        text: "Texfix userà ogni ambiente per il suo ruolo. Ciò che non serve agli appunti (ambienti di servizio dello stile) è «Niente di questo»."
+        text: "Texfix userà ogni ambiente per il suo ruolo: a che cosa serve, in una parola. Se nessuno dei più comuni va bene, scrivine uno («massima», «caso clinico»). Ciò che non serve agli appunti (ambienti di servizio dello stile) è «Niente di questo»."
         color: Theme.textMuted
         wrapMode: Text.WordWrap
         elide: Text.ElideNone
@@ -51,7 +51,15 @@ TxSheet {
             spacing: Theme.gap
             Rectangle { implicitWidth: 10; implicitHeight: 10; radius: 5; color: row.modelData.color !== "" ? row.modelData.color : "transparent"; border.width: row.modelData.color !== "" ? 0 : 1; border.color: Theme.border }
             TxLabel { Layout.fillWidth: true; text: row.modelData.name; font.family: Theme.monoFamily }
+            TxTextArea {                               // un ruolo scritto a mano
+                visible: roleMenu.writing === row.index
+                Layout.preferredWidth: 180
+                minHeight: Theme.rowHeight
+                placeholder: "il ruolo"
+                onEdited: root.setRole(row.index, text.trim().toLowerCase())
+            }
             TxButton {
+                visible: roleMenu.writing !== row.index
                 text: root.labelOf(row.modelData.role) + "  ▾"
                 primary: row.modelData.role === ""
                 onClicked: { roleMenu.index = row.index; roleMenu.popup() }
@@ -61,6 +69,8 @@ TxSheet {
     Menu {
         id: roleMenu
         property int index
+        property int writing: -1                       // la riga in cui si scrive un ruolo
+        MenuItem { text: "Un altro ruolo…"; onTriggered: roleMenu.writing = roleMenu.index }
         Instantiator {
             model: root.roles
             delegate: MenuItem {

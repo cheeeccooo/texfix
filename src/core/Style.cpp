@@ -15,11 +15,14 @@ namespace tx {
 
 QList<Style::Role> Style::roles()
 {
-    return {{"definizione", "Definizione"},   {"assioma", "Assioma"},           {"teorema", "Teorema"},
-            {"proposizione", "Proposizione"}, {"lemma", "Lemma"},               {"corollario", "Corollario"},
-            {"dimostrazione", "Dimostrazione"}, {"osservazione", "Osservazione"}, {"esempio", "Esempio"},
-            {"esercizio", "Esercizio"},       {"attenzione", "Avvertenza"},     {"formula", "Formula in evidenza"},
-            {"riquadro", "Riquadro generico"}, {"altro", "Niente di questo"}};
+    return {{"definizione", "Definizione", "def"},   {"concetto", "Concetto", "con"},        {"assioma", "Assioma", "ax"},
+            {"teorema", "Teorema", "thm"},           {"proposizione", "Proposizione", "prop"}, {"lemma", "Lemma", "lem"},
+            {"corollario", "Corollario", "cor"},     {"dimostrazione", "Dimostrazione", ""},   {"tesi", "Tesi", "tes"},
+            {"argomento", "Argomento", "arg"},       {"obiezione", "Obiezione", "obi"},       {"citazione", "Passo citato", "cit"},
+            {"autore", "Autore", "aut"},             {"confronto", "Confronto", "conf"},      {"studio", "Studio", "stu"},
+            {"osservazione", "Osservazione", "rem"}, {"esempio", "Esempio", "ex"},            {"esercizio", "Esercizio", "exr"},
+            {"domanda", "Domanda", "dom"},           {"attenzione", "Avvertenza", ""},        {"fulcro", "Fulcro, dentro un riquadro", ""},
+            {"riquadro", "Riquadro generico", ""},   {"altro", "Niente di questo", ""}};
 }
 
 Style Style::classic()
@@ -56,9 +59,13 @@ Style Style::load(const QString &path, bool *ok)
     s.name = root.value("nome").toString();
     for (const QJsonValue &v : root.value("ambienti").toArray()) {
         const QJsonObject o = v.toObject();
-        s.environments << Environment{o.value("nome").toString(),          o.value("ruolo").toString(),
+        QString role = o.value("ruolo").toString().trimmed();
+        if (role == "formula")                         // le descrizioni di prima: il riquadro dentro un riquadro
+            role = "fulcro";
+        s.environments << Environment{o.value("nome").toString(),          role,
                                       o.value("titolo").toString("opzionale"), o.value("colore").toString(),
-                                      o.value("si_spezza").toBool(true),    o.value("nota").toString()};
+                                      o.value("si_spezza").toBool(true),    o.value("nota").toString(), o.value("prefisso").toString(),
+                                      o.contains("prefisso")};
     }
     for (const QJsonValue &v : root.value("macro").toArray())
         s.macros << Macro{v.toObject().value("nome").toString(), v.toObject().value("significato").toString()};
@@ -75,7 +82,8 @@ bool Style::save(const QString &path) const
 {
     QJsonArray envs, macroArray;
     for (const Environment &e : environments)
-        envs << QJsonObject{{"nome", e.name}, {"ruolo", e.role}, {"titolo", e.title}, {"colore", e.color}, {"si_spezza", e.breaks}, {"nota", e.note}};
+        envs << QJsonObject{{"nome", e.name}, {"ruolo", e.role}, {"prefisso", prefixOf(e)}, {"titolo", e.title}, {"colore", e.color},
+                            {"si_spezza", e.breaks}, {"nota", e.note}};
     for (const Macro &m : macros)
         macroArray << QJsonObject{{"nome", m.name}, {"significato", m.meaning}};
     const QJsonObject root{{"formato", 1},
@@ -111,7 +119,16 @@ QString roleFromName(const QString &name)
         {"^(exercise|eserciz|exr|problem)", "esercizio"},
         {"^(ex|example|esempio)", "esempio"},
         {"^(achtung|warn|attenzione|caution|avvert)", "attenzione"},
-        {"^(eq|formula)", "formula"},
+        {"^(concept|concetto|conc)", "concetto"},
+        {"^(thesis|tesi)", "tesi"},
+        {"^(argument|argomento)", "argomento"},
+        {"^(objection|obiez)", "obiezione"},
+        {"^(quote|quotation|passage|citaz|cit)", "citazione"},
+        {"^(author|autore)", "autore"},
+        {"^(compar|confront)", "confronto"},
+        {"^(question|domanda)", "domanda"},
+        {"^(study|studio|experiment|esperiment)", "studio"},
+        {"^(eq|formula|key|fulcro)", "fulcro"},
         {"^(generic|box|frame|riquadro)", "riquadro"},
     };
     for (const Hint &hint : HINTS)
@@ -251,7 +268,12 @@ QString Style::forPrompt() const
     for (const Environment &e : environments) {
         if (e.role.isEmpty() || e.role == "altro")
             continue;
-        QString line = QStringLiteral("- %1: `%2`").arg(labels.value(e.role, e.role), e.name);
+        QString role = labels.value(e.role, e.role);
+        if (!role.isEmpty())
+            role[0] = role[0].toUpper();
+        QString line = QStringLiteral("- %1: `%2`").arg(role, e.name);
+        if (const QString p = prefixOf(e); !p.isEmpty())
+            line += QStringLiteral(", etichetta `\\label{%1:…}`").arg(p);
         line += e.title == "opzionale" ? QStringLiteral(", titolo opzionale `\\begin{%1}[Titolo]`").arg(e.name) : QStringLiteral(", senza titolo");
         if (!e.breaks)
             line += QStringLiteral(", non si spezza fra le pagine");
@@ -283,9 +305,30 @@ QStringList Style::boxes() const
 {
     QStringList out;
     for (const Environment &e : environments)
-        if (!e.role.isEmpty() && e.role != "altro" && e.role != "formula")
+        if (!e.role.isEmpty() && e.role != "altro" && e.role != "fulcro")
             out << e.name;
     return out;
+}
+
+QString Style::Environment::effectivePrefix() const
+{
+    if (prefixSet || !prefix.trimmed().isEmpty())
+        return prefix.trimmed();
+    for (const Role &r : roles())
+        if (r.value == role)
+            return r.prefix;
+    return {};
+}
+
+QString Style::prefixOf(const Environment &e) const { return e.effectivePrefix(); }
+
+QStringList Style::prefixes() const
+{
+    QStringList out;
+    for (const Environment &e : environments)
+        if (const QString p = prefixOf(e); !p.isEmpty() && boxes().contains(e.name) && !out.contains(p))
+            out << p;
+    return out << QStringLiteral("fig") << QStringLiteral("eq");
 }
 
 QString Style::figureWrapper() const { return figureEnvironment.isEmpty() ? QStringLiteral("center") : figureEnvironment; }

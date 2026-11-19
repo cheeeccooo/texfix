@@ -401,7 +401,7 @@ QString propose(const Project &project, const QString &quality, const QString &n
         return QStringLiteral("Lo stile «%1» non è nel progetto.").arg(name);
     QStringList roles, environments, macros;
     for (const Style::Role &role : Style::roles())
-        roles << QStringLiteral("%1 (%2)").arg(role.value, role.label);
+        roles << (role.prefix.isEmpty() ? role.value : QStringLiteral("%1 (%2)").arg(role.value, role.prefix));
     for (const Style::Environment &env : style.environments)
         environments << env.name;
     for (const Style::Macro &macro : style.macros)
@@ -409,14 +409,18 @@ QString propose(const Project &project, const QString &quality, const QString &n
     const QString system = QStringLiteral(
         "You describe a LaTeX style file (.sty) for a program that writes lecture notes with it. You get the file, the environments and the "
         "macros found in it. Return only a JSON object:\n"
-        "{\"environments\": [{\"name\": \"…\", \"role\": \"<one of the roles>\", \"breaks\": true|false, \"note\": \"<Italian, short: what one must "
-        "know to use it (arguments, nesting); empty if nothing>\"}],\n"
+        "{\"environments\": [{\"name\": \"…\", \"role\": \"<what it is for: one or two Italian words>\", \"prefix\": \"<label prefix, 2-4 lowercase "
+        "letters, or empty>\", \"breaks\": true|false, \"note\": \"<Italian, short: what one must know to use it (arguments, nesting); empty if "
+        "nothing>\"}],\n"
         " \"macros\": [{\"name\": \"\\\\R\", \"meaning\": \"<Italian, a few words>\"}],\n"
         " \"references\": \"cref\"|\"tag\", \"figure_environment\": \"<the environment figures go in, or empty>\", "
         "\"caption\": \"<the caption command, or empty for \\\\caption>\",\n"
         " \"conventions\": \"<Italian markdown, short: what the style asks of the writer beyond the catalogue; empty if nothing>\"}\n"
-        "Roles: %1. Use «altro» for service environments that notes never use directly. \"breaks\" is false when the environment cannot "
-        "split across pages. \"references\" is \"tag\" only if the style defines \\tagref. Describe only the listed environments and macros.")
+        "Roles: the role says what the environment is for, in one or two Italian words. Use one of the common ones when it fits (with its "
+        "label prefix): %1; otherwise your own word, with your own prefix (a law course may have «massima», a medicine course «caso "
+        "clinico»). «fulcro» is a box inside another box (a highlighted formula or sentence), «altro» a service environment that notes never "
+        "use directly; these have no prefix, and neither has an environment one does not refer to. \"breaks\" is false when the environment "
+        "cannot split across pages. \"references\" is \"tag\" only if the style defines \\tagref. Describe only the listed environments and macros.")
                                .arg(roles.join(", "));
     Model model(quality, project.root(), control);
     QJsonObject answer;
@@ -432,16 +436,18 @@ QString propose(const Project &project, const QString &quality, const QString &n
     }
     if (cost)
         *cost = model.cost();
-    QStringList valid;
-    for (const Style::Role &role : Style::roles())
-        valid << role.value;
+    static const QRegularExpression prefixShape(R"(^[a-z]{1,6}$)");
     for (const QJsonValue &v : answer.value("environments").toArray()) {
         const QJsonObject o = v.toObject();
         for (Style::Environment &env : style.environments) {
             if (env.name != o.value("name").toString())
                 continue;
-            if (valid.contains(o.value("role").toString()))
-                env.role = o.value("role").toString();
+            if (const QString role = o.value("role").toString().trimmed().toLower(); !role.isEmpty() && role.size() <= 40)
+                env.role = role == "formula" ? QStringLiteral("fulcro") : role;
+            if (const QString prefix = o.value("prefix").toString().trimmed(); prefixShape.match(prefix).hasMatch() || (o.contains("prefix") && prefix.isEmpty())) {
+                env.prefix = prefix;
+                env.prefixSet = true;
+            }
             if (o.contains("breaks"))
                 env.breaks = o.value("breaks").toBool(true);
             env.note = o.value("note").toString().trimmed();

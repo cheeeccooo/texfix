@@ -27,10 +27,7 @@ QString transcribe(const QString &file, const Settings &settings, const Style &s
 {
     const bool faithful = settings.writing == "fedele";
     const QString stem = QFileInfo(file).completeBaseName();
-    QStringList envs;
-    for (const Style::Environment &env : style.environments)
-        if (!env.role.isEmpty() && env.role != "altro" && env.role != "formula")
-            envs << env.name;
+    const QStringList envs = style.boxes();
     const QString figure = style.figureWrapper();
 
     QString p = faithful
@@ -55,7 +52,7 @@ What the program needs (binding):
     p += QStringLiteral(R"(- Write \subsection{...} exactly for the titles given for your chunk, in order, where each starts. Never write \section or \subsubsection.
 - The date that opens the notes is not written (the program writes it with \lezione). Only where another lecture starts in the middle of the notes, write \lezione{}{GG/MM/AAAA} on a line of its own.
 - Use only the environments and macros of the DOCUMENT STYLE below; never invent macros. \begin and \end each on a line of their own.
-- Labels: \label{<prefix>:%1-c<chunk>-<word>} (prefixes def, thm, prop, lem, cor, ex, exr, fig, eq); <chunk> is the chunk number given in the request. Refer only to labels you define in this fragment.
+- Labels: \label{<prefix>:%1-c<chunk>-<word>} (prefixes @PREFIXES@: each environment's own, listed in the DOCUMENT STYLE); <chunk> is the chunk number given in the request. Refer only to labels you define in this fragment.
 - The author's underlines become \textbf{...} or plain text; never \underline.
 - Figures: never draw them. For each drawing or graph write exactly
     \begin{%2} % img F<k>
@@ -74,7 +71,7 @@ Output exactly two fenced blocks and nothing else:
 <the fragment>
 ```
 "units": one entry per top-level environment of the list you open (nested ones excluded), plus "text" for significant plain passages, in order. "page" is the P number of the page. "box": the figure's position on its page as fractions 0-1, origin top-left, generous. "doubts": only what a person must decide looking at the source, nothing you could settle from the context or the mathematics. "what": the question, in Italian, at most 15 words. "latex": a short excerpt of your fragment, copied verbatim (at most one line, unique in the fragment), that contains your reading. "readings": 2 or 3 possible readings in Italian, yours first; each with "latex", the same excerpt as it would be written with that reading (for yours, identical to "latex").
-)").arg(stem, figure, envs.join(", "));
+)").arg(stem, figure, envs.join(", ")).replace("@PREFIXES@", style.prefixes().join(", "));
 
     const QStringList sections = faithful ? QStringList{"notazione", "riquadri", "sorgente", "larghezza"}
                                           : QStringList{"scrittura", "aggiunte", "riquadri", "notazione", "rimandi", "sorgente", "larghezza"};

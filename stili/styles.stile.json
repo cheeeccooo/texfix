@@ -7,31 +7,185 @@
     "ambiente_figura": "tikzgraph",
     "didascalia": "\\figcaption[fig:etichetta]{…} sulla riga subito dopo \\end{tikzgraph}",
     "ambienti": [
-        {"nome": "axiombox", "ruolo": "assioma", "titolo": "opzionale", "colore": "#bea9e7", "si_spezza": true, "nota": ""},
-        {"nome": "definitionbox", "ruolo": "definizione", "titolo": "opzionale", "colore": "#a4e1ae", "si_spezza": true, "nota": ""},
-        {"nome": "lemmabox", "ruolo": "lemma", "titolo": "opzionale", "colore": "#b1c1e0", "si_spezza": true, "nota": ""},
-        {"nome": "propositionbox", "ruolo": "proposizione", "titolo": "opzionale", "colore": "#a4dce0", "si_spezza": true, "nota": ""},
-        {"nome": "theorembox", "ruolo": "teorema", "titolo": "opzionale", "colore": "#f2c091", "si_spezza": true, "nota": ""},
-        {"nome": "corollarybox", "ruolo": "corollario", "titolo": "opzionale", "colore": "#f2c091", "si_spezza": true, "nota": "ha lo stesso contatore dei teoremi"},
-        {"nome": "proofbox", "ruolo": "dimostrazione", "titolo": "nessuno", "colore": "#f0a7ab", "si_spezza": true, "nota": "cita l'enunciato per etichetta, `\\begin{proofbox}[thm:src3-gauss]`, o non prende argomenti; mai un titolo"},
-        {"nome": "remarkbox", "ruolo": "osservazione", "titolo": "opzionale", "colore": "#f1e189", "si_spezza": true, "nota": "il corpo comincia in linea con l'etichetta: non andare a capo dopo"},
-        {"nome": "examplebox", "ruolo": "esempio", "titolo": "opzionale", "colore": "#bdbebf", "si_spezza": true, "nota": "il corpo comincia in linea con l'etichetta: non andare a capo dopo"},
-        {"nome": "exercisebox", "ruolo": "esercizio", "titolo": "opzionale", "colore": "#bdbebf", "si_spezza": true, "nota": ""},
-        {"nome": "achtungbox", "ruolo": "attenzione", "titolo": "nessuno", "colore": "#f4d03f", "si_spezza": true, "nota": "senza argomento una cautela (!), `[!!]` un'ipotesi che non si può togliere o un errore tipico, `[!!!]` ciò che, sbagliato, rovina il seguito; una o due frasi"},
-        {"nome": "eqbox", "ruolo": "formula", "titolo": "nessuno", "colore": "", "si_spezza": false, "nota": ""},
-        {"nome": "genericbox", "ruolo": "riquadro", "titolo": "nessuno", "colore": "", "si_spezza": true, "nota": "prende il colore della cornice: `\\begin{genericbox}{defcolordarkest}`"},
-        {"nome": "singlespace", "ruolo": "altro", "titolo": "nessuno", "colore": "", "si_spezza": true, "nota": ""},
-        {"nome": "addedtext", "ruolo": "altro", "titolo": "nessuno", "colore": "", "si_spezza": true, "nota": ""},
-        {"nome": "correction", "ruolo": "altro", "titolo": "nessuno", "colore": "", "si_spezza": true, "nota": ""},
-        {"nome": "tikzgraph", "ruolo": "altro", "titolo": "nessuno", "colore": "", "si_spezza": false, "nota": ""}
+        {
+            "nome": "axiombox",
+            "ruolo": "assioma",
+            "prefisso": "ax",
+            "titolo": "opzionale",
+            "colore": "#bea9e7",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "definitionbox",
+            "ruolo": "definizione",
+            "prefisso": "def",
+            "titolo": "opzionale",
+            "colore": "#a4e1ae",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "lemmabox",
+            "ruolo": "lemma",
+            "prefisso": "lem",
+            "titolo": "opzionale",
+            "colore": "#b1c1e0",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "propositionbox",
+            "ruolo": "proposizione",
+            "prefisso": "prop",
+            "titolo": "opzionale",
+            "colore": "#a4dce0",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "theorembox",
+            "ruolo": "teorema",
+            "prefisso": "thm",
+            "titolo": "opzionale",
+            "colore": "#f2c091",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "corollarybox",
+            "ruolo": "corollario",
+            "prefisso": "cor",
+            "titolo": "opzionale",
+            "colore": "#f2c091",
+            "si_spezza": true,
+            "nota": "ha lo stesso contatore dei teoremi"
+        },
+        {
+            "nome": "proofbox",
+            "ruolo": "dimostrazione",
+            "prefisso": "",
+            "titolo": "nessuno",
+            "colore": "#f0a7ab",
+            "si_spezza": true,
+            "nota": "cita l'enunciato per etichetta, `\\begin{proofbox}[thm:src3-gauss]`, o non prende argomenti; mai un titolo"
+        },
+        {
+            "nome": "remarkbox",
+            "ruolo": "osservazione",
+            "prefisso": "rem",
+            "titolo": "opzionale",
+            "colore": "#f1e189",
+            "si_spezza": true,
+            "nota": "il corpo comincia in linea con l'etichetta: non andare a capo dopo"
+        },
+        {
+            "nome": "examplebox",
+            "ruolo": "esempio",
+            "prefisso": "ex",
+            "titolo": "opzionale",
+            "colore": "#bdbebf",
+            "si_spezza": true,
+            "nota": "il corpo comincia in linea con l'etichetta: non andare a capo dopo"
+        },
+        {
+            "nome": "exercisebox",
+            "ruolo": "esercizio",
+            "prefisso": "exr",
+            "titolo": "opzionale",
+            "colore": "#bdbebf",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "achtungbox",
+            "ruolo": "attenzione",
+            "prefisso": "",
+            "titolo": "nessuno",
+            "colore": "#f4d03f",
+            "si_spezza": true,
+            "nota": "senza argomento una cautela (!), `[!!]` un'ipotesi che non si può togliere o un errore tipico, `[!!!]` ciò che, sbagliato, rovina il seguito; una o due frasi"
+        },
+        {
+            "nome": "eqbox",
+            "ruolo": "fulcro",
+            "prefisso": "",
+            "titolo": "nessuno",
+            "colore": "",
+            "si_spezza": false,
+            "nota": ""
+        },
+        {
+            "nome": "genericbox",
+            "ruolo": "riquadro",
+            "prefisso": "",
+            "titolo": "nessuno",
+            "colore": "",
+            "si_spezza": true,
+            "nota": "prende il colore della cornice: `\\begin{genericbox}{defcolordarkest}`"
+        },
+        {
+            "nome": "singlespace",
+            "ruolo": "altro",
+            "prefisso": "",
+            "titolo": "nessuno",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "addedtext",
+            "ruolo": "altro",
+            "prefisso": "",
+            "titolo": "nessuno",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "correction",
+            "ruolo": "altro",
+            "prefisso": "",
+            "titolo": "nessuno",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "tikzgraph",
+            "ruolo": "altro",
+            "prefisso": "",
+            "titolo": "nessuno",
+            "colore": "",
+            "si_spezza": false,
+            "nota": ""
+        }
     ],
     "macro": [
-        {"nome": "\\R", "significato": "i reali; così anche `\\N` e `\\Q`. Gli altri insiemi si scrivono `\\mathbb{Z}`, `\\mathbb{C}`"},
-        {"nome": "\\norm", "significato": "la norma, `\\norm{\\vv{u}}_2`: il pedice della norma euclidea si scrive sempre"},
-        {"nome": "\\vv", "significato": "ogni grandezza vettoriale, un simbolo solo: `\\vv{X}'(t)`, `\\vv{e}_1`, `\\vv{\\gamma}(t)`. Sceglie da sé il grassetto giusto; mai `\\mathbf`, `\\vec` o `\\bm` a mano"},
-        {"nome": "\\rot", "significato": "il rotore; `\\diver` la divergenza"},
-        {"nome": "\\Erf", "significato": "la funzione errore"},
-        {"nome": "\\tagref", "significato": "il rimando a un'etichetta, che stampa il suo tag («DEF 1.1.1», «FIG 3»): basta il tag, niente «Figura» o «equazione» scritti a mano"}
+        {
+            "nome": "\\R",
+            "significato": "i reali; così anche `\\N` e `\\Q`. Gli altri insiemi si scrivono `\\mathbb{Z}`, `\\mathbb{C}`"
+        },
+        {
+            "nome": "\\norm",
+            "significato": "la norma, `\\norm{\\vv{u}}_2`: il pedice della norma euclidea si scrive sempre"
+        },
+        {
+            "nome": "\\vv",
+            "significato": "ogni grandezza vettoriale, un simbolo solo: `\\vv{X}'(t)`, `\\vv{e}_1`, `\\vv{\\gamma}(t)`. Sceglie da sé il grassetto giusto; mai `\\mathbf`, `\\vec` o `\\bm` a mano"
+        },
+        {
+            "nome": "\\rot",
+            "significato": "il rotore; `\\diver` la divergenza"
+        },
+        {
+            "nome": "\\Erf",
+            "significato": "la funzione errore"
+        },
+        {
+            "nome": "\\tagref",
+            "significato": "il rimando a un'etichetta, che stampa il suo tag («DEF 1.1.1», «FIG 3»): basta il tag, niente «Figura» o «equazione» scritti a mano"
+        }
     ],
     "convenzioni": "**Il fulcro.** Quando il corpo di un riquadro contiene l'informazione principale (la formula definita, la tesi, il risultato di un esempio), quel fulcro va in un riquadro annidato bianco con il colore della cornice del riquadro madre: `eqbox` per una formula in display, `genericbox` per un elenco o del testo.\n\n```latex\n\\begin{theorembox}[Cauchy-Schwarz]\n    Per ogni $\\vv{u},\\vv{w} \\in \\R^n$ vale:\n    \\begin{eqbox}{thmcolordarkest}\n        \\[ |S(\\vv{u},\\vv{w})| \\le \\norm{\\vv{u}}_S \\norm{\\vv{w}}_S \\]\n    \\end{eqbox}\n\\end{theorembox}\n```\n\nI colori delle cornici sono `axiomcolordarkest`, `defcolordarkest`, `lemcolordarkest`, `propcolordarkest`, `thmcolordarkest`, `proofcolordarkest`, `remcolordarkest`, `excolordarkest`. Definizioni: la formula definitoria; teoremi: la tesi; esempi con un risultato netto: il risultato (i passaggi restano fuori). Un solo livello di annidamento; dentro `eqbox` una sola formula in display (due formule correlate: `gather*`).\n\n**Titoli.** Un titolo con `[` o `]` va sempre fra graffe, o il riquadro si rompe: `\\begin{definitionbox}[{Spazio $C^0[a,b]$}]`.\n\n**Formule.** Nel corpo dei riquadri `\\[...\\]` diventa da solo matematica centrata con spazio fisso; `align*` e `gather*` restano display veri. Le formule riprese si citano con `\\eqref{eq:...}`, che stampa il loro tag.\n\n**Larghezza.** Il documento è su due colonne di circa 9,7 cm: una colonna tiene 55-60 caratteri di testo, e una formula in display oltre i 65-70 caratteri di sorgente va in `align*`.\n\n**Figure.** Ogni figura sta in `tikzgraph`, mai in `figure` o `center`. Colori: `graphblue` per la curva o l'elemento principale e i punti, `graphcyan` per ciò che è secondario, `graphmagenta` per le evidenziazioni, `graphgreen` per percorsi e risultati. Stili: `graphaxis` (assi con la freccia), `graphcurve`, `graphdashed` (costruzioni), `graphlabel` per tutte le etichette. Grafici di funzioni: `\\begin{axis}[graph2d, …]`, superfici `graph3d`."
 }
