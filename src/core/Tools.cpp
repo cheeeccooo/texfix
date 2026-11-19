@@ -85,6 +85,11 @@ void start(QProcess &process, const QString &name, const QStringList &arguments)
 #if defined(Q_OS_WIN)
     // un programma senza estensione è uno script (i finti modelli delle prove): lo esegue sh, quello di Git
     if (QFileInfo(resolved).isFile() && QFileInfo(resolved).suffix().isEmpty()) {
+        // MSYS non deve riscrivere gli argomenti che sembrano percorsi Unix (i prompt ne hanno)
+        QProcessEnvironment env = process.processEnvironment().isEmpty() ? environment() : process.processEnvironment();
+        env.insert("MSYS2_ARG_CONV_EXCL", "*");
+        env.insert("MSYS_NO_PATHCONV", "1");
+        process.setProcessEnvironment(env);
         process.start(program("sh"), QStringList{resolved} + arguments);
         return;
     }
@@ -116,7 +121,6 @@ void stopGroup(qint64 pid)
 #if defined(Q_OS_WIN)
     // Windows non ha gruppi come Unix: taskkill /T ferma lui e l'albero dei suoi figli
     QProcess kill;
-    kill.setProcessChannelMode(QProcess::ForwardedErrorChannel);
     kill.setStandardOutputFile(QProcess::nullDevice());
     kill.setStandardErrorFile(QProcess::nullDevice());
     kill.start("taskkill", {"/F", "/T", "/PID", QString::number(pid)});

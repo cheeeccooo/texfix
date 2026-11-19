@@ -80,16 +80,18 @@ jobs:
             mweights
             ly1
 
-      - name: Poppler (Linux)
+      - name: Poppler e pandoc (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils pandoc
       - name: Poppler (macOS)
         if: runner.os == 'macOS'
         run: brew install poppler
-      - name: Poppler (Windows)
+      - name: Poppler e pandoc (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          choco install pandoc -y --no-progress
+          "$env:ProgramFiles\Pandoc" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           Invoke-WebRequest https://github.com/oschwartz10612/poppler-windows/releases/download/v26.09.0-0/Release-26.09.0-0.zip -OutFile poppler.zip
           Expand-Archive poppler.zip -DestinationPath $env:RUNNER_TEMP\poppler
           $bin = Get-ChildItem "$env:RUNNER_TEMP\poppler" -Recurse -Directory -Filter bin | Where-Object { Test-Path "$($_.FullName)\pdftoppm.exe" } | Select-Object -First 1
@@ -102,7 +104,12 @@ jobs:
         run: cmake --build build --config Release --parallel 4
       - name: Prove del motore
         shell: bash
-        run: ${{ matrix.tests }}
+        run: |
+          set +e
+          ${{ matrix.tests }} -o prove-${{ runner.os }}.txt,txt
+          r=$?
+          cat prove-${{ runner.os }}.txt
+          exit $r
       - name: Il programma, senza mani (un progetto nuovo, compilato)
         shell: bash
         timeout-minutes: 10
@@ -116,5 +123,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: foto-${{ runner.os }}
-          path: foto-*.png
+          path: |
+            foto-*.png
+            prove-*.txt
           if-no-files-found: ignore

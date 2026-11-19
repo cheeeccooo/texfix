@@ -1399,7 +1399,14 @@ private slots:
         QCOMPARE(Project::create(root), QString());
         const Project p(root);
         files::write(dir.filePath("n.txt"), "Appunti sul teorema di Rolle.\n");
+#if defined(Q_OS_MACOS)
         QVERIFY(tools::run("textutil", {"-convert", "docx", "-output", p.path("fonti/coda/n.docx"), dir.filePath("n.txt")}, dir.path(), 60000).ok);
+#else
+        // fuori dal Mac i .docx li legge pandoc: senza, la copia in testo non si può fare
+        if (!tools::run("pandoc", {"--version"}, dir.path()).ok)
+            QSKIP("serve pandoc");
+        QVERIFY(tools::run("pandoc", {"-f", "markdown", "-o", p.path("fonti/coda/n.docx"), dir.filePath("n.txt")}, dir.path(), 60000).ok);
+#endif
         files::write(p.path("fonti/coda/a.tex"), "\\begin{document}\n\\section{Lezione del 3 novembre 2026}\nx\n\\end{document}\n");
         files::write(p.path("fonti/coda/b.md"), "y\n");
         const QStringList named = newlesson::forAgent(p, {"fonti/coda/n.docx", "fonti/coda/a.tex@2026-11-03", "fonti/coda/b.md"});
