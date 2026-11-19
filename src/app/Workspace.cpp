@@ -1340,7 +1340,19 @@ QString Workspace::figurePage(const QString &id) const
     return hasProject() ? pageImageOf(m_project, figures::find(m_project, id), false) : QString();
 }
 
-void Workspace::fixAll(const QString &only)
+QVariantList Workspace::errorLessons() const
+{
+    QVariantList out;
+    if (!hasProject())
+        return out;
+    for (const Lesson &lesson : m_project.lessons())
+        if (m_states.value(lesson.file) == "bad" && !m_settings.isDone(lesson.file))
+            out << QVariantMap{{"file", lesson.file}, {"number", lesson.number},
+                               {"errors", m_details.value(lesson.file).section(' ', 0, 0).toInt()}, {"detail", m_details.value(lesson.file)}};
+    return out;
+}
+
+void Workspace::fixAll(const QString &only, bool errorsOnly)
 {
     if (!hasProject())
         return;
@@ -1349,7 +1361,7 @@ void Workspace::fixAll(const QString &only)
     // le lezioni con errori o righe fuori misura nell'ultima compilazione; quelle fatte si saltano
     QStringList lessons;
     for (const QString &file : m_project.inputs())
-        if ((only.isEmpty() || file == only) && !m_settings.isDone(file) && (m_states.value(file) == "bad" || m_states.value(file) == "warn") && !m_details.value(file).isEmpty())
+        if ((only.isEmpty() || file == only) && !m_settings.isDone(file) && (m_states.value(file) == "bad" || (!errorsOnly && m_states.value(file) == "warn")) && !m_details.value(file).isEmpty())
             lessons << file;
     if (lessons.isEmpty())
         return say(QStringLiteral("Non c'è niente da sistemare."));

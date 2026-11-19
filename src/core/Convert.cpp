@@ -19,6 +19,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QRegularExpression>
+#include <QSet>
 
 #include <future>
 
@@ -788,21 +789,33 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
         for (const Work &work : std::as_const(works))     // ciò che non è diventato una lezione, con il perché
             if (!work.lesson.failure.isEmpty())
                 site(work, QStringLiteral("Fine"), QStringLiteral("fallita"), {{"motivo", work.lesson.failure}});
-        // un .tex di cui sono state scritte tutte le lezioni va fra le fonti usate
+        // un .tex di cui sono state scritte tutte le lezioni va fra le fonti usate: nella cartella della sua lezione, se
+        // è una sola (un pezzo preparato dallo smistamento), altrimenti in «più lezioni»
         QHash<QString, bool> texDone;
-        for (const Work &work : std::as_const(works))
-            if (work.isTex)
-                texDone[work.path] = texDone.value(work.path, true) && !work.lesson.file.isEmpty();
+        QHash<QString, QSet<int>> texLessons;
+        QSet<QString> written;
+        for (const Work &work : std::as_const(works)) {
+            if (!work.isTex)
+                continue;
+            texDone[work.path] = texDone.value(work.path, true) && !work.lesson.file.isEmpty();
+            if (!work.lesson.file.isEmpty()) {
+                written << work.source;
+                texLessons[work.path] << work.lesson.number;
+            }
+        }
         for (auto it = texDone.begin(); it != texDone.end(); ++it) {
             if (!it.value())
                 continue;
-            bool left = false;                         // restano lezioni di quel file ancora da convertire?
+            bool left = false;                         // restano lezioni di quel file ancora da convertire? (non queste)
             for (const Source &s : queue(m_project))
-                left = left || texsource::parseSpec(s.file).path == it.key();
-            if (!left) {
-                QDir().mkpath(m_project.path("fonti/usate/più lezioni"));
-                QFile::rename(m_project.path(it.key()), files::freeName(m_project.path("fonti/usate/più lezioni/" + QFileInfo(it.key()).fileName())));
-            }
+                left = left || (texsource::parseSpec(s.file).path == it.key() && !written.contains(s.file));
+            if (left)
+                continue;
+            const QSet<int> numbers = texLessons.value(it.key());
+            const QString folder = numbers.size() == 1 && *numbers.begin() > 0 ? QStringLiteral("fonti/usate/lezione %1").arg(*numbers.begin())
+                                                                               : QStringLiteral("fonti/usate/più lezioni");
+            QDir().mkpath(m_project.path(folder));
+            QFile::rename(m_project.path(it.key()), files::freeName(m_project.path(folder + '/' + QFileInfo(it.key()).fileName())));
         }
         // in un progetto per argomento ogni lezione scritta va nel suo argomento (ciò che ha da fare la lezione è fatto)
         for (Work &work : works) {

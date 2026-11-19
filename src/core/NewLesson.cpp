@@ -256,6 +256,17 @@ Version versionOf(const Project &project, const QString &path)
     return out;
 }
 
+Lesson namedBy(const Project &project, const QString &file)
+{
+    static const QRegularExpression marker(R"(^% @L\d+\.\d+ · (.+?)(?: (?:pp?\.|r\.)\s*[\d-]+)?\s*$)", QRegularExpression::MultilineOption);
+    const QString bare = files::bare(QFileInfo(file).fileName());
+    for (const Lesson &lesson : project.lessons())
+        for (auto it = marker.globalMatch(files::read(project.path(lesson.file))); it.hasNext();)
+            if (files::bare(it.next().captured(1)) == bare)
+                return lesson;
+    return {};
+}
+
 QString replaceVersion(const Project &project, const QString &used, const QString &path)
 {
     const QString old = project.path(used);

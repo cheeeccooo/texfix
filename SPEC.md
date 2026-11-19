@@ -286,7 +286,7 @@ Le mosse e le misure sono regole strutturali (§4.1); quanto essere severi è un
 
 ### 3.10 Errori e righe fuori misura
 - **[S]** Righe troppo larghe o troppo vuote: prima le mosse deterministiche, poi il modello. «Sistema» funziona su una lezione o su tutto, e salta le lezioni fatte.
-- **[S]** Errori di compilazione sistemati dal modello.
+- **[S]** Errori di compilazione sistemati dal modello. Quando una lezione non fatta ha errori, nella barra in alto c'è «Risolvi errori» con il conto (il suggerimento dice quali lezioni): sistema le lezioni con errori, non quelle con sole righe fuori misura (decisione del 19/11/2026).
 - **[O]** `Hbox::fixHbox` con schede, proposte, giri; test golden con compilazioni vere.
 
 ### 3.11 Riorganizza

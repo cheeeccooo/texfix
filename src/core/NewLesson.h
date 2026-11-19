@@ -34,6 +34,9 @@ struct Version {
 Version versionOf(const Project &project, const QString &path);
 QString replaceVersion(const Project &project, const QString &used, const QString &path);
 QString updateMessage(const QString &lesson, const QString &source, const QString &previous);   // un compito dell'agente di un lavoro
+// La lezione del corso i cui marcatori dei blocchi nominano un file (con files::bare): un file in arrivo che è già
+// diventato quella lezione (rimasto in coda da un lavoro di prima). Vuoto se nessuna.
+Lesson namedBy(const Project &project, const QString &file);
 
 // Più scansioni o PDF di una lezione che si seguono (lo dice il piano di Aggiungi materiale): unite fa di loro un PDF
 // solo, nell'ordine dato, fra quelli in arrivo, e toglie quelli che ha unito.

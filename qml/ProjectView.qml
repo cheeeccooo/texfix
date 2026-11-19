@@ -417,6 +417,18 @@ Item {
                 }
                 TxButton { text: "▶  File"; hint: "Compila il file aperto (⌘B)"; enabled: !Workspace.compiling; onClicked: root.compileFile() }
                 TxButton { text: "▶▶  Tutto"; hint: Workspace.jobRunning ? "Un lavoro sta usando il documento: aspetta che finisca" : "Compila tutto il documento (⇧⌘B)"; enabled: !Workspace.compiling && !Workspace.jobRunning; onClicked: root.compileDocument() }
+                // con errori nelle lezioni: il modello li corregge (ogni correzione resta solo se, compilata, migliora)
+                TxButton {
+                    readonly property var lessons: Workspace.errorLessons
+                    readonly property int count: lessons.reduce((n, l) => n + Math.max(1, l.errors), 0)
+                    visible: lessons.length > 0
+                    text: "Risolvi errori  " + count
+                    enabled: !Workspace.busy
+                    hint: (Workspace.busy ? "Aspetta che finisca il lavoro in corso.\n" : "")
+                          + lessons.map(l => (l.number > 0 ? "Lezione " + l.number : l.file) + ": " + l.detail).join("\n")
+                          + "\nIl modello propone le correzioni; ognuna resta solo se, compilata, la lezione migliora."
+                    onClicked: { editor.saveAll(); Workspace.fixAll("", true) }
+                }
                 // i «Rivedi» ci sono solo quando c'è qualcosa da decidere
                 TxButton { visible: Workspace.openDoubts > 0; text: "Rivedi dubbi  " + Workspace.openDoubts; hint: "⇧⌘D"; onClicked: root.openFile("rivedi:dubbi") }
                 TxButton { visible: Workspace.openDeclared > 0; text: "Rivedi correzioni  " + Workspace.openDeclared; hint: "⇧⌘E"; onClicked: root.openFile("rivedi:correzioni") }

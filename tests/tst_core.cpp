@@ -1615,6 +1615,31 @@ private slots:
         QVERIFY(files::read(dir.filePath("richieste")).contains("SOURCE TEXT (lines 1-5 of the lecture)"));
         QVERIFY(QFileInfo::exists(p.path("fonti/usate/più lezioni/appunti.tex")));      // tutte le lezioni scritte: la fonte è usata
         QVERIFY(Convert::queue(p).isEmpty());
+
+        // un pezzo preparato dallo smistamento (un .tex senza lezioni datate) va fra le fonti usate della sua lezione
+        files::write(p.path("fonti/coda/labss2 · Rumore.tex"), "\\subsection{Rumore}\nIl rumore termico.\n");
+        qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
+        const Convert::Result piece = Convert(p, Settings::load(p), Style::classic(), &control).run({"fonti/coda/labss2 · Rumore.tex"});
+        qunsetenv("TEXFIX_CLAUDE");
+        QCOMPARE(piece.failure, QString());
+        QCOMPARE(piece.written(), 1);
+        QVERIFY(QFileInfo::exists(p.path("fonti/usate/lezione 3/labss2 · Rumore.tex")));
+        QVERIFY(Convert::queue(p).isEmpty());
+
+        // rimasto in arrivo da un lavoro di prima (che non lo portava fra le usate): lo smistamento lo riconosce senza
+        // modello e «Avvia» lo porta via
+        QVERIFY(QFile::remove(p.path("fonti/usate/lezione 3/labss2 · Rumore.tex")));
+        files::write(p.path("fonti/coda/labss2 · Rumore.tex"), "\\subsection{Rumore}\nIl rumore termico.\n");
+        QCOMPARE(newlesson::namedBy(p, "fonti/coda/labss2 · Rumore.tex").number, 3);
+        qputenv("TEXFIX_CLAUDE", "/nessun/modello");
+        const sort::Outcome sorted = sort::plan(p, Settings::load(p), {"fonti/coda/labss2 · Rumore.tex"}, &control);
+        qunsetenv("TEXFIX_CLAUDE");
+        QVERIFY2(!sorted.plan.isEmpty(), qPrintable(sorted.failure));
+        const QJsonObject leftover = plans::load(p, sorted.plan);
+        QVERIFY(leftover.value("gia").toArray().first().toString().contains("è già la lezione 3"));
+        sort::prepare(p, leftover);
+        QVERIFY(!QFileInfo::exists(p.path("fonti/coda/labss2 · Rumore.tex")));
+        QVERIFY(QFileInfo::exists(p.path("fonti/usate/lezione 3/labss2 · Rumore.tex")));
     }
 
     // La libreria: `styles` è già descritto, quindi si importa senza domande; le due colonne seguono lo stile.

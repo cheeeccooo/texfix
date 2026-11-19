@@ -53,6 +53,9 @@ class Workspace : public QObject {
     Q_PROPERTY(int openDeclared READ openDeclared NOTIFY treeChanged)
     Q_PROPERTY(int openFigures READ openFigures NOTIFY treeChanged)       // le figure ancora da inserire
     Q_PROPERTY(int openLayout READ openLayout NOTIFY treeChanged)         // mosse da rivedere e lezioni da impaginare
+    // Le lezioni non fatte che all'ultima compilazione avevano errori: file, number, errors, detail («1 errore»). Con
+    // loro c'è il tasto «Risolvi errori».
+    Q_PROPERTY(QVariantList errorLessons READ errorLessons NOTIFY treeChanged)
     // Il lavoro in corso (Converti…): uno alla volta. busy: un lavoro o una compilazione.
     Q_PROPERTY(bool jobRunning READ jobRunning NOTIFY jobChanged)
     Q_PROPERTY(QString jobTitle READ jobTitle NOTIFY jobChanged)
@@ -96,6 +99,7 @@ public:
     int openDeclared() const { return m_openDeclared; }
     int openFigures() const { return m_openFigures; }
     int openLayout() const { return m_openLayout; }
+    QVariantList errorLessons() const;
     bool jobRunning() const { return m_jobThread != nullptr; }
     QString jobTitle() const { return m_jobTitle; }
     double jobProgress() const { return m_jobProgress; }
@@ -184,7 +188,8 @@ public:
 
     // «Risolvi tutto»: errori e righe fuori misura delle lezioni non fatte (prima le mosse che non costano, poi il
     // modello), poi compila il documento. Un lavoro, un passo della cronologia.
-    Q_INVOKABLE void fixAll(const QString &only = {});               // only: una lezione sola
+    // only: una lezione sola; errorsOnly: solo le lezioni con errori («Risolvi errori»), non quelle con sole righe.
+    Q_INVOKABLE void fixAll(const QString &only = {}, bool errorsOnly = false);
 
     // Impaginazione. paginate impagina le lezioni non fatte che sono nuove o cambiate (un lavoro, un passo della
     // cronologia). layoutItems: le mosse, lezione per lezione (type lesson | move). decideMove: accettata | lasciata.

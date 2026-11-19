@@ -81,6 +81,10 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
                                         {"titolo", QStringLiteral("%1 è una versione nuova di %2").arg(name, QFileInfo(version.used).fileName())}});
             continue;
         }
+        if (const Lesson owner = newlesson::namedBy(project, rel); !owner.file.isEmpty()) {   // rimasto in arrivo da un lavoro di prima
+            known << QStringLiteral("%1: è già la lezione %2, i suoi blocchi vengono da lì").arg(name).arg(owner.number);
+            continue;
+        }
         if (kind == "altro") {
             out.unread.insert(rel, QStringLiteral("Texfix non sa leggere questo tipo di file"));
             continue;
@@ -510,8 +514,15 @@ Prepared prepare(const Project &project, const QJsonObject &document)
             const QList<newlesson::TexLecture> lectures = newlesson::texLectures(project, file);
             sorted = !lectures.isEmpty() && std::all_of(lectures.begin(), lectures.end(), [](const newlesson::TexLecture &t) { return !t.in.isEmpty(); });
         }
-        if (!sorted)
+        if (!sorted) {                                 // già diventato una lezione: va con le sue fonti
+            if (const Lesson owner = newlesson::namedBy(project, file); !owner.file.isEmpty() && owner.number > 0) {
+                const QString used = project.path(QStringLiteral("fonti/usate/lezione %1").arg(owner.number));
+                QDir().mkpath(used);
+                QFile::rename(project.path(file), files::freeName(used + '/' + QFileInfo(file).fileName()));
+                out.done << QStringLiteral("%1 è già la lezione %2: va fra le sue fonti usate").arg(QFileInfo(file).fileName()).arg(owner.number);
+            }
             continue;
+        }
         QDir().mkpath(project.path("fonti/usate/smistate"));
         QFile::rename(project.path(file), files::freeName(project.path("fonti/usate/smistate/" + QFileInfo(file).fileName())));
         out.done << QStringLiteral("%1 smistato per concetti: l'originale va fra le fonti usate").arg(QFileInfo(file).fileName());
