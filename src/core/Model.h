@@ -42,6 +42,14 @@ public:
     static bool limit(const QString &text, QDateTime *until = nullptr);
     // Quando, per chi legge: «alle 14:30», «domani alle 02:21», «il 21/11 alle 09:00».
     static QString when(const QDateTime &at);
+    // La connessione. offline: un messaggio di rete che manca («Connection error», «ENOTFOUND»…); online: api.anthropic.com
+    // risponde (curl, al più 8 s; TEXFIX_RETE=assente|presente lo decide nelle prove). awaitOnline: aspetta che torni,
+    // guardando ogni 15 s, al più maxMs; false se non torna, se il lavoro si ferma per un altro motivo o senza un lavoro.
+    // Lancia Stopped. Una chiamata senza rete aspetta lì e si rifà; dopo OFFLINE_WAIT il lavoro si ferma come per il limite.
+    static constexpr qint64 OFFLINE_WAIT = 10 * 60 * 1000;
+    static bool offline(const QString &text);
+    static bool online();
+    static bool awaitOnline(JobControl *control, qint64 maxMs = OFFLINE_WAIT);
 
 private:
     QString m_quality, m_directory;

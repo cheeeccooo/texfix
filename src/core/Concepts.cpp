@@ -324,9 +324,13 @@ Survey survey(const Project &project, const QString &quality, const QStringList 
             out.failure += QStringLiteral("%1: %2. ").arg(h.name, h.failure);
         (h.course ? out.course : out.fresh) << h;
     }
-    const QString limited = QStringLiteral("Limite di utilizzo di Claude raggiunto: si può riprendere %1. I concetti già letti restano.");
-    if (control && control->pausedUntil().isValid())   // il limite: un motivo solo, non uno per file
-        out.failure = limited.arg(Model::when(control->pausedUntil()));
+    auto limited = [control] {                         // il limite, o la rete che non torna: un motivo solo, non uno per file
+        return control->pausedForConnection() ? QStringLiteral("Manca la connessione a internet: riprova quando torna. I concetti già letti restano.")
+                                              : QStringLiteral("Limite di utilizzo di Claude raggiunto: si può riprendere %1. I concetti già letti restano.")
+                                                    .arg(Model::when(control->pausedUntil()));
+    };
+    if (control && control->pausedUntil().isValid())
+        out.failure = limited();
     if (!out.fresh.isEmpty() && out.failure.isEmpty()) {
         if (control)
             control->progress(0.9, QStringLiteral("cerco le intersezioni"));
@@ -334,7 +338,7 @@ Survey survey(const Project &project, const QString &quality, const QStringList 
         try {
             out.map = map(model, out.course, out.fresh, byTopic, &failure, previous);
         } catch (const LimitPause &) {
-            failure = limited.arg(Model::when(control->pausedUntil()));
+            failure = limited();
         }
         out.failure = failure;
     }

@@ -3,6 +3,7 @@
 #include "core/Files.h"
 #include "core/Tools.h"
 
+#include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QJsonArray>
@@ -56,7 +57,7 @@ void JobControl::untrack(qint64 pid)
     m_pids.removeAll(pid);
 }
 
-void JobControl::pause(const QDateTime &until, const QString &message)
+void JobControl::pause(const QDateTime &until, const QString &message, bool connection)
 {
     const qint64 at = until.isValid() ? until.toMSecsSinceEpoch() : QDateTime::currentMSecsSinceEpoch() + 30 * 60 * 1000;
     qint64 before = m_pausedUntil.load();
@@ -64,10 +65,26 @@ void JobControl::pause(const QDateTime &until, const QString &message)
     }
     if (at <= before)
         return;                                        // un'altra chiamata l'ha già detto
-    log(QStringLiteral("Limite di utilizzo raggiunto: finisco ciò che è in corso e mi fermo; si può riprendere %1 (%2)")
-            .arg(Model::when(QDateTime::fromMSecsSinceEpoch(at)), message.simplified()));
+    m_pauseConnection.store(connection);
+    if (connection)
+        log(QStringLiteral("Manca la connessione da più di %1 minuti: finisco ciò che è in corso e mi fermo; si riprende quando torna (%2)")
+                .arg(Model::OFFLINE_WAIT / 60000).arg(message.simplified()));
+    else
+        log(QStringLiteral("Limite di utilizzo raggiunto: finisco ciò che è in corso e mi fermo; si può riprendere %1 (%2)")
+                .arg(Model::when(QDateTime::fromMSecsSinceEpoch(at)), message.simplified()));
     if (onPause)
-        onPause(QDateTime::fromMSecsSinceEpoch(at));
+        onPause(QDateTime::fromMSecsSinceEpoch(at), connection);
+}
+
+void JobControl::waitingOnline(bool on)
+{
+    const int now = on ? ++m_waitingOnline : --m_waitingOnline;
+    if (on && now == 1)
+        log(QStringLiteral("Manca la connessione: aspetto che torni, poi rifaccio le chiamate"));
+    if (!on && now == 0 && !m_pausedUntil.load())
+        log(QStringLiteral("La connessione è tornata"));
+    if (onOffline && ((on && now == 1) || (!on && now == 0)))
+        onOffline(on);
 }
 
 void JobControl::checkLimit() const
@@ -185,6 +202,49 @@ bool Model::limit(const QString &text, QDateTime *until)
     return true;
 }
 
+bool Model::offline(const QString &text)
+{
+    static const QRegularExpression said(R"((connection error|unable to connect|could not connect|connection (?:refused|reset|closed)|ECONNREFUSED|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|getaddrinfo|fetch failed|socket hang up|network (?:error|is unreachable)|request timed out))",
+                                         QRegularExpression::CaseInsensitiveOption);
+    return said.match(text).hasMatch();
+}
+
+bool Model::online()
+{
+    if (const QString forced = qEnvironmentVariable("TEXFIX_RETE"); !forced.isEmpty())     // le prove
+        return forced != "assente";
+    // qualunque risposta di api.anthropic.com (anche un errore HTTP) vuol dire che la rete c'è
+    return tools::run("/usr/bin/curl", {"-sS", "-o", "/dev/null", "--max-time", "8", "https://api.anthropic.com"}, QDir::tempPath(), 12000).ok;
+}
+
+bool Model::awaitOnline(JobControl *control, qint64 maxMs)
+{
+    if (!control)
+        return false;                                  // senza un lavoro nessuno può aspettare
+    struct Waiting {
+        JobControl *control;
+        explicit Waiting(JobControl *c) : control(c) { control->waitingOnline(true); }
+        ~Waiting() { control->waitingOnline(false); }
+    } waiting(control);
+    const bool forced = !qEnvironmentVariableIsEmpty("TEXFIX_RETE");
+    const int every = forced ? 200 : 15000;
+    if (forced)
+        maxMs = qMin<qint64>(maxMs, 1000);
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < maxMs) {
+        for (int slept = 0; slept < every; slept += 200) {
+            control->check();
+            if (control->pausedUntil().isValid())      // un'altra chiamata ha già deciso di fermare il lavoro
+                return false;
+            QThread::msleep(200);
+        }
+        if (online())
+            return true;
+    }
+    return false;
+}
+
 Model::Model(const QString &quality, const QString &directory, JobControl *control)
     : m_quality(quality), m_directory(directory), m_control(control)
 {
@@ -284,6 +344,7 @@ QString Model::ask(const QString &stage, const QString &system, const QStringLis
     QJsonObject result;
     bool got = false;
     QString reason;                                    // perché non ha risposto, se non risponde
+    int drops = 0;                                     // le volte che è mancata la connessione
     for (int attempt = 0; attempt < 3 && !(got && !result.value("is_error").toBool()); ++attempt) {
         if (m_control) {
             m_control->check();
@@ -349,6 +410,27 @@ QString Model::ask(const QString &stage, const QString &system, const QStringLis
         }
         if (text.isEmpty())
             got = false;
+        // la connessione che manca non è un errore del modello: si aspetta che torni e la chiamata si rifà, senza
+        // contarla fra i tentativi; se non torna, il lavoro si ferma come per il limite
+        const QString said = (text + '\n' + errors.join('\n')).trimmed();
+        if (!(got && !result.value("is_error").toBool()) && drops < 6 && (offline(said) || !online())) {
+            ++drops;
+            const QString why = said.isEmpty() ? QStringLiteral("nessuna risposta") : said.simplified().left(200);
+            if (!m_control) {
+                report(QStringLiteral("fallita"), {{"motivo", why}});
+                throw std::runtime_error("Manca la connessione a internet: il modello non si raggiunge.");
+            }
+            report(QStringLiteral("connessione"), {{"motivo", why}});
+            if (!awaitOnline(m_control)) {
+                m_control->check();
+                m_control->pause(QDateTime::currentDateTime(), why, true);
+                report(QStringLiteral("limite"), {{"motivo", QStringLiteral("manca la connessione")}, {"connessione", true}});
+                throw LimitPause();
+            }
+            --attempt;
+            got = false;
+            continue;
+        }
         if (got && result.value("is_error").toBool() && !text.trimmed().isEmpty())
             reason = text.trimmed().left(200);
         else if (!errors.isEmpty())

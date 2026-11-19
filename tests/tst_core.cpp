@@ -65,7 +65,11 @@ class CoreTests : public QObject {
     }
 
 private slots:
-    void initTestCase() { tools::adoptPath(); }
+    void initTestCase()
+    {
+        tools::adoptPath();
+        qputenv("TEXFIX_RETE", "presente");            // le prove non guardano la rete vera: un finto modello che sbaglia non è una rete che manca
+    }
 
     void freeName()
     {
@@ -2139,6 +2143,75 @@ private slots:
 
     // Il limite di utilizzo: l'ora di ripresa si legge dal messaggio e si dice «domani alle…»; con un lavoro non è un errore:
     // il lavoro si ferma (LimitPause, l'ora in pausedUntil) e nessuna chiamata nuova parte; senza un lavoro è LimitReached.
+    // La connessione che manca: la chiamata aspetta che torni e si rifà; se non torna, il lavoro si ferma come per il
+    // limite (ma si riprende subito); senza un lavoro è un errore che lo dice.
+    void connectionLost()
+    {
+        QVERIFY(Model::offline("API Error: Connection error."));
+        QVERIFY(Model::offline("getaddrinfo ENOTFOUND api.anthropic.com"));
+        QVERIFY(!Model::offline("La risposta non è un JSON."));
+
+        QTemporaryDir dir;
+        files::write(dir.filePath("rete.json"), QString::fromUtf8(QJsonDocument(QJsonObject{{"type", "result"}, {"is_error", true},
+                     {"result", "API Error: Connection error."}}).toJson(QJsonDocument::Compact)) + '\n');
+        files::write(dir.filePath("bene.json"), QString::fromUtf8(QJsonDocument(QJsonObject{{"type", "result"}, {"result", "ciao"},
+                     {"total_cost_usd", 0.1}}).toJson(QJsonDocument::Compact)) + '\n');
+        // la rete manca finché c'è il file «giu»
+        files::write(dir.filePath("claude"), QString("#!/bin/sh\ncat > /dev/null\nif [ -f '%1/giu' ]; then cat '%1/rete.json'; else cat '%1/bene.json'; fi\n").arg(dir.path()));
+        QFile(dir.filePath("claude")).setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
+
+        // una caduta breve: la rete torna mentre la chiamata aspetta
+        {
+            files::write(dir.filePath("giu"), "x");
+            qputenv("TEXFIX_RETE", "presente");        // la sonda dice che c'è: la chiamata si rifà appena l'ha vista
+            JobControl control;
+            QList<QJsonObject> events;
+            QList<bool> waits;
+            QMutex mutex;
+            control.onEvent = [&](const QJsonObject &e) {
+                QMutexLocker lock(&mutex);
+                events << e;
+                if (e.value("stato").toString() == "connessione")
+                    QFile::remove(dir.filePath("giu"));
+            };
+            control.onOffline = [&](bool on) { QMutexLocker lock(&mutex); waits << on; };
+            QCOMPARE(Model("bilanciata", dir.path(), &control).ask("verify", "x", {"y"}), "ciao");
+            QVERIFY(std::any_of(events.begin(), events.end(), [](const QJsonObject &e) { return e.value("stato").toString() == "connessione"; }));
+            QCOMPARE(waits, (QList<bool>{true, false}));
+            QVERIFY(!control.pausedUntil().isValid());
+        }
+        // la rete non torna: il lavoro si ferma, e lo dice
+        {
+            files::write(dir.filePath("giu"), "x");
+            qputenv("TEXFIX_RETE", "assente");
+            JobControl control;
+            bool connection = false;
+            control.onPause = [&](const QDateTime &, bool c) { connection = c; };
+            bool stopped = false;
+            try {
+                Model("bilanciata", dir.path(), &control).ask("verify", "x", {"y"});
+            } catch (const LimitPause &) {
+                stopped = true;
+            }
+            QVERIFY(stopped);
+            QVERIFY(connection && control.pausedForConnection());
+            QVERIFY(control.pausedUntil().isValid() && control.pausedUntil() <= QDateTime::currentDateTime());
+        }
+        // senza un lavoro: un errore che dice che manca la connessione
+        {
+            QString why;
+            try {
+                Model("bilanciata", dir.path(), nullptr).ask("verify", "x", {"y"});
+            } catch (const std::runtime_error &e) {
+                why = QString::fromUtf8(e.what());
+            }
+            QVERIFY2(why.contains("connessione"), qPrintable(why));
+        }
+        qputenv("TEXFIX_RETE", "presente");
+        qunsetenv("TEXFIX_CLAUDE");
+    }
+
     void usageLimit()
     {
         QDateTime until;
@@ -2170,7 +2243,7 @@ private slots:
         std::atomic<bool> paused{false};
         QList<QJsonObject> events;
         QMutex mutex;
-        control.onPause = [&](const QDateTime &at) { paused = paused || at.isValid(); };
+        control.onPause = [&](const QDateTime &at, bool) { paused = paused || at.isValid(); };
         control.onEvent = [&](const QJsonObject &e) { QMutexLocker lock(&mutex); events << e; };
         QCOMPARE(Model::when(QDateTime::currentDateTime().addDays(1).toLocalTime()).left(11), "domani alle");
         QVERIFY(Model::when(QDateTime(QDate::currentDate().addDays(3), QTime(9, 0))).startsWith("il "));

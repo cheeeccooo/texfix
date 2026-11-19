@@ -18,7 +18,7 @@ struct Stopped : std::exception {
 // Il limite di utilizzo con un lavoro: il lavoro finisce ciò che sta facendo e si ferma (è anche Stopped), da riprendere
 // con un clic quando il limite è passato (JobControl::pausedUntil dice quando).
 struct LimitPause : Stopped {
-    const char *what() const noexcept override { return "limite di utilizzo di Claude raggiunto"; }
+    const char *what() const noexcept override { return "limite di utilizzo di Claude raggiunto, o connessione assente"; }
 };
 // Il modello ha raggiunto il limite di utilizzo e nessun lavoro può aspettarlo (una chiamata senza JobControl): until
 // è l'ora in cui riprende, se il messaggio la dice.
@@ -58,10 +58,18 @@ public:
     // Il limite di utilizzo non è un errore: chi lo incontra lo dice (pause, con l'ora in cui si può riprendere). Da lì
     // nessuna chiamata nuova parte (checkLimit lancia LimitPause), quelle in corso finiscono, e il lavoro si ferma da sé
     // come se fosse stato fermato: si riprende con un clic. onPause: l'ora in cui si può riprendere.
-    void pause(const QDateTime &until, const QString &message);
+    // La connessione che manca è come il limite (connection): ci si ferma allo stesso modo, ma si può riprendere subito.
+    void pause(const QDateTime &until, const QString &message, bool connection = false);
     void checkLimit() const;                           // lancia LimitPause se il limite è stato raggiunto
     QDateTime pausedUntil() const;
-    std::function<void(const QDateTime &)> onPause;
+    bool pausedForConnection() const { return m_pauseConnection.load(); }
+    std::function<void(const QDateTime &, bool connection)> onPause;
+
+    // Le chiamate che aspettano che la connessione torni (Model::awaitOnline): onOffline dice quando comincia la prima
+    // e quando finisce l'ultima.
+    void waitingOnline(bool on);
+    bool offline() const { return m_waitingOnline.load() > 0; }
+    std::function<void(bool)> onOffline;
 
     // Gli eventi per chi guarda il lavoro: una chiamata al modello che parte, scrive, finisce; un cantiere (una lezione
     // che si scrive, una lezione del corso che l'agente completa) che passa di fase. records: dove ogni chiamata lascia
@@ -81,6 +89,8 @@ public:
 private:
     std::atomic<bool> m_stopped{false};
     std::atomic<qint64> m_pausedUntil{0};              // millisecondi dall'epoca; 0: nessuna pausa
+    std::atomic<bool> m_pauseConnection{false};
+    std::atomic<int> m_waitingOnline{0};
     std::atomic<int> m_calls{0};
     QMutex m_mutex;
     QList<qint64> m_pids;

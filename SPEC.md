@@ -176,6 +176,12 @@ sua analisi, un esempio, un esercizio) va dove serve, anche se il file da cui vi
   mezz'ora) e si riprende con un clic. Ciò che è fatto resta, anche una trascrizione non ancora verificata; l'agente
   riprende la sua conversazione. Sotto la barra: il tempo lavorato (senza le soste) e quanto manca, dal ritmo fin qui
   (decisioni del 19/11/2026).
+- **[S]** **Nemmeno la connessione che salta.** Una chiamata (o l'agente) che non raggiunge il modello per la rete lo
+  riconosce dal messaggio o provando a raggiungere il servizio; aspetta lì che la connessione torni, guardando ogni 15
+  secondi, e si rifà senza contarla fra i tentativi (l'agente continua la sua conversazione). Intanto la barra, le
+  Attività e la finestra del lavoro dicono «manca la connessione». Se dopo dieci minuti non è tornata, il lavoro si ferma
+  come per il limite, ma si può riprendere subito; un lavoro senza ripresa (Risolvi errori, lo smistamento) si ferma
+  dicendolo, e ciò che è fatto resta. La chat dice che il messaggio non è stato eseguito (decisione del 19/11/2026).
 
 - **[S]** **In arrivo** (era «Da convertire»): il materiale aspetta in `fonti/coda/` finché un lavoro non lo porta fra le
   fonti usate. Nell'albero c'è solo se c'è qualcosa; un clic apre il file nell'editor, e ogni file dice il suo stato:

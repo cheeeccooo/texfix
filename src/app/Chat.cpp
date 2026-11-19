@@ -268,6 +268,8 @@ void Chat::readOutput()
                 m_answered = true;                     // ha risposto: non è una chat da riprendere da capo
                 add("note", QStringLiteral("Limite di utilizzo di Claude raggiunto: si può riprendere %1. Il messaggio non è stato eseguito: "
                                            "rimandalo dopo.").arg(Model::when(until)));
+            } else if (Model::offline(said)) {
+                add("note", QStringLiteral("Manca la connessione a internet: il messaggio non è stato eseguito. Rimandalo quando torna."));
             } else {
                 add("note", said);
             }

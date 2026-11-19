@@ -129,8 +129,8 @@ Result run(const Project &project, const Settings &settings, const Style &style,
         }
     };
 
-    QString message = session.isEmpty() ? task : QStringLiteral("Il limite di utilizzo ti aveva interrotto: continua il compito da dove eri rimasto. Il compito era:\n\n") + task;
-    int failures = 0;
+    QString message = session.isEmpty() ? task : QStringLiteral("Eri stato interrotto (il limite di utilizzo, o la connessione): continua il compito da dove eri rimasto. Il compito era:\n\n") + task;
+    int failures = 0, drops = 0;
     report(QStringLiteral("in_corso"));
     while (true) {
         if (control) {
@@ -215,6 +215,22 @@ Result run(const Project &project, const Settings &settings, const Style &style,
             out.ok = true;
             out.text = text;
             break;
+        }
+        // la connessione che manca: si aspetta che torni e l'agente continua la sua conversazione; se non torna, il
+        // compito si ferma come per il limite (con la conversazione, per la ripresa)
+        if (const QString said = (text + '\n' + errors).trimmed(); control && drops < 6 && (Model::offline(said) || !Model::online())) {
+            ++drops;
+            report(QStringLiteral("connessione"), {{"motivo", said.isEmpty() ? QStringLiteral("nessuna risposta") : said.simplified().left(200)}});
+            if (Model::awaitOnline(control)) {
+                message = out.session.isEmpty() ? task : QStringLiteral("La connessione si era interrotta: continua il compito da dove eri.");
+                report(QStringLiteral("in_corso"));
+                continue;
+            }
+            control->check();
+            control->pause(QDateTime::currentDateTime(), said, true);
+            report(QStringLiteral("limite"), {{"motivo", QStringLiteral("manca la connessione")}, {"connessione", true}});
+            out.limited = true;
+            return out;
         }
         const QString why = !text.isEmpty() ? text.left(200) : !errors.isEmpty() ? errors.split('\n').last().left(200)
                                                                                : QStringLiteral("il programma è uscito senza risposta (codice %1)").arg(process.exitCode());

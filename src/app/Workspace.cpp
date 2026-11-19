@@ -897,11 +897,23 @@ void Workspace::convert(const QStringList &sources, const QHash<QString, Convert
 void Workspace::startJob(const QString &title, std::function<std::function<void()>(JobControl *)> work, bool forRun)
 {
     m_jobControl = std::make_unique<JobControl>();
-    m_jobControl->onPause = [this](const QDateTime &until) {     // il limite di utilizzo: tutto aspetta fino a lì
-        QMetaObject::invokeMethod(this, [this, until] {
+    m_jobControl->onPause = [this](const QDateTime &until, bool connection) {   // il limite, o la rete che non torna
+        QMetaObject::invokeMethod(this, [this, until, connection] {
             m_pausedUntil = until;
-            if (until.isValid())
+            m_pauseConnection = connection;
+            if (connection)
+                say(QStringLiteral("La connessione non è tornata: finisco ciò che è in corso e mi fermo. Si riprende quando c'è."));
+            else if (until.isValid())
                 say(QStringLiteral("Limite di utilizzo di Claude raggiunto: finisco ciò che è in corso e mi fermo. Si può riprendere %1.").arg(pausedUntil()));
+            emit jobProgressChanged();
+            emit runChanged();
+        });
+    };
+    m_jobControl->onOffline = [this](bool on) {         // le chiamate aspettano la rete: lo si dice, e quando torna
+        QMetaObject::invokeMethod(this, [this, on] {
+            m_offline = on;
+            say(on ? QStringLiteral("Manca la connessione: il lavoro aspetta che torni (al più %1 minuti), poi rifà le chiamate.").arg(Model::OFFLINE_WAIT / 60000)
+                   : QStringLiteral("La connessione è tornata: il lavoro continua."));
             emit jobProgressChanged();
             emit runChanged();
         });
@@ -933,7 +945,10 @@ void Workspace::startJob(const QString &title, std::function<std::function<void(
         try {                                          // niente che esca dal lavoro può chiudere il programma
             finish = work(control);
         } catch (const LimitPause &) {
-            finish = [this] { say(QStringLiteral("Lavoro fermato: limite di utilizzo di Claude raggiunto. Si può riprendere %1.").arg(pausedUntil())); };
+            finish = [this, connection = control->pausedForConnection()] {     // il controllo non c'è più, quando gira
+                say(connection ? QStringLiteral("Lavoro fermato: manca la connessione. Ciò che è fatto resta: rifallo quando torna.")
+                                                   : QStringLiteral("Lavoro fermato: limite di utilizzo di Claude raggiunto. Si può riprendere %1.").arg(pausedUntil()));
+            };
         } catch (const Stopped &) {
             finish = [this] { say(QStringLiteral("Lavoro fermato.")); };
         } catch (const std::exception &e) {
@@ -951,6 +966,7 @@ void Workspace::startJob(const QString &title, std::function<std::function<void(
                 m_recent.removeLast();
             finish();
             m_pausedUntil = {};
+            m_pauseConnection = m_offline = false;
             emit jobChanged();
         });
     });
@@ -1966,6 +1982,7 @@ void Workspace::startRun(const QString &id)
     m_runStarted = QDateTime::currentMSecsSinceEpoch();   // da qui il tempo lavorato cresce
     m_runState = QStringLiteral("in_corso");
     m_runUntil = {};
+    m_runConnection = false;
     m_runOutcome.clear();
     emit runChanged();
     emit runOpened(id);
@@ -2002,6 +2019,7 @@ void Workspace::runFinished(const run::Result &result)
     if (m_runState == "fermato" || m_runState == "interrotto")
         stillRun();                                    // come alla riapertura: la percentuale non cambia
     m_runUntil = QDateTime::fromString(state.value("pausa").toString(), Qt::ISODate);
+    m_runConnection = state.value("pausa_per").toString() == "connessione";
     if (!m_runState.isEmpty()) {
         const QLocale italian(QLocale::Italian);
         QStringList lines;
@@ -2111,6 +2129,7 @@ void Workspace::loadRun()
     const QString saved = state.value("stato").toString();
     m_runState = saved == "finito" ? QStringLiteral("finito") : saved == "fermato" ? QStringLiteral("fermato") : QStringLiteral("interrotto");
     m_runUntil = QDateTime::fromString(state.value("pausa").toString(), Qt::ISODate);
+    m_runConnection = state.value("pausa_per").toString() == "connessione";
     m_runEstimate = state.value("stima").toDouble();
     const QJsonObject view = QJsonDocument::fromJson(files::read(run::folder(m_project, m_runId) + "/vista.json").toUtf8()).object();
     m_runStarted = 0;
@@ -2320,7 +2339,8 @@ void Workspace::runEvent(const QJsonObject &e)
         if (e.contains("costo"))
             call["cost"] = e.value("costo").toDouble();
         call["error"] = e.value("motivo").toString();
-        if (e.value("stato").toString() != "in_corso" && e.value("stato").toString() != "riprova")
+        call["connection"] = e.value("connessione").toBool();
+        if (e.value("stato").toString() != "in_corso" && e.value("stato").toString() != "riprova" && e.value("stato").toString() != "connessione")
             m_runStreams.remove(id);                   // finita: il flusso intero sta nel suo registro
     } else if (type == "passo") {
         const int id = e.value("id").toInt();
@@ -2377,10 +2397,11 @@ QVariantMap Workspace::run() const
         if (step.value("state") == "in_corso")
             running << QVariantMap{{"site", step.value("site")}, {"started", step.value("started")}, {"text", step.value("text")}};
     for (const QVariantMap &call : m_runCalls) {
-        if (call.value("state") != "in_corso" && call.value("state") != "riprova")
+        if (call.value("state") != "in_corso" && call.value("state") != "riprova" && call.value("state") != "connessione")
             continue;
         const QString what = call.value("role").toString() + (call.value("what").toString().isEmpty() ? QString() : " · " + call.value("what").toString());
-        const QString text = call.value("role") == "Agente" ? (call.value("last").toString().isEmpty() ? QStringLiteral("L'agente lavora") : "Agente: " + call.value("last").toString())
+        const QString text = call.value("state") == "connessione" ? what + QStringLiteral(": aspetta che torni la connessione")
+                           : call.value("role") == "Agente" ? (call.value("last").toString().isEmpty() ? QStringLiteral("L'agente lavora") : "Agente: " + call.value("last").toString())
                                                           : QStringLiteral("%1, al modello (%2)").arg(what, call.value("model").toString());
         running << QVariantMap{{"site", call.value("site")}, {"started", call.value("started")}, {"text", text}};
     }
@@ -2421,14 +2442,15 @@ QVariantMap Workspace::run() const
     // le chiamate: quelle in corso in cima, poi le altre dalla più recente
     QList<QVariantMap> ordered = m_runCalls;
     std::stable_sort(ordered.begin(), ordered.end(), [](const QVariantMap &a, const QVariantMap &b) {
-        const bool ra = a.value("state") == "in_corso" || a.value("state") == "riprova", rb = b.value("state") == "in_corso" || b.value("state") == "riprova";
+        const bool ra = a.value("state") == "in_corso" || a.value("state") == "riprova" || a.value("state") == "connessione",
+                   rb = b.value("state") == "in_corso" || b.value("state") == "riprova" || b.value("state") == "connessione";
         if (ra != rb)
             return ra;
         return a.value("id").toInt() > b.value("id").toInt();
     });
     for (QVariantMap call : std::as_const(ordered)) {
         cost += call.value("cost").toDouble();
-        active += call.value("state") == "in_corso" || call.value("state") == "riprova";
+        active += call.value("state") == "in_corso" || call.value("state") == "riprova" || call.value("state") == "connessione";
         call["siteTitle"] = titles.value(call.value("site").toString());
         calls << call;
     }
@@ -2445,7 +2467,8 @@ QVariantMap Workspace::run() const
         together << step;
     }
     std::stable_sort(together.begin(), together.end(), [](const QVariantMap &a, const QVariantMap &b) {
-        const bool ra = a.value("state") == "in_corso" || a.value("state") == "riprova", rb = b.value("state") == "in_corso" || b.value("state") == "riprova";
+        const bool ra = a.value("state") == "in_corso" || a.value("state") == "riprova" || a.value("state") == "connessione",
+                   rb = b.value("state") == "in_corso" || b.value("state") == "riprova" || b.value("state") == "connessione";
         if (ra != rb)
             return ra;
         return a.value("started").toDouble() > b.value("started").toDouble();
@@ -2467,6 +2490,7 @@ QVariantMap Workspace::run() const
     return QVariantMap{{"id", m_runId}, {"title", QStringLiteral("Aggiungi materiale")}, {"state", state},
                        {"until", until.isValid() ? Model::when(until) : QString()},
                        {"untilPassed", until.isValid() && until <= QDateTime::currentDateTime()},
+                       {"connection", state == "in_pausa" ? m_pauseConnection : m_runConnection}, {"offline", m_offline && state == "in_corso"},
                        {"sessionStart", double(m_runStarted)}, {"worked", double(m_runWorked)}, {"cost", cost}, {"estimate", m_runEstimate},
                        {"progress", m_runSites.isEmpty() ? 0.0 : progress / m_runSites.size()}, {"active", active}, {"sites", sites}, {"calls", calls}, {"activity", activity}, {"now", now}, {"steps", int(m_runSteps.size())},
                        {"outcome", m_runOutcome}, {"canUndo", QFileInfo::exists(run::folder(m_project, m_runId) + "/prima/stato.json")}};

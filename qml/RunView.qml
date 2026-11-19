@@ -43,16 +43,16 @@ Rectangle {
         return m < 1 ? "meno di un minuto" : m === 1 ? "un minuto" : m < 60 ? m + " minuti" : Math.floor(m / 60) + " h " + (m % 60) + " min"
     }
     function seconds(call) {
-        const s = call.state === "in_corso" || call.state === "riprova" ? (now - call.started) / 1000 : call.seconds || 0
+        const s = call.state === "in_corso" || call.state === "riprova" || call.state === "connessione" ? (now - call.started) / 1000 : call.seconds || 0
         return s < 60 ? Math.round(s) + " s" : Math.floor(s / 60) + " min " + Math.round(s % 60) + " s"
     }
     function stateColor(s) {
         return s === "fatta" || s === "fatto" ? Theme.good : s === "fallita" ? Theme.bad : s === "in_corso" || s === "riprova" ? Theme.accent
-             : s === "limite" || s === "fallito" ? Theme.warn : s === "saltata" ? Theme.textFaint : Theme.idle
+             : s === "limite" || s === "fallito" || s === "connessione" ? Theme.warn : s === "saltata" ? Theme.textFaint : Theme.idle
     }
     function callState(s) {
         return s === "in_corso" ? "in corso" : s === "riprova" ? "riprova" : s === "fatta" ? "fatta" : s === "fallita" ? "non riuscita"
-             : s === "limite" ? "limite di utilizzo: aspetta" : s === "fermata" ? "fermata" : s === "interrotta" ? "interrotta" : s
+             : s === "limite" ? "limite di utilizzo: aspetta" : s === "connessione" ? "aspetta la connessione" : s === "fermata" ? "fermata" : s === "interrotta" ? "interrotta" : s
     }
     function kindLabel(kind) {
         return kind === "converti" ? "Lezione nuova" : kind === "integra" ? "Aggiunte a una lezione del corso"
@@ -62,15 +62,18 @@ Rectangle {
         if (!mine)
             return "Questo lavoro non c'è più: è stato archiviato o annullato."
         if (runState === "in_corso")
-            return "In corso"
+            return run.offline ? "Manca la connessione: le chiamate aspettano che torni, poi si rifanno. Se non torna entro dieci minuti mi fermo." : "In corso"
         if (runState === "in_pausa")
-            return "Limite di utilizzo di Claude raggiunto: finisco ciò che è in corso, poi mi fermo. Si potrà riprendere " + run.until + "."
-        const limited = run.until !== "" ? (run.untilPassed ? "Il limite di utilizzo è passato: si può riprendere."
+            return run.connection ? "La connessione non è tornata: finisco ciò che è in corso, poi mi fermo. Si riprende quando c'è."
+                                  : "Limite di utilizzo di Claude raggiunto: finisco ciò che è in corso, poi mi fermo. Si potrà riprendere " + run.until + "."
+        const limited = run.connection ? "Quando la connessione c'è, si riprende."
+                      : run.until !== "" ? (run.untilPassed ? "Il limite di utilizzo è passato: si può riprendere."
                                                              : "Si può riprendere " + run.until + ".") : ""
+        const why = run.connection ? "perché mancava la connessione" : "dal limite di utilizzo di Claude"
         if (runState === "fermato")
-            return limited !== "" ? "Fermato dal limite di utilizzo di Claude. " + limited : "Fermato."
+            return limited !== "" ? "Fermato " + why + ". " + limited : "Fermato."
         if (runState === "interrotto")
-            return "Interrotto dalla chiusura del programma." + (limited !== "" ? " Era fermo per il limite di utilizzo. " + limited : "")
+            return "Interrotto dalla chiusura del programma." + (limited !== "" ? " Era fermo " + why + ". " + limited : "")
         return "Finito"
     }
     // il tempo lavorato (senza le soste) e quello che manca, dal ritmo fin qui
@@ -515,7 +518,9 @@ Rectangle {
                                 visible: text !== ""
                                 text: callRow.step ? (callRow.modelData.state === "fermato" || callRow.modelData.state === "interrotto" ? callRow.modelData.state
                                                       : callRow.modelData.outcome || "")
-                                      : callRow.modelData.state === "limite" ? (root.working ? "limite di utilizzo raggiunto: si rifà alla ripresa" : "fermata dal limite di utilizzo: si rifà alla ripresa")
+                                      : callRow.modelData.state === "connessione" ? "manca la connessione: si rifà appena torna"
+                                      : callRow.modelData.state === "limite" ? (callRow.modelData.connection ? (root.working ? "la connessione non è tornata: si rifà alla ripresa" : "fermata perché mancava la connessione: si rifà alla ripresa")
+                                                                               : root.working ? "limite di utilizzo raggiunto: si rifà alla ripresa" : "fermata dal limite di utilizzo: si rifà alla ripresa")
                                       : callRow.modelData.state === "fallita" || callRow.modelData.state === "riprova"
                                       ? root.callState(callRow.modelData.state) + (callRow.modelData.error ? ": " + callRow.modelData.error : "")
                                       : callRow.modelData.state === "in_corso" ? (callRow.modelData.last || "")

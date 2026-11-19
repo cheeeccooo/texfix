@@ -67,6 +67,10 @@ class Workspace : public QObject {
     Q_PROPERTY(QVariantList recentJobs READ recentJobs NOTIFY jobChanged)
     // Il lavoro in pausa per il limite di utilizzo: fino a quando («HH:mm», o con il giorno); vuoto se non è in pausa.
     Q_PROPERTY(QString pausedUntil READ pausedUntil NOTIFY jobProgressChanged)
+    // La connessione: offline, le chiamate del lavoro aspettano che torni; pausedForConnection, il lavoro si ferma perché
+    // non è tornata (pausedUntil è allora adesso: si riprende quando c'è).
+    Q_PROPERTY(bool offline READ offline NOTIFY jobProgressChanged)
+    Q_PROPERTY(bool pausedForConnection READ pausedForConnection NOTIFY jobProgressChanged)
     Q_PROPERTY(QStringList jobLog READ jobLog NOTIFY jobLogChanged)       // il registro del lavoro (Console)
     // Le regole del progetto, una per voce (Impostazioni del progetto).
     Q_PROPERTY(QStringList projectRules READ projectRules WRITE setProjectRules NOTIFY settingsChanged)
@@ -109,6 +113,8 @@ public:
     QStringList jobLog() const { return m_jobLog; }
     QVariantList recentJobs() const { return m_recent; }
     QString pausedUntil() const;
+    bool offline() const { return m_offline; }
+    bool pausedForConnection() const { return m_pauseConnection; }
     QStringList projectRules() const { return m_settings.rules; }
     void setProjectRules(const QStringList &rules);
     QString styleName() const { return m_style.name; }
@@ -435,6 +441,7 @@ private:
     void saveRunView() const;
     QString m_runId, m_runState;
     QDateTime m_runUntil;
+    bool m_runConnection = false;                      // il lavoro di «Avvia» si è fermato perché mancava la connessione
     qint64 m_runStarted = 0, m_runWorked = 0;          // quando è ripartito (0: fermo); il tempo lavorato prima
     double m_runEstimate = 0;
     QList<QVariantMap> m_runSites, m_runCalls;
@@ -449,6 +456,7 @@ private:
     QTimer m_runTimer;                                 // più eventi vicini, un aggiornamento solo
     bool m_closing = false;
     QDateTime m_pausedUntil;                           // il lavoro in corso aspetta la fine del limite di utilizzo
+    bool m_pauseConnection = false, m_offline = false;   // la pausa è per la connessione; le chiamate aspettano la rete
     void loadSettings();                               // impostazioni e stile, dal disco
 
     tx::Project m_project;

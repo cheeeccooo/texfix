@@ -45,7 +45,7 @@ Due parti, un processo solo.
 | `core/Style` | la descrizione di uno stile (ambienti con ruolo e colore, macro, rimandi, figure, convenzioni); `classic()`; `scan` di un `.sty` |
 | `core/StyleSwitch` | importare uno stile nel progetto; cambiare stile riscrivendo le lezioni secondo i ruoli |
 | `core/Job` | `JobControl`: «Ferma», avanzamento e registro di un lavoro che gira in un thread suo; i numeri di chiamate e passi (`nextCall`; ripreso continua dopo i vecchi: `callsAfter`); il limite di utilizzo (`pause`, `checkLimit`: nessuna chiamata nuova parte, `LimitPause`, e il lavoro si ferma da sé; `pausedUntil` dice quando si può riprendere); gli eventi per chi guarda (`onEvent`: chiamate e cantieri) e dove registrare le chiamate (`records`); `Site`, il cantiere del thread; `Step`, un passo che non è una chiamata (lo manda `Compiler::compileSync`, se non è dentro un passo che lo copre); `Stopped`, `LimitReached` (solo senza un lavoro) |
-| `core/Model` | le chiamate al modello: `claude -p` senza strumenti, al più 6 insieme; modello e impegno per qualità e fase; costi; se non risponde lo dice con il motivo; `limit` riconosce il limite di utilizzo e ne legge l'ora di ripresa (anche la chat); con un lavoro il limite lo ferma (la chiamata si rifà alla ripresa); `when` scrive l'ora («domani alle 02:21»); ogni chiamata manda i suoi eventi e lascia il registro (istruzioni, parti, risposta). `TEXFIX_CLAUDE=<programma>` mette un finto modello (prove) |
+| `core/Model` | le chiamate al modello: `claude -p` senza strumenti, al più 6 insieme; modello e impegno per qualità e fase; costi; se non risponde lo dice con il motivo; `limit` riconosce il limite di utilizzo e ne legge l'ora di ripresa (anche la chat); con un lavoro il limite lo ferma (la chiamata si rifà alla ripresa); la connessione che manca (`offline`, `online` con curl, `awaitOnline`): la chiamata aspetta che torni e si rifà, dopo `OFFLINE_WAIT` (10 minuti) il lavoro si ferma come per il limite (`pause(…, connection)`, `pausedForConnection`; `onOffline` dice quando si aspetta); `TEXFIX_RETE=assente|presente` decide nelle prove; `when` scrive l'ora («domani alle 02:21»); ogni chiamata manda i suoi eventi e lascia il registro (istruzioni, parti, risposta). `TEXFIX_CLAUDE=<programma>` mette un finto modello (prove) |
 | `core/Pages` | una fonte come la vede il modello: pagine in immagini (pdftoppm, sips) o testo |
 | `core/Blocks` | i marcatori dei blocchi `% @L6.3 · fonte p.2`: leggere, aggiungere quelli che mancano |
 | `core/Prompts` | i prompt, in tre parti: strutturale (qui), `rules::forPrompt`, `Style::forPrompt` |
@@ -296,7 +296,7 @@ A confronto con la vecchia app sulle stesse pagine (`../prova-texfix`, src4.pdf 
 riquadri, stesso numero di definizioni e di figure; la nuova dà titoli alle sezioni, mette in un riquadro
 un'osservazione che la vecchia lasciava in prosa, e non va a capo nel sorgente. Simili, non uguali.
 
-**§5 Prove.** `./build.sh prove` (55 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
+**§5 Prove.** `./build.sh prove` (56 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
 spesso, contro `tests/misure.txt`; `--scrivi` li riscrive). Dei riferimenti della vecchia app sono portate le formule in display vere (`tests/dati/display.json`), per la mossa
 sulle formule; il resto dipende da prompt e stile, che qui sono cambiati per scelta.
 

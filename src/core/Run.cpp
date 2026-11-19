@@ -119,6 +119,7 @@ Result execute(const Project &project, const Settings &settings, const Style &st
     state["stato"] = "in_corso";
     state.remove("fine");
     state.remove("pausa");
+    state.remove("pausa_per");
     QMutex mutex;                                      // lo stato su disco, da più thread
     save(project, id, state);
     auto change = [&](const std::function<void(QJsonObject &)> &edit) {
@@ -127,18 +128,22 @@ Result execute(const Project &project, const Settings &settings, const Style &st
         save(project, id, state);
     };
     // la pausa per il limite resta scritta: alla riapertura si sa perché il lavoro era fermo
-    std::function<void(const QDateTime &)> previousPause;
+    std::function<void(const QDateTime &, bool)> previousPause;
     if (control) {
         previousPause = control->onPause;
-        control->onPause = [&, previousPause](const QDateTime &until) {
+        control->onPause = [&, previousPause](const QDateTime &until, bool connection) {
             change([&](QJsonObject &s) {
                 if (until.isValid())
                     s["pausa"] = until.toString(Qt::ISODate);
                 else
                     s.remove("pausa");
+                if (connection)
+                    s["pausa_per"] = "connessione";
+                else
+                    s.remove("pausa_per");
             });
             if (previousPause)
-                previousPause(until);
+                previousPause(until, connection);
         };
     }
     auto site = [&](const QJsonObject &e) {
