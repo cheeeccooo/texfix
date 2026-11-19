@@ -23,6 +23,19 @@ fonte davanti. Niente si perde e niente cambia posto; cambia il modo in cui è d
 Sotto una sottosezione ogni tappa vera di un ragionamento lungo ha un `\paragraph{Titolo.}`: uno per tappa, non uno
 per capoverso. Mai `\subsubsection`.
 
+**Più fonti insieme**
+
+Il risultato è un documento nuovo, senza gerarchia fra le fonti. La struttura la dà la fonte da cui viene più
+materiale; dentro, l'ordine che serve a chi studia: prerequisito prima dell'uso, definizione prima del teorema,
+teorema prima dell'esempio. Notazione e voce si scelgono una volta e valgono per tutto.
+
+- Un doppione diventa un riquadro solo, con l'enunciato più generale e più completo di ipotesi, più ciò che l'altra
+  fonte aggiunge.
+- Un conflitto fra le fonti non si sceglie mai in silenzio: nel riquadro la versione più forte o più generale, la
+  differenza in un'osservazione, e una riga nell'esito.
+- Una lezione già scritta non si riscrive: dalle fonti nuove entra solo ciò che manca, al suo posto (subito prima se
+  è un prerequisito, subito dopo se approfondisce).
+
 ## Riquadri
 
 **Testo prima, riquadri dopo**
@@ -50,7 +63,10 @@ dai riquadri, e le osservazioni sono una ogni qualche pagina.
 **Come si usano**
 
 - Titolo opzionale, breve (finisce nell'indice).
-- Mai iniziare il corpo di un riquadro con una formula in display: prima una frase che finisce con «:».
+- Mai iniziare il corpo di un riquadro con una formula in display o con un riquadro annidato: prima una frase che
+  finisce con «:».
+- Un controesempio è un esempio con il titolo «Controesempio: …»; un procedimento che torna (come si calcola qualcosa)
+  è un esercizio, o un elenco numerato.
 - I titoli lunghi vanno a capo da soli: non spezzarli né abbreviarli.
 
 ## Controlli
@@ -70,6 +86,8 @@ valori o esperimenti che la fonte non riporta; mai risultati nuovi, mai digressi
 - Quantificatori staccati: `\quad \forall u \in …`.
 - Argomenti delle funzioni trigonometriche fra parentesi: `\sin(t)`, `\cos^2(2t)`.
 - Mai `\\` dentro `$...$`: si usa `align*`.
+- L'immagine di una curva: `\text{Im}(\vv{X})`, mai «Im» in corsivo.
+- Il pedice della norma euclidea si scrive sempre: `\norm{\vv{X}'(t)}_2`.
 - Se la fonte scrive i vettori con la freccia o la sottolineatura si converte nella notazione dello stile: è
   tipografia, non contenuto.
 
@@ -79,7 +97,11 @@ Il grassetto dice «questo oggetto vive in $\mathbb{R}^n$, $n \ge 2$»: ogni gra
 punti, curve, campi, matrici, versori), ogni scalare resta magro (componenti, parametri, indici, norme, operatori).
 
 - Coerenza per oggetto: una curva introdotta in grassetto lo resta anche nelle derivate, nell'immagine e nelle norme.
-- Le grandezze complesse restano magre anche quando $\mathbb{C}$ è identificato con $\mathbb{R}^2$.
+- Mai `\mathbf` su una lettera greca: non ha effetto e il vettore sembra uno scalare; si usa la macro dei vettori dello
+  stile (`\vv{\gamma}`).
+- Le grandezze complesse restano magre anche quando $\mathbb{C}$ è identificato con $\mathbb{R}^2$: si usa la
+  struttura di campo, che $\mathbb{R}^2$ non ha. Il grassetto torna solo se la curva è davvero un'applicazione a
+  valori in $\mathbb{R}^n$ (calcolo vettoriale, campi, rotore, divergenza).
 
 **Formule larghe**
 
