@@ -116,6 +116,8 @@ jobs:
         timeout-minutes: 10
         run: |
           export TEXFIX_PREFERENZE="$RUNNER_TEMP/preferenze.ini" TEXFIX_DATI="$RUNNER_TEMP/dati"
+          # senza schermo, su Windows Qt non sa dove sono i caratteri: nella foto ci sarebbero quadratini
+          if [ "$RUNNER_OS" = Windows ]; then export QT_QPA_FONTDIR='C:\Windows\Fonts'; fi
           ${{ matrix.app }} --foto foto-${{ runner.os }}.png --dimensione 1200x800 --gesti "nuovo $RUNNER_TEMP/prova; tutto"
           test -s foto-${{ runner.os }}.png
           test -s "$RUNNER_TEMP/prova/build/main.pdf"
