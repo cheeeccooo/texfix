@@ -18,7 +18,8 @@ QString program(const QString &name);
 void start(QProcess &process, const QString &name, const QStringList &arguments);
 
 // Il processo parte a capo di un gruppo suo, così `stopGroup` ferma lui e tutti i suoi figli
-// (pdflatex è figlio di latexmk).
+// (pdflatex è figlio di latexmk). Su Windows il gruppo è un Job Object e il processo parte sospeso:
+// dopo `ownGroup` si avvia sempre con `start`, che lo mette nel contenitore e lo fa ripartire.
 void ownGroup(QProcess &process);
 void stopGroup(qint64 pid);
 // Il processo non c'è più, o è finito e nessuno l'ha ancora raccolto.

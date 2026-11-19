@@ -4,6 +4,8 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
+#include <QMutex>
 #include <QImage>
 #include <QImageReader>
 #include <QPageSize>
@@ -79,7 +81,46 @@ QString program(const QString &name)
     return found.isEmpty() ? name : found;
 }
 
-void start(QProcess &process, const QString &name, const QStringList &arguments)
+#if defined(Q_OS_WIN)
+namespace {
+// Su Windows la famiglia di un processo è un Job Object: ogni figlio nasce dentro, TerminateJobObject li ferma tutti.
+// ownGroup fa partire il processo sospeso e annota qui la sua PROCESS_INFORMATION (il modificatore gira dentro start,
+// nello stesso thread); start lo mette nel contenitore e lo fa ripartire.
+thread_local PROCESS_INFORMATION *t_starting = nullptr;
+QMutex g_jobsMutex;
+QHash<qint64, HANDLE> g_jobs;
+
+void adopt(QProcess &process)
+{
+    PROCESS_INFORMATION *info = t_starting;
+    t_starting = nullptr;
+    if (!info || process.state() == QProcess::NotRunning)
+        return;
+    HANDLE job = CreateJobObjectW(nullptr, nullptr);
+    if (job && !AssignProcessToJobObject(job, info->hProcess)) {
+        CloseHandle(job);
+        job = nullptr;
+    }
+    ResumeThread(info->hThread);
+    QMutexLocker lock(&g_jobsMutex);
+    for (auto it = g_jobs.begin(); it != g_jobs.end();) {     // i contenitori vuoti non servono più
+        JOBOBJECT_BASIC_ACCOUNTING_INFORMATION accounting = {};
+        if (QueryInformationJobObject(it.value(), JobObjectBasicAccountingInformation, &accounting, sizeof(accounting), nullptr)
+            && accounting.ActiveProcesses == 0) {
+            CloseHandle(it.value());
+            it = g_jobs.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    if (job)
+        g_jobs.insert(qint64(info->dwProcessId), job);
+}
+}
+#endif
+
+namespace {
+void launch(QProcess &process, const QString &name, const QStringList &arguments)
 {
     QString resolved = program(name);
 #if defined(Q_OS_WIN)
@@ -102,12 +143,22 @@ void start(QProcess &process, const QString &name, const QStringList &arguments)
 #endif
     process.start(resolved, arguments);
 }
+}
+
+void start(QProcess &process, const QString &name, const QStringList &arguments)
+{
+    launch(process, name, arguments);
+#if defined(Q_OS_WIN)
+    adopt(process);
+#endif
+}
 
 void ownGroup(QProcess &process)
 {
 #if defined(Q_OS_WIN)
     process.setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments *args) {
-        args->flags |= CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW;
+        args->flags |= CREATE_SUSPENDED;                // riparte da start, dentro il suo contenitore
+        t_starting = args->processInformation;
     });
 #else
     process.setChildProcessModifier([] { ::setpgid(0, 0); });
@@ -119,7 +170,15 @@ void stopGroup(qint64 pid)
     if (pid <= 1)
         return;
 #if defined(Q_OS_WIN)
-    // Windows non ha gruppi come Unix: taskkill /T ferma lui e l'albero dei suoi figli
+    {
+        QMutexLocker lock(&g_jobsMutex);
+        if (HANDLE job = g_jobs.take(pid)) {
+            TerminateJobObject(job, 1);
+            CloseHandle(job);
+            return;
+        }
+    }
+    // senza contenitore: taskkill /T ferma lui e l'albero dei suoi figli
     QProcess kill;
     kill.setStandardOutputFile(QProcess::nullDevice());
     kill.setStandardErrorFile(QProcess::nullDevice());
