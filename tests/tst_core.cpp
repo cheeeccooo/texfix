@@ -2112,8 +2112,8 @@ private slots:
         QVERIFY(QFileInfo::exists(r.pdf));
     }
 
-    // Il limite di utilizzo: l'ora di ripresa si legge dal messaggio; con un lavoro non è un errore, tutto aspetta e la
-    // chiamata si rifà (qui «Riprendi ora»); senza un lavoro è LimitReached, con l'ora.
+    // Il limite di utilizzo: l'ora di ripresa si legge dal messaggio e si dice «domani alle…»; con un lavoro non è un errore:
+    // il lavoro si ferma (LimitPause, l'ora in pausedUntil) e nessuna chiamata nuova parte; senza un lavoro è LimitReached.
     void usageLimit()
     {
         QDateTime until;
@@ -2147,27 +2147,35 @@ private slots:
         QMutex mutex;
         control.onPause = [&](const QDateTime &at) { paused = paused || at.isValid(); };
         control.onEvent = [&](const QJsonObject &e) { QMutexLocker lock(&mutex); events << e; };
-        auto future = std::async(std::launch::async, [&] {
+        QCOMPARE(Model::when(QDateTime::currentDateTime().addDays(1).toLocalTime()).left(11), "domani alle");
+        QVERIFY(Model::when(QDateTime(QDate::currentDate().addDays(3), QTime(9, 0))).startsWith("il "));
+        bool stopped = false;
+        try {
             Site here("fonti/coda/a.md");
-            return Model("bilanciata", dir.path(), &control).ask("verify", "Sei un verificatore.", {"Controlla."}, "src3#2");
-        });
-        for (int i = 0; i < 100 && !paused; ++i)
-            QTest::qWait(50);
+            Model("bilanciata", dir.path(), &control).ask("verify", "Sei un verificatore.", {"Controlla."}, "src3#2");
+        } catch (const LimitPause &) {
+            stopped = true;
+        }
+        QVERIFY(stopped);
         QVERIFY(paused);
         QVERIFY(control.pausedUntil() > QDateTime::currentDateTime());
-        QTest::qWait(400);
-        QVERIFY(future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready);   // aspetta: non fallisce
-        control.wake();
-        QCOMPARE(future.get(), "ciao");
-        QVERIFY(!control.pausedUntil().isValid());
+        // da qui nessuna chiamata parte: si ferma subito, senza chiamare il modello
+        stopped = false;
+        try {
+            Model("bilanciata", dir.path(), &control).ask("verify", "x", {"y"});
+        } catch (const LimitPause &) {
+            stopped = true;
+        }
+        QVERIFY(stopped);
+        QVERIFY(!QFileInfo::exists(dir.filePath("chiamate/2.json")) || QJsonDocument::fromJson(files::read(dir.filePath("chiamate/2.json")).toUtf8()).object().value("stato") != "fatta");
         QStringList states;
         for (const QJsonObject &e : std::as_const(events))
             states << e.value("stato").toString();
-        QCOMPARE(states, (QStringList{"in_corso", "limite", "in_corso", "fatta"}));
+        QCOMPARE(states, (QStringList{"in_corso", "limite"}));
         QCOMPARE(events.first().value("cantiere").toString(), "fonti/coda/a.md");
         const QJsonObject record = QJsonDocument::fromJson(files::read(dir.filePath("chiamate/1.json")).toUtf8()).object();
         QCOMPARE(record.value("istruzioni").toString(), "Sei un verificatore.");
-        QCOMPARE(record.value("risposta").toString(), "ciao");
+        QCOMPARE(record.value("stato").toString(), "limite");
 
         // senza un lavoro che possa aspettare: LimitReached, con l'ora
         QFile::remove(dir.filePath("visto"));
@@ -2220,14 +2228,33 @@ private slots:
             + line({{"type", "assistant"}, {"message", QJsonObject{{"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", "Aggiungo l'esempio."}},
                 QJsonObject{{"type", "tool_use"}, {"id", "t1"}, {"name", "Edit"}, {"input", QJsonObject{{"file_path", root + "/src/src1.tex"}}}}}}}}})
             + line({{"type", "result"}, {"result", "- Aggiunto l'esempio dopo la definizione."}, {"total_cost_usd", 0.5}, {"session_id", "s1"}}));
+        files::write(dir.filePath("limite.json"), line({{"type", "system"}, {"subtype", "init"}, {"session_id", "s1"}})
+            + line({{"type", "result"}, {"is_error", true}, {"result", "You've hit your 5-hour limit · resets 3am (Europe/Rome)"}, {"session_id", "s1"}}));
         files::write(dir.filePath("claude"), QString("#!/bin/sh\nin=$(cat)\n"
+                                                     "for a; do [ \"$a\" = s1 ] && touch '%1/ripresa'; done\n"
                                                      "for a; do case \"$a\" in *'Esegui una parte di un piano'*) "
+                                                     "  if [ -f '%1/limite' ]; then cat '%1/limite.json'; exit 0; fi;"
                                                      "  if [ -f '%1/ferma' ]; then sleep 30; fi; printf '\\nUn esempio di limite.\\n' >> src/src1.tex; cat '%1/agente.json'; exit 0;;\n"
                                                      "  *'You check LaTeX'*) cat '%1/verifica.json'; exit 0;;\n"
                                                      "  *'beginning of the LaTeX notes'*) cat '%1/titolo.json'; exit 0;; esac; done\n"
                                                      "cat '%1/trascrizione.json'\n").arg(dir.path()));
         QFile(dir.filePath("claude")).setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
         qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
+
+        // il limite di utilizzo mentre l'agente lavora: il lavoro finisce ciò che è in corso e si ferma da sé, con l'ora
+        files::write(dir.filePath("limite"), "");
+        {
+            JobControl limited;
+            const run::Result first = run::execute(p, Settings::load(p), Style::classic(), "20261118-170000", &limited);
+            QVERIFY(first.stopped);
+            QVERIFY(limited.pausedUntil().isValid());
+            const QJsonObject state = run::load(p, "20261118-170000");
+            QCOMPARE(state.value("stato").toString(), "fermato");
+            QVERIFY(!state.value("pausa").toString().isEmpty());
+            QCOMPARE(state.value("compiti").toArray()[0].toObject().value("stato").toString(), "limite");
+            QCOMPARE(state.value("compiti").toArray()[0].toObject().value("sessione").toString(), "s1");
+        }
+        QFile::remove(dir.filePath("limite"));
 
         // «Ferma» mentre l'agente lavora: la lezione nuova può essere fatta, il compito resta da riprendere
         files::write(dir.filePath("ferma"), "");
@@ -2261,6 +2288,7 @@ private slots:
         QVERIFY(!r.stopped);
         QCOMPARE(r.failure, QString());
         QCOMPARE(r.tasksDone, 1);
+        QVERIFY(QFileInfo::exists(dir.filePath("ripresa")));                              // l'agente ha continuato la sua conversazione
         QCOMPARE(p.inputs(), (QStringList{"src/src1.tex", "src/src2.tex"}));
         QCOMPARE(files::read(p.path("src/src1.tex")).count("Un esempio di limite."), 1);     // la lezione era tornata com'era prima del compito
         QVERIFY(files::read(p.path("src/src2.tex")).contains("\\section{La serie geometrica}\n\\lezione{2}{05/10/2026}"));

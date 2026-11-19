@@ -26,7 +26,7 @@ public:
 
     // Una chiamata. stage dice quale modello e quanto impegno (outline, transcribe, verify, figure, fix, decide…);
     // parts sono testi e percorsi di .png, nell'ordine in cui il modello li vede. Con un JobControl il limite di
-    // utilizzo mette in pausa il lavoro e la chiamata si rifà alla ripresa; senza, lancia LimitReached. Lancia anche Stopped
+    // utilizzo ferma il lavoro (JobControl::pause, LimitPause) e la chiamata si rifà alla ripresa; senza, LimitReached. Lancia anche Stopped
     // o std::runtime_error. Con un JobControl manda gli eventi della chiamata e, se c'è dove, ne lascia il registro.
     QString ask(const QString &stage, const QString &system, const QStringList &parts, const QString &tag = {});
 
@@ -40,6 +40,8 @@ public:
     static QJsonValue json(const QString &text);
     // Un messaggio di limite di utilizzo raggiunto (della chiamata o dell'agente) e l'ora in cui riprende.
     static bool limit(const QString &text, QDateTime *until = nullptr);
+    // Quando, per chi legge: «alle 14:30», «domani alle 02:21», «il 21/11 alle 09:00».
+    static QString when(const QDateTime &at);
 
 private:
     QString m_quality, m_directory;

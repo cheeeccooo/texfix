@@ -17,8 +17,8 @@ Rectangle {
 
     readonly property var run: Workspace.run
     readonly property bool mine: run.id === planId
-    readonly property string state: mine ? run.state : ""
-    readonly property bool working: state === "in_corso" || state === "in_pausa"
+    readonly property string runState: mine ? run.state : ""
+    readonly property bool working: runState === "in_corso" || runState === "in_pausa"
     property string siteFilter: ""                     // un cantiere scelto: solo le sue chiamate
     property int chosen: -1                            // la chiamata aperta
     property var detail: ({})
@@ -59,18 +59,22 @@ Rectangle {
     readonly property string stateText: {
         if (!mine)
             return "Questo lavoro non c'è più: è stato archiviato o annullato."
-        if (state === "in_corso")
+        if (runState === "in_corso")
             return "In corso"
-        if (state === "in_pausa")
-            return "In pausa: limite di utilizzo di Claude raggiunto. Riprende da solo alle " + run.until + "."
-        const paused = run.until !== "" ? (run.untilPassed ? " Era in pausa per il limite di utilizzo: ora si può riprendere."
-                                                            : " Era in pausa per il limite di utilizzo, fino alle " + run.until + ".") : ""
-        if (state === "fermato")
-            return "Fermato." + paused
-        if (state === "interrotto")
-            return "Interrotto dalla chiusura del programma." + paused
+        if (runState === "in_pausa")
+            return "Limite di utilizzo di Claude raggiunto: finisco ciò che è in corso, poi mi fermo. Si potrà riprendere " + run.until + "."
+        const limited = run.until !== "" ? (run.untilPassed ? "Il limite di utilizzo è passato: si può riprendere."
+                                                             : "Si può riprendere " + run.until + ".") : ""
+        if (runState === "fermato")
+            return limited !== "" ? "Fermato dal limite di utilizzo di Claude. " + limited : "Fermato."
+        if (runState === "interrotto")
+            return "Interrotto dalla chiusura del programma." + (limited !== "" ? " Era fermo per il limite di utilizzo. " + limited : "")
         return "Finito"
     }
+    // il tempo lavorato (senza le soste) e quello che manca, dal ritmo fin qui
+    readonly property real worked: (run.worked || 0) + (run.sessionStart > 0 ? now - run.sessionStart : 0)
+    readonly property real progressNow: runState === "finito" ? 1 : run.progress || 0
+    readonly property real remaining: progressNow >= 0.03 && progressNow < 1 && worked > 0 ? worked * (1 - progressNow) / progressNow : 0
     readonly property var calls: (run.calls || []).filter(c => siteFilter === "" || c.site === siteFilter)
 
     ColumnLayout {
@@ -93,23 +97,22 @@ Rectangle {
                     implicitWidth: stateLabel.implicitWidth + 14
                     implicitHeight: stateLabel.implicitHeight + 6
                     radius: 3
-                    readonly property color tone: root.state === "finito" ? Theme.good : root.state === "in_pausa" ? Theme.warn
-                                                : root.state === "in_corso" ? Theme.accent : Theme.idle
+                    readonly property color tone: root.runState === "finito" ? Theme.good : root.runState === "in_pausa" ? Theme.warn
+                                                : root.runState === "in_corso" ? Theme.accent : Theme.idle
                     color: Qt.rgba(tone.r, tone.g, tone.b, 0.25)
                     Text {
                         id: stateLabel
                         anchors.centerIn: parent
-                        text: root.state === "in_corso" ? "in corso" : root.state === "in_pausa" ? "in pausa" : root.state
+                        text: root.runState === "in_corso" ? "in corso" : root.runState === "in_pausa" ? "in pausa" : root.runState
                         color: Theme.text
                         font.pixelSize: Theme.smallSize
                         font.weight: Font.DemiBold
                     }
                 }
                 Item { Layout.fillWidth: true }
-                TxButton { visible: root.state === "in_pausa"; text: "Riprendi ora"; hint: "Non aspetta l'ora detta dal limite (per esempio dopo aver cambiato account)"; onClicked: Workspace.wakeRun() }
                 TxButton { visible: root.working; text: "Ferma"; hint: "Ciò che è fatto resta; si riprende da lì"; onClicked: Workspace.stop() }
                 TxButton {
-                    visible: root.state === "fermato" || root.state === "interrotto"
+                    visible: root.runState === "fermato" || root.runState === "interrotto"
                     text: "Riprendi"
                     primary: true
                     enabled: !Workspace.busy
@@ -122,7 +125,7 @@ Rectangle {
                     enabled: !Workspace.busy
                     onClicked: root.confirmUndo = true
                 }
-                TxButton { visible: root.state === "finito"; text: "Chiudi e archivia"; primary: true; hint: "L'esito va fra gli esiti; i registri delle chiamate si buttano"; onClicked: { Workspace.closeRun(); root.closeAsked() } }
+                TxButton { visible: root.runState === "finito"; text: "Chiudi e archivia"; primary: true; hint: "L'esito va fra gli esiti; i registri delle chiamate si buttano"; onClicked: { Workspace.closeRun(); root.closeAsked() } }
             }
             // la conferma di «Annulla tutto il lavoro»
             Rectangle {
@@ -157,22 +160,23 @@ Rectangle {
                     radius: 4
                     color: Theme.border
                     Rectangle {
-                        width: parent.width * Math.min(1, root.state === "finito" ? 1 : root.run.progress || 0)
+                        width: parent.width * Math.min(1, root.runState === "finito" ? 1 : root.run.progress || 0)
                         height: parent.height
                         radius: 4
-                        color: root.state === "in_pausa" ? Theme.warn : root.state === "finito" ? Theme.good : Theme.accent
+                        color: root.runState === "in_pausa" ? Theme.warn : root.runState === "finito" ? Theme.good : Theme.accent
                     }
                 }
-                TxLabel { text: Math.round(100 * (root.state === "finito" ? 1 : root.run.progress || 0)) + "%"; color: Theme.textMuted; font.pixelSize: Theme.smallSize }
+                TxLabel { text: Math.round(100 * (root.runState === "finito" ? 1 : root.run.progress || 0)) + "%"; color: Theme.textMuted; font.pixelSize: Theme.smallSize }
             }
             TxLabel {
                 Layout.fillWidth: true
                 visible: root.mine
                 text: [root.stateText,
-                       root.run.started > 0 ? "Tempo: " + root.minutes((root.run.ended > 0 && !root.working ? root.run.ended : root.now) - root.run.started) : "",
+                       "Tempo: " + root.minutes(root.worked),
+                       root.remaining > 0 ? "Manca: " + (root.remaining < 60000 ? "meno di un minuto" : "circa " + root.minutes(root.remaining)) : root.working ? "Manca: lo stimo appena qualcosa è fatto" : "",
                        "Costo: " + root.money(root.run.cost) + (root.run.estimate > 0 ? " (stima " + root.money(root.run.estimate) + ")" : ""),
                        root.working ? "Sottoagenti al lavoro: " + root.run.active : ""].filter(s => s !== "").join("   ·   ")
-                color: root.state === "in_pausa" ? Theme.warn : Theme.textMuted
+                color: root.runState === "in_pausa" ? Theme.warn : Theme.textMuted
                 font.pixelSize: Theme.smallSize
                 wrapMode: Text.WordWrap
                 elide: Text.ElideNone
@@ -202,7 +206,7 @@ Rectangle {
                         }
                     }
                     RowLayout {
-                        visible: root.state === "finito"
+                        visible: root.runState === "finito"
                         spacing: Theme.gap
                         TxButton { visible: Workspace.openDoubts > 0; text: "Rivedi dubbi  " + Workspace.openDoubts; onClicked: root.reviewAsked("rivedi:dubbi") }
                         TxButton { visible: Workspace.openDeclared > 0; text: "Rivedi correzioni  " + Workspace.openDeclared; onClicked: root.reviewAsked("rivedi:correzioni") }
@@ -424,7 +428,7 @@ Rectangle {
                             TxLabel {
                                 Layout.fillWidth: true
                                 visible: text !== ""
-                                text: callRow.modelData.state === "limite" ? (root.state === "in_pausa" ? "limite di utilizzo raggiunto: si rifà alla ripresa, alle " + root.run.until : "limite di utilizzo raggiunto: si rifà alla ripresa")
+                                text: callRow.modelData.state === "limite" ? (root.runState === "in_pausa" ? "limite di utilizzo raggiunto: si rifà alla ripresa, alle " + root.run.until : "limite di utilizzo raggiunto: si rifà alla ripresa")
                                       : callRow.modelData.state === "fallita" || callRow.modelData.state === "riprova"
                                       ? root.callState(callRow.modelData.state) + (callRow.modelData.error ? ": " + callRow.modelData.error : "")
                                       : callRow.modelData.state === "in_corso" ? (callRow.modelData.last || "")

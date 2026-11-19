@@ -7,6 +7,7 @@
 #include "core/Fix.h"
 #include "core/Git.h"
 #include "core/Layout.h"
+#include "core/Model.h"
 #include "core/NewLesson.h"
 #include "core/Pages.h"
 #include "core/Plans.h"
@@ -898,7 +899,7 @@ void Workspace::startJob(const QString &title, std::function<std::function<void(
         QMetaObject::invokeMethod(this, [this, until] {
             m_pausedUntil = until;
             if (until.isValid())
-                say(QStringLiteral("Limite di utilizzo di Claude raggiunto: il lavoro riprende da solo alle %1.").arg(pausedUntil()));
+                say(QStringLiteral("Limite di utilizzo di Claude raggiunto: finisco ciò che è in corso e mi fermo. Si può riprendere %1.").arg(pausedUntil()));
             emit jobProgressChanged();
             emit runChanged();
         });
@@ -926,18 +927,28 @@ void Workspace::startJob(const QString &title, std::function<std::function<void(
     m_jobLog.clear();
     emit jobLogChanged();
     m_jobThread = QThread::create([this, work = std::move(work), control = m_jobControl.get()] {
-        const std::function<void()> finish = work(control);
+        std::function<void()> finish;
+        try {                                          // niente che esca dal lavoro può chiudere il programma
+            finish = work(control);
+        } catch (const LimitPause &) {
+            finish = [this] { say(QStringLiteral("Lavoro fermato: limite di utilizzo di Claude raggiunto. Si può riprendere %1.").arg(pausedUntil())); };
+        } catch (const Stopped &) {
+            finish = [this] { say(QStringLiteral("Lavoro fermato.")); };
+        } catch (const std::exception &e) {
+            const QString why = QString::fromUtf8(e.what());
+            finish = [this, why] { say(QStringLiteral("Il lavoro si è interrotto: %1").arg(why)); };
+        }
         QMetaObject::invokeMethod(this, [this, finish] {
             m_jobThread->wait();
             m_jobThread->deleteLater();
             m_jobThread = nullptr;
-            const bool stopped = m_jobControl && m_jobControl->stopped();
+            const bool stopped = m_jobControl && (m_jobControl->stopped() || m_jobControl->pausedUntil().isValid());
             m_jobControl.reset();
-            m_pausedUntil = {};
             m_recent.prepend(QVariantMap{{"title", m_jobTitle}, {"when", QTime::currentTime().toString("HH:mm")}, {"stopped", stopped}});
             while (m_recent.size() > 12)
                 m_recent.removeLast();
             finish();
+            m_pausedUntil = {};
             emit jobChanged();
         });
     });
@@ -1929,14 +1940,14 @@ void Workspace::startSortPlan(const QString &id)
     m_runLessonSite.clear();
     m_runStreams.clear();
     m_runOutcome.clear();
-    m_runStarted = QDateTime::currentMSecsSinceEpoch();
-    m_runEnded = 0;
+    m_runWorked = 0;
     m_runEstimate = plans::load(m_project, id).value("stima").toDouble();
     startRun(id);
 }
 
 void Workspace::startRun(const QString &id)
 {
+    m_runStarted = QDateTime::currentMSecsSinceEpoch();   // da qui il tempo lavorato cresce
     m_runState = QStringLiteral("in_corso");
     m_runUntil = {};
     m_runOutcome.clear();
@@ -1954,7 +1965,9 @@ void Workspace::runFinished(const run::Result &result)
     checkpoint(QStringLiteral("Aggiungi materiale"));  // tutto il lavoro è un passo solo
     loadSettings();                                    // i pacchetti chiesti dalle figure
     const QJsonObject state = run::load(m_project, m_runId);
-    m_runEnded = QDateTime::currentMSecsSinceEpoch();
+    if (m_runStarted > 0)
+        m_runWorked += QDateTime::currentMSecsSinceEpoch() - m_runStarted;
+    m_runStarted = 0;
     if (state.isEmpty()) {                             // non è partito: il progetto è com'era
         m_runState.clear();
         m_runId.clear();
@@ -1969,6 +1982,8 @@ void Workspace::runFinished(const run::Result &result)
     } else {
         m_runState = QStringLiteral("finito");
     }
+    if (m_runState == "fermato" || m_runState == "interrotto")
+        stillRun();                                    // come alla riapertura: la percentuale non cambia
     m_runUntil = QDateTime::fromString(state.value("pausa").toString(), Qt::ISODate);
     if (!m_runState.isEmpty()) {
         const QLocale italian(QLocale::Italian);
@@ -2028,14 +2043,7 @@ void Workspace::resumeRun()
     if (busy())
         return say(QStringLiteral("C'è già un lavoro in corso."));
     checkpoint(QStringLiteral("Modifiche a mano"));
-    m_runEnded = 0;
     startRun(m_runId);
-}
-
-void Workspace::wakeRun()
-{
-    if (m_jobControl)
-        m_jobControl->wake();
 }
 
 void Workspace::undoRun()
@@ -2065,12 +2073,7 @@ void Workspace::closeRun()
         archivePlan(m_runId);
 }
 
-QString Workspace::pausedUntil() const
-{
-    if (!m_pausedUntil.isValid())
-        return {};
-    return m_pausedUntil.date() == QDate::currentDate() ? m_pausedUntil.toString("HH:mm") : m_pausedUntil.toString("dd/MM 'alle' HH:mm");
-}
+QString Workspace::pausedUntil() const { return m_pausedUntil.isValid() ? Model::when(m_pausedUntil) : QString(); }
 
 bool Workspace::resumable() const
 {
@@ -2093,21 +2096,10 @@ void Workspace::loadRun()
     m_runUntil = QDateTime::fromString(state.value("pausa").toString(), Qt::ISODate);
     m_runEstimate = state.value("stima").toDouble();
     const QJsonObject view = QJsonDocument::fromJson(files::read(run::folder(m_project, m_runId) + "/vista.json").toUtf8()).object();
-    m_runStarted = qint64(view.value("inizio").toDouble());
-    m_runEnded = qint64(view.value("fine").toDouble());
+    m_runStarted = 0;
+    m_runWorked = qint64(view.value("lavorato").toDouble());
     for (const QJsonValue &v : view.value("cantieri").toArray()) {
         QVariantMap site = v.toObject().toVariantMap();
-        if (site.value("state") == "in_corso") {       // il lavoro non gira: ciò che era a metà aspetta la ripresa
-            site["state"] = "da_fare";
-            QVariantList phases = site.value("phases").toList();
-            for (QVariant &p : phases) {
-                QVariantMap m = p.toMap();
-                if (m.value("state") == "in_corso")
-                    m["state"] = "da_fare";
-                p = m;
-            }
-            site["phases"] = phases;
-        }
         m_runSiteAt.insert(site.value("key").toString(), int(m_runSites.size()));
         if (!site.value("file").toString().isEmpty())
             m_runLessonSite.insert(QFileInfo(site.value("file").toString()).completeBaseName(), site.value("key").toString());
@@ -2120,11 +2112,33 @@ void Workspace::loadRun()
         m_runCallAt.insert(call.value("id").toInt(), int(m_runCalls.size()));
         m_runCalls << call;
     }
+    stillRun();
     m_runOutcome = view.value("esito").toObject().toVariantMap();
     if (m_runState == "interrotto" && m_runOutcome.isEmpty())
         m_runOutcome = QVariantMap{{"lines", QStringList{QStringLiteral("Il lavoro si è interrotto con la chiusura del programma: ciò che è fatto resta, "
                                                                          "e si riprende da lì con «Riprendi».")}}};
     emit runChanged();
+}
+
+void Workspace::stillRun()
+{
+    // il lavoro non gira: ciò che era a metà aspetta la ripresa (quanto è fatto resta, e conta)
+    for (QVariantMap &site : m_runSites) {
+        if (site.value("state") != "in_corso")
+            continue;
+        site["state"] = "da_fare";
+        QVariantList phases = site.value("phases").toList();
+        for (QVariant &p : phases) {
+            QVariantMap m = p.toMap();
+            if (m.value("state") == "in_corso")
+                m["state"] = "da_fare";
+            p = m;
+        }
+        site["phases"] = phases;
+    }
+    for (QVariantMap &call : m_runCalls)
+        if (call.value("state") == "in_corso" || call.value("state") == "riprova")
+            call["state"] = "interrotta";
 }
 
 void Workspace::saveRunView() const
@@ -2138,7 +2152,7 @@ void Workspace::saveRunView() const
         calls.append(QJsonObject::fromVariantMap(call));
     QDir().mkpath(run::folder(m_project, m_runId));
     files::write(run::folder(m_project, m_runId) + "/vista.json",
-                 QString::fromUtf8(QJsonDocument(QJsonObject{{"inizio", double(m_runStarted)}, {"fine", double(m_runEnded)}, {"cantieri", sites},
+                 QString::fromUtf8(QJsonDocument(QJsonObject{{"lavorato", double(m_runWorked + (m_runStarted > 0 ? QDateTime::currentMSecsSinceEpoch() - m_runStarted : 0))}, {"cantieri", sites},
                                                              {"chiamate", calls}, {"esito", QJsonObject::fromVariantMap(m_runOutcome)}})
                                        .toJson(QJsonDocument::Compact)));
 }
@@ -2227,6 +2241,8 @@ void Workspace::runEvent(const QJsonObject &e)
                     m["done"] = e.value("fatti").toInt();
                 if (e.contains("piu"))
                     m["done"] = m.value("done").toInt() + e.value("piu").toInt();
+                if (m.value("total").toInt() > 0 && m.value("done").toInt() >= m.value("total").toInt() && m.value("state") == "in_corso")
+                    m["state"] = "fatta";                   // tutti i blocchi scritti
                 p = m;
             }
             site["phases"] = phases;
@@ -2301,7 +2317,7 @@ QVariantMap Workspace::run() const
                 const double w = weight.value(m.value("name").toString());
                 if (m.value("state") == "fatta" || m.value("state") == "saltata")
                     part += w;
-                else if (m.value("state") == "in_corso" && m.value("total").toInt() > 0)
+                else if (m.value("total").toInt() > 0)            // a metà (anche fermato): quanto è fatto
                     part += w * qMin(1.0, m.value("done").toDouble() / m.value("total").toDouble());
             }
         } else if (state == "in_corso") {
@@ -2336,9 +2352,9 @@ QVariantMap Workspace::run() const
         state = QStringLiteral("in_pausa");
     const QDateTime until = state == "in_pausa" ? m_pausedUntil : m_runUntil;
     return QVariantMap{{"id", m_runId}, {"title", QStringLiteral("Aggiungi materiale")}, {"state", state},
-                       {"until", until.isValid() ? (until.date() == QDate::currentDate() ? until.toString("HH:mm") : until.toString("dd/MM 'alle' HH:mm")) : QString()},
+                       {"until", until.isValid() ? Model::when(until) : QString()},
                        {"untilPassed", until.isValid() && until <= QDateTime::currentDateTime()},
-                       {"started", double(m_runStarted)}, {"ended", double(m_runEnded)}, {"cost", cost}, {"estimate", m_runEstimate},
+                       {"sessionStart", double(m_runStarted)}, {"worked", double(m_runWorked)}, {"cost", cost}, {"estimate", m_runEstimate},
                        {"progress", m_runSites.isEmpty() ? 0.0 : progress / m_runSites.size()}, {"active", active}, {"sites", sites}, {"calls", calls},
                        {"outcome", m_runOutcome}, {"canUndo", QFileInfo::exists(run::folder(m_project, m_runId) + "/prima/stato.json")}};
 }

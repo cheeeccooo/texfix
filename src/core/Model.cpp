@@ -64,45 +64,22 @@ void JobControl::pause(const QDateTime &until, const QString &message)
     }
     if (at <= before)
         return;                                        // un'altra chiamata l'ha già detto
-    log(QStringLiteral("Limite di utilizzo raggiunto: tutto si ferma fino alle %1 (%2)")
-            .arg(QDateTime::fromMSecsSinceEpoch(at).toString("HH:mm"), message.simplified()));
+    log(QStringLiteral("Limite di utilizzo raggiunto: finisco ciò che è in corso e mi fermo; si può riprendere %1 (%2)")
+            .arg(Model::when(QDateTime::fromMSecsSinceEpoch(at)), message.simplified()));
     if (onPause)
         onPause(QDateTime::fromMSecsSinceEpoch(at));
 }
 
-void JobControl::waitLimit()
+void JobControl::checkLimit() const
 {
-    bool waited = false;
-    for (qint64 until; (until = m_pausedUntil.load()) > 0;) {
-        check();
-        if (QDateTime::currentMSecsSinceEpoch() >= until) {
-            if (m_pausedUntil.compare_exchange_strong(until, 0)) {   // il primo che se ne accorge lo dice
-                log(QStringLiteral("Riprendo il lavoro dopo la pausa"));
-                if (onPause)
-                    onPause({});
-            }
-            break;
-        }
-        waited = true;
-        QThread::msleep(200);
-    }
-    if (waited)
-        check();
+    if (m_pausedUntil.load() > 0)
+        throw LimitPause();
 }
 
 QDateTime JobControl::pausedUntil() const
 {
     const qint64 at = m_pausedUntil.load();
     return at > 0 ? QDateTime::fromMSecsSinceEpoch(at) : QDateTime();
-}
-
-void JobControl::wake()
-{
-    if (m_pausedUntil.exchange(0) > 0) {
-        log(QStringLiteral("Riprendo subito, senza aspettare l'ora detta dal limite"));
-        if (onPause)
-            onPause({});
-    }
 }
 
 namespace {
@@ -115,6 +92,18 @@ QString Site::current() { return t_site; }
 
 // «You've hit your 5-hour limit · resets 8:50pm (Europe/Rome)», «resets Nov 20, 7:30pm»: l'ora, nel fuso detto fra
 // parentesi (altrimenti quello del computer), più un minuto di margine. Se l'ora non si legge, fra mezz'ora.
+QString Model::when(const QDateTime &at)
+{
+    const QDateTime local = at.toLocalTime();
+    const QDate today = QDate::currentDate();
+    const QString time = local.toString("HH:mm");
+    if (local.date() == today)
+        return QStringLiteral("alle %1").arg(time);
+    if (local.date() == today.addDays(1))
+        return QStringLiteral("domani alle %1").arg(time);
+    return QStringLiteral("il %1 alle %2").arg(local.toString("dd/MM"), time);
+}
+
 bool Model::limit(const QString &text, QDateTime *until)
 {
     static const QRegularExpression said(R"((hit your [^.\n]*limit|usage limit|session limit|weekly limit|rate.?limit|limit reached))",
@@ -252,17 +241,14 @@ QString Model::ask(const QString &stage, const QString &system, const QStringLis
     for (int attempt = 0; attempt < 3 && !(got && !result.value("is_error").toBool()); ++attempt) {
         if (m_control) {
             m_control->check();
-            m_control->waitLimit();                    // in pausa per il limite: nessuna chiamata nuova parte
+            m_control->checkLimit();                   // il limite è stato raggiunto: nessuna chiamata nuova parte
         }
         if (attempt > 0)
             QThread::sleep(5);
         Slot slot;
         if (m_control) {
             m_control->check();
-            if (m_control->pausedUntil().isValid()) {  // la pausa è cominciata mentre aspettava il suo posto
-                --attempt;
-                continue;
-            }
+            m_control->checkLimit();                   // il limite è arrivato mentre aspettava il suo posto
         }
         report(attempt == 0 ? QStringLiteral("in_corso") : QStringLiteral("riprova"));
         QProcess process;
@@ -310,13 +296,10 @@ QString Model::ask(const QString &stage, const QString &system, const QStringLis
             const QString said = got ? text.trimmed() : errors.join(' ').trimmed();
             if (!m_control)
                 throw LimitReached(said.toStdString(), until);
-            // non è un errore e non conta come tentativo: si aspetta la ripresa, poi si rifà
+            // non è un errore: il lavoro finisce ciò che è in corso e si ferma; questa chiamata si rifà alla ripresa
             report(QStringLiteral("limite"), {{"motivo", said}, {"fino", until.toString(Qt::ISODate)}});
             m_control->pause(until, said);
-            got = false;
-            result = {};
-            --attempt;
-            continue;
+            throw LimitPause();
         }
         if (text.isEmpty())
             got = false;

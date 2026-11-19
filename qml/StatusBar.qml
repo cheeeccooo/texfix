@@ -16,7 +16,7 @@ Rectangle {
     readonly property real fraction: Workspace.compiling ? Workspace.progress : ownRun ? Workspace.run.progress : Workspace.jobProgress
     readonly property string activity: Workspace.compiling
         ? "Compilazione" + (Workspace.progressLabel !== "" ? ": " + Workspace.progressLabel : "")
-        : Workspace.pausedUntil !== "" ? Workspace.jobTitle + ": in pausa per il limite di utilizzo, fino alle " + Workspace.pausedUntil
+        : Workspace.pausedUntil !== "" ? Workspace.jobTitle + ": limite di utilizzo raggiunto, finisco ciò che è in corso e mi fermo"
         : Workspace.jobTitle + (Workspace.jobLabel !== "" ? ": " + Workspace.jobLabel : "")
     Connections {
         target: Workspace

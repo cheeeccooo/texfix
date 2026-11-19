@@ -267,8 +267,7 @@ void Chat::readOutput()
                     m_messages.removeLast();
                 m_answered = true;                     // ha risposto: non è una chat da riprendere da capo
                 add("note", QStringLiteral("Limite di utilizzo di Claude raggiunto: si può riprendere %1. Il messaggio non è stato eseguito: "
-                                           "rimandalo dopo.").arg(until.date() == QDate::currentDate() ? "alle " + until.toString("HH:mm")
-                                                                                                       : "il " + until.toString("dd/MM 'alle' HH:mm")));
+                                           "rimandalo dopo.").arg(Model::when(until)));
             } else {
                 add("note", said);
             }

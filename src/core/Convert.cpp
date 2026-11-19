@@ -280,7 +280,10 @@ QJsonObject Convert::chunk(const Work &work, int k, Model &model) const
     const QString system = prompts::transcribe(work.file, m_settings, m_style) + (work.isTex ? prompts::texSource(m_style) : QString());
     const QString tag = QStringLiteral("%1#%2").arg(work.name).arg(k + 1);
 
-    QJsonObject result;
+    // una trascrizione fatta e non ancora verificata (il lavoro si è fermato in mezzo) non si paga due volte
+    QString transcribed = cache;
+    transcribed.replace(QStringLiteral(".json"), QStringLiteral("-trascritto.json"));
+    QJsonObject result = readJson(transcribed);
     for (int attempt = 0; attempt < 2 && result.value("tex").toString().isEmpty(); ++attempt) {
         const QString answer = model.ask("transcribe", system, parts(QStringLiteral("Write your chunk. It is chunk %1.").arg(k + 1)), tag);
         try {
@@ -290,6 +293,7 @@ QJsonObject Convert::chunk(const Work &work, int k, Model &model) const
     }
     if (result.value("tex").toString().isEmpty())
         throw std::runtime_error(QStringLiteral("il blocco %1 di %2 non è stato scritto").arg(k + 1).arg(work.lesson.source).toStdString());
+    writeJson(transcribed, result);
 
     QJsonObject verdict;
     try {
@@ -327,6 +331,7 @@ QJsonObject Convert::chunk(const Work &work, int k, Model &model) const
     result["pages"] = spec.value("pages");
     result["problemi"] = int(problems.size());
     writeJson(cache, result);
+    QFile::remove(transcribed);
     if (m_control)
         m_control->log(QStringLiteral("%1, blocco %2: scritto%3").arg(work.lesson.source).arg(k + 1)
                            .arg(problems.isEmpty() ? QString() : QStringLiteral(", %1 punti corretti dopo la verifica").arg(problems.size())));

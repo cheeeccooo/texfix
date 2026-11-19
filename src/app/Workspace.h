@@ -300,19 +300,18 @@ public:
     Q_INVOKABLE void setMarkHidden(const QString &mark, bool hidden);
 
     // Il lavoro di «Avvia» (core/Run), nella sua finestra («lavoro:<piano>», a tutta finestra come le revisioni). run: id,
-    // title, state (in_corso | in_pausa | fermato | interrotto | finito), until (la ripresa dopo il limite), started (ms),
-    // ended (ms), cost, estimate, progress, active (chiamate in corso), sites (i cantieri: key, kind, title, file, state,
+    // title, state (in_corso | in_pausa: il limite, finisce ciò che è in corso | fermato | interrotto | finito), until
+    // (quando si può riprendere dopo il limite: «domani alle 02:21»), sessionStart (ms, 0 se fermo), worked (ms lavorati prima), cost, estimate, progress, active (chiamate in corso), sites (i cantieri: key, kind, title, file, state,
     // phases [{name, state, done, total}], failure, outcome), calls (le chiamate: id, site, siteTitle, role, what, model,
     // state, started, seconds, cost, error, last), outcome (lines, cost, minutes), canUndo. Vuoto se non c'è un lavoro.
     // runCall: una chiamata per intero (system, parts [{text} | {image}], response, stream [{kind, text}], error).
-    // resumeRun riprende un lavoro fermato o interrotto; wakeRun riprende subito dopo il limite; undoRun annulla tutto il
+    // resumeRun riprende un lavoro fermato (anche dal limite) o interrotto; undoRun annulla tutto il
     // lavoro (il progetto torna com'era prima di «Avvia»); closeRun lo archivia fra gli esiti e butta i registri.
     Q_PROPERTY(QVariantMap run READ run NOTIFY runChanged)
 public:
     QVariantMap run() const;
     Q_INVOKABLE QVariantMap runCall(int id) const;
     Q_INVOKABLE void resumeRun();
-    Q_INVOKABLE void wakeRun();
     Q_INVOKABLE void undoRun();
     Q_INVOKABLE void closeRun();
 
@@ -427,10 +426,11 @@ private:
     void runEvent(const QJsonObject &event);
     void runFinished(const tx::run::Result &result);
     void loadRun();
+    void stillRun();                                   // il lavoro non gira: ciò che era a metà torna da fare
     void saveRunView() const;
     QString m_runId, m_runState;
     QDateTime m_runUntil;
-    qint64 m_runStarted = 0, m_runEnded = 0;
+    qint64 m_runStarted = 0, m_runWorked = 0;          // quando è ripartito (0: fermo); il tempo lavorato prima
     double m_runEstimate = 0;
     QList<QVariantMap> m_runSites, m_runCalls;
     QHash<QString, int> m_runSiteAt;                   // chiave del cantiere → posto in m_runSites

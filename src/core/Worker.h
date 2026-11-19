@@ -13,8 +13,8 @@
 // sua ultima risposta è l'esito. Gira nel thread di chi lo chiama.
 //
 // Per chi guarda: una chiamata (fase «integrate») con il suo flusso, riga per riga (che cosa scrive, che file legge o
-// cambia, che strumento usa). Il limite di utilizzo mette in pausa il lavoro intero (JobControl::pause); alla ripresa
-// l'agente continua la stessa conversazione. «Ferma» chiude il processo.
+// cambia, che strumento usa). Il limite di utilizzo ferma il lavoro intero (JobControl::pause); il compito si riprende
+// continuando la stessa conversazione (session). «Ferma» chiude il processo.
 namespace tx::worker {
 
 struct Result {
@@ -22,6 +22,7 @@ struct Result {
     QString text;                          // l'esito, come l'ha scritto l'agente
     QString failure;                       // perché non è andata
     QString session;                       // la conversazione: un compito interrotto la riprende
+    bool limited = false;                  // fermato dal limite di utilizzo: si riprende con session
     double cost = 0;
 };
 // title: come si chiama il compito per chi guarda («Aggiunte alla lezione 3»).

@@ -168,9 +168,12 @@ sua analisi, un esempio, un esercizio) va dove serve, anche se il file da cui vi
   cantieri (ogni lezione da scrivere con le sue fasi, ogni lezione del corso da completare); le chiamate ai sottoagenti,
   con che cosa hanno ricevuto, fatto e risposto; alla fine l'esito, con «Chiudi e archivia» (i registri delle chiamate si
   buttano) e «Annulla tutto il lavoro» (il progetto torna com'era prima di «Avvia», il piano da avviare).
-- **[S]** **Il limite di utilizzo non è un errore.** Quando una chiamata lo trova, tutto il lavoro si ferma fino all'ora di
-  ripresa letta dal messaggio (se non si legge, mezz'ora) e riparte da solo; «Riprendi ora» non aspetta. Ciò che è fatto
-  resta. Se il programma si chiude, alla riapertura il lavoro è interrotto e si riprende con un clic.
+- **[S]** **Il limite di utilizzo non è un errore.** Quando una chiamata lo trova, il lavoro finisce ciò che è in corso,
+  non fa partire niente di nuovo e si ferma da sé, come se il programma fosse stato chiuso e riaperto; dice quando si
+  può riprendere («alle 02:21», «domani alle 02:21», «il 21/11 alle 09:00», letto dal messaggio; se non si legge, fra
+  mezz'ora) e si riprende con un clic. Ciò che è fatto resta, anche una trascrizione non ancora verificata; l'agente
+  riprende la sua conversazione. Sotto la barra: il tempo lavorato (senza le soste) e quanto manca, dal ritmo fin qui
+  (decisioni del 19/11/2026).
 
 - **[S]** **In arrivo** (era «Da convertire»): il materiale aspetta in `fonti/coda/` finché un lavoro non lo porta fra le
   fonti usate. Nell'albero c'è solo se c'è qualcosa; un clic apre il file nell'editor, e ogni file dice il suo stato:

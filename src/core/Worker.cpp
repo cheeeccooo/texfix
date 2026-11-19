@@ -129,13 +129,13 @@ Result run(const Project &project, const Settings &settings, const Style &style,
         }
     };
 
-    QString message = session.isEmpty() ? task : QStringLiteral("Riprendi il compito da dove ti eri fermato: eri stato interrotto. Il compito era:\n\n") + task;
+    QString message = session.isEmpty() ? task : QStringLiteral("Il limite di utilizzo ti aveva interrotto: continua il compito da dove eri rimasto. Il compito era:\n\n") + task;
     int failures = 0;
     report(QStringLiteral("in_corso"));
     while (true) {
         if (control) {
             control->check();
-            control->waitLimit();
+            control->checkLimit();
         }
         QStringList arguments = base;
         if (!out.session.isEmpty())
@@ -205,11 +205,11 @@ Result run(const Project &project, const Settings &settings, const Style &style,
             const QString said = text.isEmpty() ? errors.simplified().left(300) : text;
             if (!control)
                 throw LimitReached(said.toStdString(), until);
-            // non è un errore: tutto si ferma fino alla ripresa, poi l'agente continua la stessa conversazione
+            // non è un errore: il lavoro si ferma, e alla ripresa l'agente continua la stessa conversazione
             report(QStringLiteral("limite"), {{"motivo", said}, {"fino", until.toString(Qt::ISODate)}});
             control->pause(until, said);
-            message = out.session.isEmpty() ? task : QStringLiteral("Il limite di utilizzo ti aveva interrotto: continua il compito da dove ti eri fermato.");
-            continue;
+            out.limited = true;
+            return out;
         }
         if (!result.isEmpty() && !result.value("is_error").toBool() && !text.isEmpty()) {
             out.ok = true;

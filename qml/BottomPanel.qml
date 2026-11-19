@@ -17,13 +17,14 @@ Rectangle {
             out.push({ title: "Compilazione", detail: Workspace.progressLabel, progress: Workspace.progress, state: "run", stop: true })
         const run = Workspace.run
         if (Workspace.jobRunning)
-            out.push({ title: Workspace.jobTitle, detail: Workspace.pausedUntil !== "" ? "in pausa: limite di utilizzo di Claude, riprende da solo alle " + Workspace.pausedUntil : Workspace.jobLabel,
+            out.push({ title: Workspace.jobTitle, detail: Workspace.pausedUntil !== "" ? "limite di utilizzo raggiunto: finisco ciò che è in corso e mi fermo" : Workspace.jobLabel,
                        progress: run.id && Workspace.jobTitle === "Aggiungi materiale" ? run.progress : Workspace.jobProgress, state: Workspace.pausedUntil !== "" ? "wait" : "run", stop: true,
                        open: run.id && Workspace.jobTitle === "Aggiungi materiale" ? "lavoro:" + run.id : "" })
         if (Chat.running)
             out.push({ title: "Agente" + (Chat.title !== "" ? ": " + Chat.title : ""), detail: Chat.waiting ? "aspetta la tua conferma" : "sta lavorando", progress: -1, state: "run", agent: true })
         if (run.id && !Workspace.jobRunning && run.state !== "finito")      // il lavoro di «Avvia» fermato o interrotto
-            out.push({ title: "Aggiungi materiale", detail: (run.state === "fermato" ? "fermato" : "interrotto") + ": riprende senza rifare ciò che è già fatto",
+            out.push({ title: "Aggiungi materiale", detail: (run.state === "fermato" ? (run.until !== "" ? "fermato dal limite di utilizzo" : "fermato") : "interrotto")
+                               + (run.until !== "" && !run.untilPassed ? ": si può riprendere " + run.until : ": riprende senza rifare ciò che è già fatto"),
                        progress: -1, state: "wait", resume: true, open: "lavoro:" + run.id })
         else if (run.id && run.state === "finito")
             out.push({ title: "Aggiungi materiale", detail: "finito: l'esito è da leggere", progress: -1, state: "done", open: "lavoro:" + run.id })

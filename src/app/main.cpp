@@ -68,8 +68,7 @@ void runHandsFree(QQuickWindow *window, QStringList gestures, const QString &pho
     auto *timer = new QTimer(window);
     timer->setInterval(350);
     QObject::connect(timer, &QTimer::timeout, window, [=]() mutable {
-        // un lavoro in pausa per il limite di utilizzo è fermo: i gesti vanno avanti (e la foto lo mostra in pausa)
-        if ((Workspace::instance()->busy() && !Chat::instance()->waiting() && Workspace::instance()->pausedUntil().isEmpty()) || Workspace::instance()->rendering())
+        if ((Workspace::instance()->busy() && !Chat::instance()->waiting()) || Workspace::instance()->rendering())
             return;
         if (!gestures.isEmpty()) {
             const QString gesture = gestures.takeFirst().trimmed();

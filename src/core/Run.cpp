@@ -210,6 +210,10 @@ Result execute(const Project &project, const Settings &settings, const Style &st
             message.replace(lesson, fresh);
             lesson = fresh;
         }
+        if (control)
+            control->checkLimit();                     // il limite è già stato raggiunto: il compito aspetta la ripresa
+        // fermato dal limite a metà: l'agente continua la sua conversazione, la lezione resta com'è
+        const QString session = t.value("stato").toString() == "limite" ? t.value("sessione").toString() : QString();
         change([&](QJsonObject &s) {
             QJsonArray all = s.value("compiti").toArray();
             QJsonObject now = all[index].toObject();
@@ -220,7 +224,20 @@ Result execute(const Project &project, const Settings &settings, const Style &st
             s["compiti"] = all;
         });
         site({{"chiave", key}, {"file", lesson}, {"fase", "Agente"}, {"stato", "in_corso"}});
-        const worker::Result r = worker::run(project, settings, style, message, t.value("titolo").toString(), control);
+        const worker::Result r = worker::run(project, settings, style, message, t.value("titolo").toString(), control, session);
+        if (r.limited) {
+            change([&](QJsonObject &s) {
+                QJsonArray all = s.value("compiti").toArray();
+                QJsonObject now = all[index].toObject();
+                now["stato"] = "limite";
+                now["sessione"] = r.session;
+                now["costo"] = now.value("costo").toDouble() + r.cost;
+                all[index] = now;
+                s["compiti"] = all;
+            });
+            site({{"chiave", key}, {"fase", "Agente"}, {"stato", "da_fare"}});
+            throw LimitPause();
+        }
         // se l'agente non ha chiuso la lezione, la chiude Texfix: marcatori, fonti fra le usate, il posto nel documento
         if (r.ok && QFileInfo::exists(project.path(lesson))
             && std::any_of(sources.begin(), sources.end(), [&](const QString &s) { return QFileInfo::exists(project.path(s)); }))
@@ -246,7 +263,7 @@ Result execute(const Project &project, const Settings &settings, const Style &st
         QSet<QString> busy;
         QMutex queue;
         auto worker = [&] {
-            while (!stopped && !(control && control->stopped())) {
+            while (!stopped && !(control && (control->stopped() || control->pausedUntil().isValid()))) {
                 int index = -1;
                 {
                     QMutexLocker lock(&queue);
@@ -284,7 +301,7 @@ Result execute(const Project &project, const Settings &settings, const Style &st
     };
     runTasks({"integra", "versione"});
     out.converted = converting.get();
-    if (!stopped && !out.converted.stopped && !(control && control->stopped())) {
+    if (!stopped && !out.converted.stopped && !(control && (control->stopped() || control->pausedUntil().isValid()))) {
         tasks = state.value("compiti").toArray();
         runTasks({"fondi"});                           // le lezioni nuove dell'agente: dopo, con i nomi che restano liberi
     }
@@ -292,7 +309,7 @@ Result execute(const Project &project, const Settings &settings, const Style &st
         control->onPause = previousPause;
 
     // l'esito
-    out.stopped = stopped || out.converted.stopped || (control && control->stopped());
+    out.stopped = stopped || out.converted.stopped || (control && (control->stopped() || control->pausedUntil().isValid()));
     out.failure = out.converted.failure;
     out.cost = out.converted.cost;
     QStringList outcome;

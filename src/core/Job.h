@@ -15,6 +15,11 @@ namespace tx {
 struct Stopped : std::exception {
     const char *what() const noexcept override { return "fermato"; }
 };
+// Il limite di utilizzo con un lavoro: il lavoro finisce ciò che sta facendo e si ferma (è anche Stopped), da riprendere
+// con un clic quando il limite è passato (JobControl::pausedUntil dice quando).
+struct LimitPause : Stopped {
+    const char *what() const noexcept override { return "limite di utilizzo di Claude raggiunto"; }
+};
 // Il modello ha raggiunto il limite di utilizzo e nessun lavoro può aspettarlo (una chiamata senza JobControl): until
 // è l'ora in cui riprende, se il messaggio la dice.
 struct LimitReached : std::runtime_error {
@@ -50,14 +55,12 @@ public:
     std::function<void(double, const QString &)> onProgress;
     std::function<void(const QString &)> onLog;
 
-    // Il limite di utilizzo non è un errore: chi lo incontra lo dice (pause, con l'ora di ripresa), e il lavoro intero
-    // si ferma lì. Chi sta per chiamare il modello aspetta (waitLimit) finché l'ora non arriva, o finché qualcuno non
-    // dice di riprendere subito (wake); «Ferma» interrompe anche l'attesa. onPause: l'ora di ripresa, o vuota quando
-    // riprende.
+    // Il limite di utilizzo non è un errore: chi lo incontra lo dice (pause, con l'ora in cui si può riprendere). Da lì
+    // nessuna chiamata nuova parte (checkLimit lancia LimitPause), quelle in corso finiscono, e il lavoro si ferma da sé
+    // come se fosse stato fermato: si riprende con un clic. onPause: l'ora in cui si può riprendere.
     void pause(const QDateTime &until, const QString &message);
-    void waitLimit();                                  // lancia Stopped
+    void checkLimit() const;                           // lancia LimitPause se il limite è stato raggiunto
     QDateTime pausedUntil() const;
-    void wake();
     std::function<void(const QDateTime &)> onPause;
 
     // Gli eventi per chi guarda il lavoro: una chiamata al modello che parte, scrive, finisce; un cantiere (una lezione

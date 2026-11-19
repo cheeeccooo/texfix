@@ -16,7 +16,7 @@
 // Su disco: salvataggi/lavori/<piano>/esecuzione.json (fatto, fonti e scelte della conversione, compiti con lo stato, la
 // pausa per il limite); build/lavori/esecuzione/<piano>/: prima/ (com'era il progetto prima di «Avvia»: «Annulla tutto il
 // lavoro»), chiamate/ (il registro di ogni chiamata), vista.json (ciò che la finestra del lavoro mostra). Un lavoro
-// fermato, interrotto dalla chiusura o in pausa per il limite si riprende senza rifare ciò che è fatto; la cartella in
+// fermato (da «Ferma» o dal limite di utilizzo) o interrotto dalla chiusura si riprende senza rifare ciò che è fatto; la cartella in
 // build/ si butta quando il lavoro si archivia o si annulla.
 namespace tx::run {
 
