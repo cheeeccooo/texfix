@@ -104,10 +104,9 @@ TxSheet {
         spacing: Theme.gap
         TxLabel {
             Layout.fillWidth: true
-            text: Workspace.styleName === "" ? "Nessuno: un classico documento matematico." : "«" + Workspace.styleName + "»"
+            text: "«" + (Workspace.styleName === "" ? "science_default" : Workspace.styleName) + "»"
             color: Theme.textMuted
         }
-        TxButton { visible: Workspace.styleName !== ""; text: "Torna a nessuno stile"; onClicked: Workspace.applyStyle("") }
         Repeater {                                     // gli stili della libreria, pronti
             model: Workspace.styleLibrary()
             TxButton {

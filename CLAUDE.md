@@ -93,9 +93,10 @@ Due parti, un processo solo.
 
 ```
 main.tex            il documento; le lezioni sono i suoi \input{src/…} dopo \begin{document}
-texfix.sty          lo stile del progetto (\RequirePackage{<stile>}, o senza stile il classico amsthm) e ciò che è di
-                    Texfix (oggi \lezione); lo scrive il programma per intero. main.tex carica solo questo
-<stile>.sty         lo stile importato, con accanto <stile>.stile.json, la sua descrizione
+texfix.sty          carica lo stile del progetto (\RequirePackage{<stile>}) e ha ciò che è di Texfix (\lezione, le
+                    aggiunte, il segnaposto delle figure); lo scrive il programma per intero e l'albero non lo mostra.
+                    main.tex carica solo questo
+<stile>.sty         lo stile del progetto, con accanto <stile>.stile.json, la sua descrizione; nell'albero sotto main.tex
 .latexmkrc          creato se manca; quello dell'utente non si tocca
 src/ imgs/          lezioni e immagini
 fonti/coda|usate/   fonti da convertire e già usate
@@ -105,8 +106,14 @@ salvataggi/         ciò che Texfix ricorda; progetto.json (formato, impostazion
 build/              ciò che si rifà: main.pdf, lezioni/<nome>.pdf, stato-lezioni.json, cronologia/
 ```
 
-Senza stile il documento è un classico `article` con `amsthm` (D10), definito in `texfix.sty`: ambienti `theorem`, `proposition`, `lemma`,
-`corollary`, `definition`, `example`, `exercise`, `remark`, `proof`.
+Ogni progetto ha uno stile. I tre predefiniti, nella libreria di Texfix (`stili/`), sono semplici e senza colori,
+`article` con `amsthm`, e ogni enunciato ha un contatore suo alias di quello comune (`aliascnt`: la numerazione è una sola e
+`\cref` dice il nome giusto): `science_default` (il documento classico di prima, D10: `theorem`, `proposition`, `lemma`,
+`corollary`, `definition`, `example`, `exercise`, `remark`, `proof`, più `siunitx`), `default` (neutro: definizioni, esempi,
+esercizi, osservazioni, `warning`, `passage` per un passo citato) e `prose_default` (umanistico: `concept`, `thesis`,
+`argument` con `\premessa`/`\conclusione`, `objection` con `\replica`, `passage`, `example`, `question` con `\risposta`, `remark`:
+le macro di `psystyles`). Un progetto di prima senza stile riceve `science_default` all'apertura (`Project::complete`,
+`Project::DEFAULT_STYLE`); `styleswitch::apply` con un nome vuoto vale lo stesso.
 
 Un dato, una fonte: numero, data e titolo di una lezione si leggono dal suo `.tex` (`\lezione{N}{data}`, il primo
 `\section`); l'elenco delle lezioni da `main.tex`. Nessun file li ripete.
@@ -303,7 +310,7 @@ il lavoro di «Avvia» (con la pausa e «Apri»), il lavoro da riprendere, i lav
 **§3.18 Tag di provenienza.** Li disegna la vista del PDF, dai marcatori dei blocchi; non sono nel PDF su disco (scelta
 confermata dall'utente il 15/11/2026).
 
-**§4 Regole e stile.** Regole editoriali nelle Preferenze; stile facoltativo. All'importazione il modello legge il `.sty`
+**§4 Regole e stile.** Regole editoriali nelle Preferenze; ogni progetto ha uno stile (i tre predefiniti, o uno importato). All'importazione il modello legge il `.sty`
 e propone ruoli, note, macro e convenzioni (`styleswitch::propose`), poi l'utente conferma. Al cambio di stile gli
 ambienti senza corrispondente sono una domanda (`orphans`, `qml/StyleMatchSheet.qml`); le macro dello stile di prima
 cambiano nome se il nuovo ne ha una con lo stesso significato, altrimenti la loro definizione passa in `texfix.sty`
@@ -314,7 +321,7 @@ A confronto con la vecchia app sulle stesse pagine (`../prova-texfix`, src4.pdf 
 riquadri, stesso numero di definizioni e di figure; la nuova dà titoli alle sezioni, mette in un riquadro
 un'osservazione che la vecchia lasciava in prosa, e non va a capo nel sorgente. Simili, non uguali.
 
-**§5 Prove.** `./build.sh prove` (62 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
+**§5 Prove.** `./build.sh prove` (63 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
 spesso, contro `tests/misure.txt`; `--scrivi` li riscrive). Dei riferimenti della vecchia app sono portate le formule in display vere (`tests/dati/display.json`), per la mossa
 sulle formule; il resto dipende da prompt e stile, che qui sono cambiati per scelta.
 

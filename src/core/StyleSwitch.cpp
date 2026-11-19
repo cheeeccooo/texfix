@@ -93,8 +93,12 @@ QString definitionOf(const QString &sty, const QString &macro)
 }
 }
 
-Outcome apply(const Project &project, const QString &name, const QHash<QString, QString> &choices)
+Outcome apply(const Project &project, const QString &given, const QHash<QString, QString> &choices)
 {
+    // «nessuno stile» non c'è più: è lo stile predefinito, che si porta dalla libreria se il progetto non l'ha
+    const QString name = given.isEmpty() ? QString::fromUtf8(Project::DEFAULT_STYLE) : given;
+    if (!QFileInfo::exists(project.path(name + ".sty")) && isBundled(name))
+        importFromLibrary(project, name);
     Outcome out;
     const Style from = current(project);
     Style to = Style::classic();
@@ -317,8 +321,11 @@ bool removeFromLibrary(const QString &name)
     return QFile::remove(libraryHome() + '/' + name + ".sty");
 }
 
-QList<Orphan> orphans(const Project &project, const QString &name)
+QList<Orphan> orphans(const Project &project, const QString &given)
 {
+    const QString name = given.isEmpty() ? QString::fromUtf8(Project::DEFAULT_STYLE) : given;
+    if (!QFileInfo::exists(project.path(Style::descriptionFile(name))) && isBundled(name))
+        importFromLibrary(project, name);
     QList<Orphan> out;
     const Style from = current(project);
     Style to = Style::classic();

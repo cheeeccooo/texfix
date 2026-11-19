@@ -40,25 +40,6 @@ const char *const PACKAGE_HEAD = R"(% Ciò che Texfix aggiunge al documento, e l
 \ProvidesPackage{texfix}[2026/11/14 Texfix]
 )";
 
-// Senza stile: un classico documento matematico, article e amsthm, nessun colore.
-const char *const PACKAGE_CLASSIC = R"(
-% Nessuno stile: teoremi, definizioni ed esempi con amsthm
-\RequirePackage{amsmath,amssymb,amsthm,mathtools}
-\RequirePackage{graphicx}
-\RequirePackage{hyperref}
-\RequirePackage{cleveref}
-\theoremstyle{plain}
-\newtheorem{theorem}{Teorema}[section]
-\newtheorem{proposition}[theorem]{Proposizione}
-\newtheorem{lemma}[theorem]{Lemma}
-\newtheorem{corollary}[theorem]{Corollario}
-\theoremstyle{definition}
-\newtheorem{definition}[theorem]{Definizione}
-\newtheorem{example}[theorem]{Esempio}
-\newtheorem{exercise}[theorem]{Esercizio}
-\theoremstyle{remark}
-\newtheorem{remark}[theorem]{Osservazione}
-)";
 
 const char *const PACKAGE_TAIL = R"(
 % Impaginazione: un paragrafo non lascia una riga sola in fondo o in cima alla pagina, né prima di una formula
@@ -193,8 +174,22 @@ QStringList Project::complete() const
         ensure(".latexmkrc", QString::fromUtf8(LATEXMKRC));
     ensure(STATE, QString::fromUtf8(QJsonDocument(QJsonObject{{"formato", FORMAT}}).toJson()));
 
+    // ogni progetto ha uno stile: uno di prima, senza, prende lo stile predefinito delle materie scientifiche, che è il
+    // documento classico di allora (gli stessi ambienti: le lezioni non cambiano)
+    QJsonObject state = QJsonDocument::fromJson(files::read(path(STATE)).toUtf8()).object();
+    if (state.value("stile").toString().isEmpty()) {
+        const QString style = QString::fromUtf8(Project::DEFAULT_STYLE);
+        bool copied = true;
+        for (const QString &file : {style + ".sty", style + ".stile.json"})
+            if (!QFileInfo::exists(path(file)))
+                copied = QFile::copy(":/stili/" + file, path(file)) && QFile::setPermissions(path(file), QFile::ReadOwner | QFile::WriteOwner | QFile::ReadGroup | QFile::ReadOther) && copied;
+        if (copied) {
+            state.insert("stile", style);
+            if (files::write(path(STATE), QString::fromUtf8(QJsonDocument(state).toJson())))
+                added << style + ".sty";
+        }
+    }
     // texfix.sty è del programma: se non è quello di questa versione e di questo stile, lo riscrive
-    const QJsonObject state = QJsonDocument::fromJson(files::read(path(STATE)).toUtf8()).object();
     QStringList packages;
     for (const QJsonValue &name : state.value("pacchetti").toArray())
         packages << name.toString();
@@ -219,8 +214,7 @@ QStringList Project::complete() const
 
 QString Project::packageText(const QString &style, const QStringList &packages, const QStringList &carried)
 {
-    QString middle = style.isEmpty() ? QString::fromUtf8(PACKAGE_CLASSIC)
-                                     : QStringLiteral("\n% Lo stile del progetto\n\\RequirePackage{%1}\n").arg(style);
+    QString middle = QStringLiteral("\n% Lo stile del progetto\n\\RequirePackage{%1}\n").arg(style.isEmpty() ? QString::fromUtf8(Project::DEFAULT_STYLE) : style);
     // le figure: TikZ e pgfplots ci sono sempre, i pacchetti che un disegno chiede si aggiungono
     middle += QStringLiteral("\n% Le figure\n\\RequirePackage{tikz,pgfplots}\n\\usetikzlibrary{arrows.meta,calc,angles,quotes,intersections}\n"
                              "\\pgfplotsset{compat=1.18}\n");

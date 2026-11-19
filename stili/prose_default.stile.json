@@ -1,0 +1,128 @@
+{
+    "formato": 1,
+    "nome": "prose_default",
+    "rimandi": "cref",
+    "ambiente_figura": "",
+    "didascalia": "",
+    "comando_spezza": "\\pagebreak",
+    "opzioni_classe": "",
+    "ambienti": [
+        {
+            "nome": "concept",
+            "ruolo": "concetto",
+            "prefisso": "con",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": "un concetto o un termine tecnico di un autore: che cosa vuol dire e da che cosa si distingue; il termine in grassetto"
+        },
+        {
+            "nome": "thesis",
+            "ruolo": "tesi",
+            "prefisso": "tes",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": "la posizione di un autore o di una scuola, in una o due frasi"
+        },
+        {
+            "nome": "argument",
+            "ruolo": "argomento",
+            "prefisso": "arg",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": "l'argomento che sostiene una tesi, subito dopo di lei; quando la fonte lo ricostruisce in passi, `\\premessa{…}` una per riga e `\\conclusione{…}`"
+        },
+        {
+            "nome": "objection",
+            "ruolo": "obiezione",
+            "prefisso": "obi",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": "un'obiezione a una tesi o a un argomento; la risposta, se la fonte la dà, dopo `\\replica`"
+        },
+        {
+            "nome": "passage",
+            "ruolo": "citazione",
+            "prefisso": "cit",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": "un passo citato alla lettera, solo se la fonte lo riporta; l'argomento facoltativo è la fonte, non un titolo: `\\begin{passage}[Cartesio, \\opera{Meditazioni}, II]`"
+        },
+        {
+            "nome": "example",
+            "ruolo": "esempio",
+            "prefisso": "ex",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": "un caso, un esperimento mentale, un'immagine dell'autore"
+        },
+        {
+            "nome": "question",
+            "ruolo": "domanda",
+            "prefisso": "dom",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": "una domanda d'esame o di ripasso che la fonte pone; la risposta dopo `\\risposta`"
+        },
+        {
+            "nome": "remark",
+            "ruolo": "osservazione",
+            "prefisso": "rem",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "addedtext",
+            "ruolo": "altro",
+            "prefisso": "",
+            "titolo": "nessuno",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "correction",
+            "ruolo": "altro",
+            "prefisso": "",
+            "titolo": "nessuno",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        }
+    ],
+    "macro": [
+        {
+            "nome": "\\termine",
+            "significato": "un termine nella lingua dell'autore o in latino, greco, tedesco: `\\termine{epoché}`"
+        },
+        {
+            "nome": "\\opera",
+            "significato": "il titolo di un'opera: `\\opera{Critica della ragion pura}`"
+        },
+        {
+            "nome": "\\cita",
+            "significato": "una citazione breve nel testo: `\\cita{…}` o `\\cita[Kant]{…}`; mai virgolette scritte a mano attorno a una citazione"
+        },
+        {
+            "nome": "\\premessa",
+            "significato": "una premessa di un argomento (P1, P2, …); `\\conclusione{…}` la conclusione"
+        },
+        {
+            "nome": "\\limp",
+            "significato": "logica, anche nel testo: `\\limp` (→), `\\liff` (↔), `\\nec` (□), `\\poss` (◇), `\\dunque` (∴)"
+        },
+        {
+            "nome": "\\cref",
+            "significato": "il rimando a un'etichetta, con il suo nome («tesi 1.2»): niente nomi scritti a mano"
+        }
+    ],
+    "convenzioni": "Uno stile per le materie di testo: `article` con `amsthm`, nessun colore. Le tesi si tengono legate ai loro argomenti e alle obiezioni con le etichette e `\\cref`. Le citazioni sono alla lettera, con la fonte."
+}

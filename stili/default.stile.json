@@ -1,0 +1,94 @@
+{
+    "formato": 1,
+    "nome": "default",
+    "rimandi": "cref",
+    "ambiente_figura": "",
+    "didascalia": "",
+    "comando_spezza": "\\pagebreak",
+    "opzioni_classe": "",
+    "ambienti": [
+        {
+            "nome": "definition",
+            "ruolo": "definizione",
+            "prefisso": "def",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": "un concetto o un termine: che cosa vuol dire"
+        },
+        {
+            "nome": "example",
+            "ruolo": "esempio",
+            "prefisso": "ex",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "exercise",
+            "ruolo": "esercizio",
+            "prefisso": "exr",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": "un esercizio o una domanda, con lo svolgimento"
+        },
+        {
+            "nome": "remark",
+            "ruolo": "osservazione",
+            "prefisso": "rem",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "warning",
+            "ruolo": "attenzione",
+            "prefisso": "",
+            "titolo": "nessuno",
+            "colore": "",
+            "si_spezza": true,
+            "nota": "un errore tipico o una cautela, in una o due frasi; senza titolo né numero"
+        },
+        {
+            "nome": "passage",
+            "ruolo": "citazione",
+            "prefisso": "",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": "un passo citato alla lettera, solo se la fonte lo riporta; l'argomento facoltativo è la fonte, non un titolo: `\\begin{passage}[Autore, \\emph{Opera}, p. 12]`"
+        },
+        {
+            "nome": "addedtext",
+            "ruolo": "altro",
+            "prefisso": "",
+            "titolo": "nessuno",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "correction",
+            "ruolo": "altro",
+            "prefisso": "",
+            "titolo": "nessuno",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        }
+    ],
+    "macro": [
+        {
+            "nome": "\\cita",
+            "significato": "una citazione breve nel testo, fra virgolette basse: `\\cita{…}` o `\\cita[fonte]{…}`"
+        },
+        {
+            "nome": "\\cref",
+            "significato": "il rimando a un'etichetta, con il suo nome («definizione 1.2»): niente nomi scritti a mano"
+        }
+    ],
+    "convenzioni": "Uno stile semplice per ogni materia: `article` con `amsthm`, nessun colore. Pochi riquadri: il testo è la forma normale. Una formula, se serve, resta una formula in display."
+}

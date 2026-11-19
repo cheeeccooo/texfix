@@ -112,6 +112,7 @@ Rectangle {
                 required property var modelData
                 file: modelData.file
                 name: modelData.name
+                indent: modelData.indent || 0
                 detail: modelData.detail || ""
                 why: modelData.why || ""
                 dot: modelData.state === "errore" ? Theme.bad : modelData.state === "piano" ? Theme.warn : "transparent"

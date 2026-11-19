@@ -184,6 +184,26 @@ private slots:
         QVERIFY(!ok);
     }
 
+    // Ogni progetto ha uno stile: uno di prima, senza, riceve all'apertura lo stile predefinito delle materie scientifiche
+    // (il documento classico di allora), e texfix.sty lo carica.
+    void defaultStyle()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QCOMPARE(Settings::load(p).style, "science_default");                         // anche uno nuovo, finché non ne sceglie un altro
+        files::write(p.path(Project::STATE), "{\"formato\": 1}\n");                   // com'era un progetto senza stile
+        QFile::remove(p.path("science_default.sty"));
+        QFile::remove(p.path("science_default.stile.json"));
+        QVERIFY(p.complete().contains("science_default.sty"));
+        QCOMPARE(Settings::load(p).style, "science_default");
+        QVERIFY(files::read(p.path("science_default.sty")).contains("\\newtheorem{theorem}"));
+        QVERIFY(files::read(p.path("texfix.sty")).contains("\\RequirePackage{science_default}"));
+        QVERIFY(!files::read(p.path("texfix.sty")).contains("newtheorem"));          // texfix.sty ha solo ciò che è di Texfix
+        QCOMPARE(styleswitch::current(p).name, "science_default");
+    }
+
     // Importare uno stile e cambiare stile: le lezioni si riscrivono secondo i ruoli, e si torna indietro.
     void switchStyle()
     {
@@ -204,7 +224,7 @@ private slots:
         QVERIFY(!in.described);
         QVERIFY(QFileInfo::exists(p.path("mio.sty")));
         QVERIFY(QFileInfo::exists(p.path("mio.stile.json")));
-        QCOMPARE(styleswitch::current(p).name, QString());                              // importare non cambia ancora lo stile
+        QCOMPARE(styleswitch::current(p).name, "science_default");                      // importare non cambia ancora lo stile
 
         styleswitch::Outcome o = styleswitch::apply(p, "mio");
         QCOMPARE(o.error, QString());
@@ -216,12 +236,13 @@ private slots:
         QVERIFY(files::read(p.path("texfix.sty")).contains("\\RequirePackage{mio}"));
         QVERIFY(!files::read(p.path("texfix.sty")).contains("newtheorem"));
 
-        // la scelta dell'utente per ciò che non ha corrispondente; poi il ritorno a nessuno stile
+        // la scelta dell'utente per ciò che non ha corrispondente; poi il ritorno allo stile predefinito
         files::write(p.path("src/a.tex"), "\\begin{definitionbox}d\\end{definitionbox}\n\\begin{theorembox}t\\end{theorembox}\n");
         o = styleswitch::apply(p, {});
         QCOMPARE(o.unmatched, QStringList());
         QCOMPARE(files::read(p.path("src/a.tex")), "\\begin{definition}d\\end{definition}\n\\begin{theorem}t\\end{theorem}\n");
-        QVERIFY(files::read(p.path("texfix.sty")).contains("\\newtheorem{theorem}"));
+        QVERIFY(files::read(p.path("texfix.sty")).contains("\\RequirePackage{science_default}"));
+        QVERIFY(files::read(p.path("science_default.sty")).contains("\\newtheorem{theorem}"));
         files::write(p.path("src/a.tex"), "\\begin{remark}r\\end{remark}\n");
         o = styleswitch::apply(p, "mio", {{"remark", "theorembox"}});
         QCOMPARE(o.unmatched, QStringList());
@@ -373,7 +394,7 @@ private slots:
         QVERIFY(studio.contains("one fragment of `src/src4.tex`"));
         QVERIFY(studio.contains("\\label{<prefix>:src4-c<chunk>-<word>}"));
         QVERIFY(studio.contains("\\begin{center} % img F<k>"));
-        QVERIFY(studio.contains("one of definition, theorem, proposition, lemma, corollary, proof, remark, example, exercise, or text"));
+        QVERIFY(studio.contains("one of definition, theorem, proposition, lemma, corollary, proof, example, exercise, remark, or text"));
         QCOMPARE(studio.count("## Come si scrive"), 1);
         QCOMPARE(studio.count("- Mai il passivo."), 1);
         QCOMPARE(studio.count("## Lo stile del documento"), 1);
@@ -1838,7 +1859,7 @@ private slots:
         QVERIFY(files::read(p.path("main.tex")).startsWith("\\documentclass[11pt,a4paper,twocolumn]{article}"));
 
         // dalla libreria: lo styles vero, ripulito; con lui compila una lezione che usa ciò che ora è di Texfix
-        QCOMPARE(styleswitch::library(), QStringList{"styles"});
+        QCOMPARE(styleswitch::library(), (QStringList{"default", "prose_default", "science_default", "styles"}));
         QCOMPARE(styleswitch::importFromLibrary(p, "styles").error, QString());
         const QString sty = files::read(p.path("styles.sty"));
         QVERIFY(sty.contains("v4.0") && !sty.contains("imgslot") && !sty.contains("addedtext") && !sty.contains("AllowBoxBreak"));

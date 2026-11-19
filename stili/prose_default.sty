@@ -1,0 +1,52 @@
+% prose_default.sty — lo stile predefinito delle materie umanistiche di Texfix: article con amsthm, senza colori.
+% Concetti, tesi, argomenti (con premesse e conclusione), obiezioni (con la replica), esempi, domande (con la risposta)
+% e osservazioni numerati per sezione; un passo citato con la sua fonte. Le macro sono quelle di psystyles.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{prose_default}[2026/11/19 Texfix]
+\RequirePackage{amsmath,amssymb,amsthm}
+\RequirePackage{graphicx}
+\RequirePackage[autostyle]{csquotes}
+% Un enunciato con il contatore comune (la numerazione è una sola: 1.1, 1.2, …) ma con un contatore suo, alias di
+% quello: così \cref lo chiama con il suo nome («tesi 1.2», non «concetto 1.2»).
+\RequirePackage{aliascnt}
+\newcommand\prosedefault@shared[2]{\newaliascnt{#1}{concept}\newtheorem{#1}[#1]{#2}\aliascntresetthe{#1}}
+\RequirePackage{hyperref}
+\RequirePackage{cleveref}
+\theoremstyle{definition}
+\newtheorem{concept}{Concetto}[section]
+\prosedefault@shared{thesis}{Tesi}
+\prosedefault@shared{argument}{Argomento}
+\prosedefault@shared{objection}{Obiezione}
+\prosedefault@shared{example}{Esempio}
+\prosedefault@shared{question}{Domanda}
+\theoremstyle{remark}
+\prosedefault@shared{remark}{Osservazione}
+% Un passo citato alla lettera: \begin{passage}[Autore, \opera{Opera}, p. 12] ... \end{passage}
+\NewDocumentEnvironment{passage}{o}{\begin{quote}}{\IfValueT{#1}{\par\hfill{\small\itshape --- #1}}\end{quote}}
+% La forma di un argomento: \premessa{…} (P1, P2, …), \conclusione{…}; il conto riparte a ogni argomento
+\newcounter{premise}
+\renewcommand\thepremise{P\arabic{premise}}
+\AddToHook{env/argument/begin}{\setcounter{premise}{0}}
+\newcommand\premessa[1]{\par\refstepcounter{premise}{\noindent\hangindent=2.4em\hangafter=1
+  \makebox[2.4em][l]{(\thepremise)}#1\par}}
+\newcommand\conclusione[1]{\par{\noindent\hangindent=2.4em\hangafter=1\makebox[2.4em][l]{$\therefore$}#1\par}}
+\newcommand\replica{\par\noindent\textit{Replica.}\ \ignorespaces}
+\newcommand\risposta{\par\noindent\textit{Risposta.}\ \ignorespaces}
+% Il testo
+\newcommand\termine[1]{\textit{#1}}
+\newcommand\opera[1]{\emph{#1}}
+\newcommand\autore[1]{#1}
+\NewDocumentCommand\cita{o m}{\enquote{#2}\IfValueT{#1}{ (#1)}}
+% Logica, nel testo o in una formula: \limp (→), \liff (↔), \nec (□), \poss (◇), \dunque (∴)
+\newcommand\limp{\ensuremath{\rightarrow}} \newcommand\liff{\ensuremath{\leftrightarrow}}
+\newcommand\nec{\ensuremath{\Box}} \newcommand\poss{\ensuremath{\Diamond}} \newcommand\dunque{\ensuremath{\therefore}}
+% I nomi dei rimandi (\cref), in italiano
+\crefname{concept}{concetto}{concetti}\Crefname{concept}{Concetto}{Concetti}
+\crefname{thesis}{tesi}{tesi}\Crefname{thesis}{Tesi}{Tesi}
+\crefname{argument}{argomento}{argomenti}\Crefname{argument}{Argomento}{Argomenti}
+\crefname{objection}{obiezione}{obiezioni}\Crefname{objection}{Obiezione}{Obiezioni}
+\crefname{example}{esempio}{esempi}\Crefname{example}{Esempio}{Esempi}
+\crefname{question}{domanda}{domande}\Crefname{question}{Domanda}{Domande}
+\crefname{remark}{osservazione}{osservazioni}\Crefname{remark}{Osservazione}{Osservazioni}
+\crefname{premise}{premessa}{premesse}\Crefname{premise}{Premessa}{Premesse}
+\endinput

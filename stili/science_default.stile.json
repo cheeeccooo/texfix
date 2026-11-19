@@ -1,0 +1,121 @@
+{
+    "formato": 1,
+    "nome": "science_default",
+    "rimandi": "cref",
+    "ambiente_figura": "",
+    "didascalia": "",
+    "comando_spezza": "\\pagebreak",
+    "opzioni_classe": "",
+    "ambienti": [
+        {
+            "nome": "definition",
+            "ruolo": "definizione",
+            "prefisso": "def",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "theorem",
+            "ruolo": "teorema",
+            "prefisso": "thm",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "proposition",
+            "ruolo": "proposizione",
+            "prefisso": "prop",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "lemma",
+            "ruolo": "lemma",
+            "prefisso": "lem",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "corollary",
+            "ruolo": "corollario",
+            "prefisso": "cor",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "proof",
+            "ruolo": "dimostrazione",
+            "prefisso": "",
+            "titolo": "nessuno",
+            "colore": "",
+            "si_spezza": true,
+            "nota": "si apre subito dopo l'enunciato che dimostra; senza titolo"
+        },
+        {
+            "nome": "example",
+            "ruolo": "esempio",
+            "prefisso": "ex",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "exercise",
+            "ruolo": "esercizio",
+            "prefisso": "exr",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "remark",
+            "ruolo": "osservazione",
+            "prefisso": "rem",
+            "titolo": "opzionale",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "addedtext",
+            "ruolo": "altro",
+            "prefisso": "",
+            "titolo": "nessuno",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        },
+        {
+            "nome": "correction",
+            "ruolo": "altro",
+            "prefisso": "",
+            "titolo": "nessuno",
+            "colore": "",
+            "si_spezza": true,
+            "nota": ""
+        }
+    ],
+    "macro": [
+        {
+            "nome": "\\SI",
+            "significato": "una grandezza con la sua unità di misura: `\\SI{3}{\\metre}`, `\\SI{9.8}{\\metre\\per\\second\\squared}`"
+        },
+        {
+            "nome": "\\cref",
+            "significato": "il rimando a un'etichetta, con il suo nome («teorema 1.2»): niente nomi scritti a mano"
+        }
+    ],
+    "convenzioni": "Un classico documento matematico: `article` con `amsthm`, nessun colore, nessun riquadro. Un'avvertenza è un'osservazione (`remark`) che comincia con «Attenzione:». Le formule in evidenza restano formule in display, senza cornice."
+}

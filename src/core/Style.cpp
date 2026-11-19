@@ -24,6 +24,9 @@ QList<Style::Role> Style::roles()
 
 Style Style::classic()
 {
+    bool ok = false;                                   // lo stile predefinito delle materie scientifiche, com'è descritto
+    if (Style s = load(":/stili/science_default.stile.json", &ok); ok)
+        return s;
     Style s;
     auto env = [&](const char *name, const char *role, bool title = true) {
         s.environments << Environment{name, role, title ? "opzionale" : "nessuno", {}, true, {}};

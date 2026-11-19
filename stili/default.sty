@@ -1,0 +1,30 @@
+% default.sty — lo stile predefinito neutro di Texfix, per ogni materia: article con amsthm, senza colori. Definizioni,
+% esempi, esercizi e osservazioni numerati per sezione; un'avvertenza; un passo citato con la sua fonte.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{default}[2026/11/19 Texfix]
+\RequirePackage{amsmath,amssymb,amsthm}
+\RequirePackage{graphicx}
+\RequirePackage[autostyle]{csquotes}
+% Un enunciato con il contatore comune (la numerazione è una sola: 1.1, 1.2, …) ma con un contatore suo, alias di
+% quello: così \cref lo chiama con il suo nome («tesi 1.2», non «concetto 1.2»).
+\RequirePackage{aliascnt}
+\newcommand\default@shared[2]{\newaliascnt{#1}{definition}\newtheorem{#1}[#1]{#2}\aliascntresetthe{#1}}
+\RequirePackage{hyperref}
+\RequirePackage{cleveref}
+\theoremstyle{definition}
+\newtheorem{definition}{Definizione}[section]
+\default@shared{example}{Esempio}
+\default@shared{exercise}{Esercizio}
+\theoremstyle{remark}
+\default@shared{remark}{Osservazione}
+\newtheorem*{warning}{Attenzione}
+% Un passo citato alla lettera: \begin{passage}[Autore, \emph{Opera}, p. 12] ... \end{passage}
+\NewDocumentEnvironment{passage}{o}{\begin{quote}}{\IfValueT{#1}{\par\hfill{\small\itshape --- #1}}\end{quote}}
+% Una citazione breve nel testo: \cita{…} o \cita[fonte]{…}
+\NewDocumentCommand\cita{o m}{\enquote{#2}\IfValueT{#1}{ (#1)}}
+% I nomi dei rimandi (\cref), in italiano
+\crefname{definition}{definizione}{definizioni}\Crefname{definition}{Definizione}{Definizioni}
+\crefname{example}{esempio}{esempi}\Crefname{example}{Esempio}{Esempi}
+\crefname{exercise}{esercizio}{esercizi}\Crefname{exercise}{Esercizio}{Esercizi}
+\crefname{remark}{osservazione}{osservazioni}\Crefname{remark}{Osservazione}{Osservazioni}
+\endinput

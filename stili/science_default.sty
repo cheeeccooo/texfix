@@ -1,0 +1,34 @@
+% science_default.sty — lo stile predefinito delle materie scientifiche di Texfix: un classico documento matematico,
+% article con amsthm, senza colori. Teoremi, definizioni, esempi ed esercizi numerati per sezione.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{science_default}[2026/11/19 Texfix]
+\RequirePackage{amsmath,amssymb,amsthm,mathtools}
+\RequirePackage{siunitx}
+\RequirePackage{graphicx}
+% Un enunciato con il contatore comune (la numerazione è una sola: 1.1, 1.2, …) ma con un contatore suo, alias di
+% quello: così \cref lo chiama con il suo nome («tesi 1.2», non «concetto 1.2»).
+\RequirePackage{aliascnt}
+\newcommand\sciencedefault@shared[2]{\newaliascnt{#1}{theorem}\newtheorem{#1}[#1]{#2}\aliascntresetthe{#1}}
+\RequirePackage{hyperref}
+\RequirePackage{cleveref}
+\theoremstyle{plain}
+\newtheorem{theorem}{Teorema}[section]
+\sciencedefault@shared{proposition}{Proposizione}
+\sciencedefault@shared{lemma}{Lemma}
+\sciencedefault@shared{corollary}{Corollario}
+\theoremstyle{definition}
+\sciencedefault@shared{definition}{Definizione}
+\sciencedefault@shared{example}{Esempio}
+\sciencedefault@shared{exercise}{Esercizio}
+\theoremstyle{remark}
+\sciencedefault@shared{remark}{Osservazione}
+% I nomi dei rimandi (\cref), in italiano
+\crefname{theorem}{teorema}{teoremi}\Crefname{theorem}{Teorema}{Teoremi}
+\crefname{proposition}{proposizione}{proposizioni}\Crefname{proposition}{Proposizione}{Proposizioni}
+\crefname{lemma}{lemma}{lemmi}\Crefname{lemma}{Lemma}{Lemmi}
+\crefname{corollary}{corollario}{corollari}\Crefname{corollary}{Corollario}{Corollari}
+\crefname{definition}{definizione}{definizioni}\Crefname{definition}{Definizione}{Definizioni}
+\crefname{example}{esempio}{esempi}\Crefname{example}{Esempio}{Esempi}
+\crefname{exercise}{esercizio}{esercizi}\Crefname{exercise}{Esercizio}{Esercizi}
+\crefname{remark}{osservazione}{osservazioni}\Crefname{remark}{Osservazione}{Osservazioni}
+\endinput

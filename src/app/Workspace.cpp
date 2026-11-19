@@ -354,9 +354,12 @@ void Workspace::refreshTree()
                                {"done", m_settings.isDone(lesson.file)},
                                {"detail", detail}};
     }
-    for (const char *file : {Project::MAIN, Project::PACKAGE})
-        if (QFileInfo::exists(m_project.path(file)))
-            others << QVariantMap{{"file", QString::fromUtf8(file)}, {"name", QString::fromUtf8(file)}};
+    // il documento e, sotto, lo stile che usa; texfix.sty è del programma e non si mostra
+    if (QFileInfo::exists(m_project.path(Project::MAIN)))
+        others << QVariantMap{{"file", QString::fromUtf8(Project::MAIN)}, {"name", QString::fromUtf8(Project::MAIN)}};
+    if (const QString style = m_settings.style.isEmpty() ? QString::fromUtf8(Project::DEFAULT_STYLE) : m_settings.style;
+        QFileInfo::exists(m_project.path(style + ".sty")))
+        others << QVariantMap{{"file", style + ".sty"}, {"name", style + ".sty"}, {"indent", 22}, {"detail", QStringLiteral("stile")}};
     for (const QString &name : QDir(m_project.path("src")).entryList({"*.tex"}, QDir::Files, QDir::Name))
         if (!inMain.contains("src/" + name))
             others << QVariantMap{{"file", "src/" + name}, {"name", name}};

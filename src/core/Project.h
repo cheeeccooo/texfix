@@ -26,6 +26,8 @@ class Project {
 public:
     static constexpr const char *MAIN = "main.tex";
     static constexpr const char *PACKAGE = "texfix.sty";
+    // Lo stile di un progetto che non ne ha uno (quelli di prima): il documento classico, article con amsthm.
+    static constexpr const char *DEFAULT_STYLE = "science_default";
     static constexpr const char *STATE = "salvataggi/progetto.json";
     static constexpr int FORMAT = 1;
 
