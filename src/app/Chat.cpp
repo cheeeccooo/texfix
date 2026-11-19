@@ -88,6 +88,13 @@ Chat::Chat()
                         reply(QJsonObject{{"behavior", "deny"}, {"message", "Fuori dal progetto: non è permesso. Lavora solo sui file del progetto."}});
                         continue;
                     }
+                    if (agent::guarded(workspace->root(), input) && asked.value("tool_name").toString() != "Read"
+                        && asked.value("tool_name").toString() != "Grep" && asked.value("tool_name").toString() != "Glob") {
+                        add("note", QStringLiteral("L'agente ha provato a scrivere %1: negato (il profilo e lo stile si propongono).").arg(workspace->project().relative(target)));
+                        reply(QJsonObject{{"behavior", "deny"}, {"message", "Il profilo e lo stile non si scrivono a mano: consegna la proposta con "
+                                                                              "proponi_profilo o proponi_stile, e l'utente decide."}});
+                        continue;
+                    }
                     if (m_mode == "autonomo") {        // dentro il progetto non chiede mai
                         reply(QJsonObject{{"behavior", "allow"}, {"updatedInput", input}});
                         continue;
@@ -202,7 +209,9 @@ void Chat::launch(const QString &text)
                           "--tools", "Read,Edit,Write,Grep,Glob", "--mcp-config",
                           QString::fromUtf8(QJsonDocument(QJsonObject{{"mcpServers", QJsonObject{{"texfix", server}}}}).toJson(QJsonDocument::Compact)),
                           "--strict-mcp-config", "--allowedTools",
-                          "mcp__texfix__stato_progetto,mcp__texfix__compila_lezione,mcp__texfix__compila_documento,mcp__texfix__dubbi,mcp__texfix__impagina,mcp__texfix__chiudi_lezione,mcp__texfix__consegna_piano,mcp__texfix__consegna_esito",
+                          "mcp__texfix__stato_progetto,mcp__texfix__compila_lezione,mcp__texfix__compila_documento,mcp__texfix__dubbi,mcp__texfix__impagina,mcp__texfix__chiudi_lezione,mcp__texfix__consegna_piano,mcp__texfix__consegna_esito,mcp__texfix__proponi_profilo,mcp__texfix__proponi_stile",
+                          // il profilo e lo stile non si scrivono: si propongono, e decide l'utente
+                          "--disallowedTools", agent::guardedRules(),
                           "--setting-sources", "", "--disable-slash-commands"};
     // ciò che vuole una conferma arriva al programma: fuori dal progetto si nega sempre; dentro, «Autonomo» consente da sé
     // e gli altri due modi chiedono all'utente

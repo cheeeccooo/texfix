@@ -106,7 +106,7 @@ Item {
             return
         const file = editor.currentFile
         // anche la finestra del lavoro di «Avvia» prende tutto lo spazio
-        const inReview = ["rivedi:impaginazione", "rivedi:dubbi", "rivedi:correzioni", "rivedi:figure"].includes(file) || file.startsWith("lavoro:")
+        const inReview = ["rivedi:impaginazione", "rivedi:dubbi", "rivedi:correzioni", "rivedi:figure", "profilo:"].includes(file) || file.startsWith("lavoro:")
         // un piano si legge a tutta larghezza: l'anteprima si chiude, e si riapre com'era quando si passa a un'altra scheda
         const inPlan = file.startsWith("piano:")
         if (inPlan && !inReview) {

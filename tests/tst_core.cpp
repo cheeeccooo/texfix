@@ -1112,7 +1112,7 @@ private slots:
         QCOMPARE(ask({{"id", 1}, {"method", "initialize"}, {"params", QJsonObject{{"protocolVersion", "2025-06-18"}}}})
                      .value("result").toObject().value("protocolVersion").toString(), "2025-06-18");
         const QJsonArray list = ask({{"id", 2}, {"method", "tools/list"}}).value("result").toObject().value("tools").toArray();
-        QCOMPARE(list.size(), 9);
+        QCOMPARE(list.size(), 11);                                                      // con proponi_profilo e proponi_stile
         QCOMPARE(list[0].toObject().value("name").toString(), "stato_progetto");
         QVERIFY(ask({{"id", 3}, {"method", "boh"}}).contains("error"));
 
@@ -1975,6 +1975,74 @@ private slots:
         QCOMPARE(profiles::library(), (QStringList{"Filosofia", "myprofile"}));
         QVERIFY(profiles::load("myprofile").extra.isEmpty());                         // nella libreria senza le regole di quel progetto
         profiles::setHome({});
+    }
+
+    // Lo stile del progetto cambiato si salva nella libreria con un nome suo, che prende anche nel progetto; si esporta.
+    void styleLibrary()
+    {
+        QTemporaryDir dir, home, out;
+        styleswitch::setLibraryHome(home.path());
+        const Project p(dir.filePath("prova"));
+        QCOMPARE(Project::create(p.root()), QString());
+        QVERIFY(!styleswitch::modified(p));                                             // science_default com'è
+        files::write(p.path("science_default.sty"), files::read(p.path("science_default.sty")) + "% il mio ritocco\n");
+        QVERIFY(styleswitch::modified(p));
+        QVERIFY(!styleswitch::saveToLibrary(p, "science_default").isEmpty());          // uno stile di Texfix
+        QVERIFY(!styleswitch::saveToLibrary(p, "due parole").isEmpty());
+        QCOMPARE(styleswitch::saveToLibrary(p, "fisica"), QString());
+        QCOMPARE(Settings::load(p).style, "fisica");
+        QVERIFY(QFileInfo::exists(p.path("fisica.sty")) && !QFileInfo::exists(p.path("science_default.sty")));
+        QVERIFY(files::read(p.path("fisica.sty")).contains("\\ProvidesPackage{fisica}"));
+        QVERIFY(files::read(p.path("texfix.sty")).contains("\\RequirePackage{fisica}"));
+        QCOMPARE(styleswitch::current(p).name, "fisica");
+        QVERIFY(styleswitch::library().contains("fisica"));
+        QVERIFY(!styleswitch::modified(p));
+        QVERIFY(!styleswitch::saveToLibrary(p, "fisica").isEmpty());                   // c'è già
+        QCOMPARE(styleswitch::saveToLibrary(p, "fisica", true), QString());            // sostituirlo si può, se si chiede
+        QCOMPARE(styleswitch::exportTo(p, out.path()), QString());
+        QVERIFY(QFileInfo::exists(out.filePath("fisica.sty")) && QFileInfo::exists(out.filePath("fisica.stile.json")));
+        if (hasLatexmk()) {
+            Compiler compiler;
+            compiler.setProject(p);
+            QVERIFY(!build(compiler, {}).hasErrors());
+        }
+        styleswitch::setLibraryHome({});
+    }
+
+    // Il profilo e lo stile l'agente non li scrive: li propone, e la proposta resta finché l'utente non decide. Uno stile
+    // che non compila sulla pagina di prova non si consegna.
+    void agentProposals()
+    {
+        QTemporaryDir dir;
+        const Project p(dir.filePath("prova"));
+        QCOMPARE(Project::create(p.root()), QString());
+        for (const char *file : {"salvataggi/profilo.md", "science_default.sty", "mio.stile.json", "salvataggi/proposte/x.md", "texfix.sty"})
+            QVERIFY2(agent::guarded(p.root(), QJsonObject{{"file_path", p.path(file)}}), file);
+        for (const char *file : {"src/src1.tex", "docs/x.sty", "salvataggi/dubbi/a.json"})
+            QVERIFY2(!agent::guarded(p.root(), QJsonObject{{"file_path", p.path(file)}}), file);
+        QVERIFY(agent::guardedRules().contains("Edit(salvataggi/profilo.md)"));
+        QVERIFY(agent::procedureMessage(p, "crea-profilo").contains("proponi_profilo"));
+        QVERIFY(agent::procedureMessage(p, "migliora-stile").contains("science_default.sty"));
+
+        bool error = false;
+        QVERIFY(!agent::call(p, Style::classic(), "proponi_profilo", {{"testo", "## Riquadri\nx\n"}}, nullptr, &error).isEmpty() && error);
+        const QString text = profiles::load("Umanistico").markdown().replace("# Umanistico", "# Filosofia");
+        agent::call(p, Style::classic(), "proponi_profilo", {{"testo", text}, {"nuovo", true}}, nullptr, &error);
+        QVERIFY(!error);
+        QCOMPARE(rules::Profile::parse(files::read(p.path("salvataggi/proposte/profilo.md"))).name, "Filosofia");
+        QCOMPARE(profiles::ofProject(p).name, "Neutro");                               // il profilo non cambia da sé
+        if (!hasLatexmk())
+            return;
+        const QJsonObject description{{"ambienti", QJsonArray{QJsonObject{{"nome", "massima"}, {"ruolo", "massima"}, {"prefisso", "mas"}}}}};
+        agent::call(p, Style::classic(), "proponi_stile", {{"nome", "diritto"}, {"sty", "\\ProvidesPackage{diritto}\n\\RequirePackage{amsthm}\n\\newtheorem{massima}{Massima}\n"},
+                                                           {"descrizione", description}}, nullptr, &error);
+        QVERIFY(!error);
+        QVERIFY(QFileInfo::exists(p.path("salvataggi/proposte/diritto.sty")));
+        QCOMPARE(Style::load(p.path("salvataggi/proposte/diritto.stile.json")).prefixOf(Style::load(p.path("salvataggi/proposte/diritto.stile.json")).environments.first()), "mas");
+        const QString broken = agent::call(p, Style::classic(), "proponi_stile", {{"nome", "rotto"}, {"sty", "\\ProvidesPackage{rotto}\n\\nonesiste\n"},
+                                                                                  {"descrizione", description}}, nullptr, &error);
+        QVERIFY2(error && broken.contains("non compila"), qPrintable(broken));
+        QVERIFY(!QFileInfo::exists(p.path("salvataggi/proposte/rotto.sty")));
     }
 
     // «Correggo io» e «Decidi tu»: la modifica resta da confermare, con il prima e il dopo o con il perché.

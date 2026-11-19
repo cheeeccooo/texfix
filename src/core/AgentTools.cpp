@@ -1,4 +1,7 @@
 #include "core/AgentTools.h"
+#include <QRegularExpression>
+#include "core/Files.h"
+#include "core/Tools.h"
 
 #include "core/Compiler.h"
 #include "core/Figures.h"
@@ -69,6 +72,23 @@ QJsonArray tools()
                                  {"opzioni", QJsonObject{{"type", "array"}, {"items", QJsonObject{{"type", "string"}}}}}}}}}}},
                              {"lavoro", QJsonObject{{"type", "string"}, {"description", "Solo per rifare un piano già consegnato"}}}},
                  {"titolo", "sezioni"}),
+            tool("proponi_profilo", "Propone all'utente il profilo del corso, intero, in Markdown: «# Nome», poi «## Come si scrive», "
+                                    "«## Riquadri», «## Controlli», «## Notazione», «## Figure», «## Regole in più» (una regola per voce). "
+                                    "L'utente lo vede accanto a quello che c'è e decide: il profilo non si scrive mai a mano.",
+                 QJsonObject{{"testo", QJsonObject{{"type", "string"}}},
+                             {"nuovo", QJsonObject{{"type", "boolean"}, {"description", "Vero se è un profilo nuovo, da mettere anche nella libreria"}}}},
+                 {"testo"}),
+            tool("proponi_stile", "Propone all'utente uno stile LaTeX: il .sty e la sua descrizione. Prima lo compila su una pagina di prova "
+                                  "con tutti i suoi ambienti: se non compila dice gli errori e non lo consegna. L'utente lo vede e decide: un "
+                                  ".sty non si scrive mai a mano.",
+                 QJsonObject{{"nome", QJsonObject{{"type", "string"}, {"description", "Il nome del pacchetto: una parola, lettere, cifre, - e _"}}},
+                             {"sty", QJsonObject{{"type", "string"}, {"description", "Il file .sty intero"}}},
+                             {"descrizione", QJsonObject{{"type", "object"}, {"description",
+                                 "Come Texfix lo usa: {\"ambienti\": [{\"nome\", \"ruolo\" (a che cosa serve, una o due parole), \"prefisso\" (delle "
+                                 "etichette, o vuoto), \"titolo\" (\"opzionale\" o \"nessuno\"), \"nota\"}], \"macro\": [{\"nome\", \"significato\"}], "
+                                 "\"rimandi\": \"cref\", \"convenzioni\": \"…\"}"}}},
+                             {"nuovo", QJsonObject{{"type", "boolean"}, {"description", "Vero se è uno stile nuovo, da mettere anche nella libreria"}}}},
+                 {"nome", "sty", "descrizione"}),
             tool("consegna_esito", "Consegna l'esito di un lavoro eseguito: che cosa è stato fatto, file per file, e che cosa resta da decidere.",
                  QJsonObject{{"lavoro", QJsonObject{{"type", "string"}}}, {"testo", QJsonObject{{"type", "string"}, {"description", "In markdown, breve"}}}},
                  {"lavoro", "testo"}),
@@ -150,6 +170,60 @@ QString call(const Project &project, const Style &style, const QString &name, co
             return fail(why);
         plans::discard(project, arguments.value("lavoro").toString());   // il piano rifatto prende il posto di quello di prima
         return QStringLiteral("Piano consegnato (lavoro: %1). Ora fermati: l'utente lo legge, lo sistema e lo approva.").arg(id);
+    }
+    if (name == "proponi_profilo") {
+        bool ok = false;
+        const rules::Profile p = rules::Profile::parse(arguments.value("testo").toString(), &ok);
+        if (!ok)
+            return fail(QStringLiteral("Il profilo comincia con «# Nome»: manca il nome."));
+        if (p.sections.isEmpty())
+            return fail(QStringLiteral("Il profilo non ha sezioni: servono «## Come si scrive», «## Riquadri», «## Controlli», «## Notazione», «## Figure»."));
+        QDir().mkpath(project.path(PROPOSALS));
+        files::write(project.path(QStringLiteral("%1/profilo.md").arg(PROPOSALS)), p.markdown());
+        files::write(project.path(QStringLiteral("%1/profilo.json").arg(PROPOSALS)),
+                     QString::fromUtf8(QJsonDocument(QJsonObject{{"nuovo", arguments.value("nuovo").toBool()}}).toJson()));
+        return QStringLiteral("Proposta consegnata: l'utente la vede accanto al profilo che c'è e decide. Ora fermati.");
+    }
+    if (name == "proponi_stile") {
+        static const QRegularExpression shape(R"(^[A-Za-z][A-Za-z0-9_-]*$)");
+        const QString styleName = arguments.value("nome").toString().trimmed(), sty = arguments.value("sty").toString();
+        if (!shape.match(styleName).hasMatch() || styleName == "texfix")
+            return fail(QStringLiteral("Il nome dello stile è una parola sola: lettere, cifre, - e _ (e non «texfix»)."));
+        QJsonObject description = arguments.value("descrizione").toObject();
+        description["formato"] = 1;
+        description["nome"] = styleName;
+        // la pagina di prova: ogni ambiente con un titolo e una riga, nella classe che lo stile chiede
+        const QString dir = project.path("build/prova-stile");
+        QDir(dir).removeRecursively();
+        QDir().mkpath(dir);
+        files::write(dir + '/' + styleName + ".sty", sty);
+        files::write(dir + '/' + Style::descriptionFile(styleName), QString::fromUtf8(QJsonDocument(description).toJson()));
+        bool ok = false;
+        const Style proposed = Style::load(dir + '/' + Style::descriptionFile(styleName), &ok);
+        QString sample = QStringLiteral("\\documentclass[11pt,a4paper%1]{article}\n\\usepackage[T1]{fontenc}\n\\usepackage[italian]{babel}\n"
+                                        "\\usepackage{%2}\n\\begin{document}\n\\section{Prova}\nUn testo.\n")
+                             .arg(proposed.classOptions.isEmpty() ? QString() : "," + proposed.classOptions, styleName);
+        for (const Style::Environment &e : proposed.environments) {
+            if (e.role == "altro")
+                continue;
+            sample += e.title == "nessuno" ? QStringLiteral("\\begin{%1}\nUna riga.\n\\end{%1}\n").arg(e.name)
+                                           : QStringLiteral("\\begin{%1}[Titolo]\nUna riga.\n\\end{%1}\n").arg(e.name);
+        }
+        files::write(dir + "/prova.tex", sample + "\\end{document}\n");
+        tools::run("pdflatex", {"-interaction=nonstopmode", "-halt-on-error", "prova.tex"}, dir, 120000);
+        const QString log = files::read(dir + "/prova.log");
+        QStringList errors;
+        for (const QString &line : log.split('\n'))
+            if (line.startsWith('!') && errors.size() < 5)
+                errors << line;
+        if (!QFileInfo::exists(dir + "/prova.pdf") || !errors.isEmpty())
+            return fail(QStringLiteral("La pagina di prova non compila:\n%1").arg(errors.isEmpty() ? QStringLiteral("(nessun PDF)") : errors.join('\n')));
+        QDir().mkpath(project.path(PROPOSALS));
+        files::write(project.path(QStringLiteral("%1/%2.sty").arg(PROPOSALS, styleName)), sty);
+        files::write(project.path(QStringLiteral("%1/%2").arg(PROPOSALS, Style::descriptionFile(styleName))), QString::fromUtf8(QJsonDocument(description).toJson()));
+        files::write(project.path(QStringLiteral("%1/stile.json").arg(PROPOSALS)),
+                     QString::fromUtf8(QJsonDocument(QJsonObject{{"nome", styleName}, {"nuovo", arguments.value("nuovo").toBool()}}).toJson()));
+        return QStringLiteral("La pagina di prova compila. Proposta consegnata: l'utente la vede e decide. Ora fermati.");
     }
     if (name == "consegna_esito") {
         const QString why = plans::setOutcome(project, arguments.value("lavoro").toString(), arguments.value("testo").toString());
@@ -236,6 +310,74 @@ Regole che valgono sempre:
 )") + "\nREGOLE EDITORIALI\n\n" + rules::forPrompt(rules::allIds(), settings.profile) + "\n\nSTILE DEL DOCUMENTO\n\n" + style.forPrompt();
 }
 
+bool guarded(const QString &root, const QJsonObject &input)
+{
+    const QString base = QFileInfo(root).canonicalFilePath();
+    for (const char *key : {"file_path", "path", "notebook_path"}) {
+        const QString given = input.value(QLatin1String(key)).toString();
+        if (given.isEmpty())
+            continue;
+        // relativo alla radice com'è scritta o com'è davvero (sul Mac /var è /private/var)
+        QString relative;
+        for (const QString &top : {QFileInfo(root).absoluteFilePath(), base}) {
+            const QString candidate = QDir(top).relativeFilePath(QDir::cleanPath(QDir(top).absoluteFilePath(given)));
+            if (!candidate.startsWith(".."))
+                relative = candidate;
+        }
+        if (relative.isEmpty())
+            continue;
+        if (relative == QLatin1String(Project::PROFILE) || relative.startsWith(QLatin1String(PROPOSALS)) || relative == QLatin1String(Project::PACKAGE)
+            || (!relative.contains('/') && (relative.endsWith(".sty") || relative.endsWith(".stile.json"))))
+            return true;
+    }
+    return false;
+}
+
+QString guardedRules()
+{
+    QStringList out;
+    for (const char *tool : {"Edit", "Write", "MultiEdit", "NotebookEdit"})
+        for (const char *pattern : {"salvataggi/profilo.md", "salvataggi/proposte/**", "*.sty", "*.stile.json"})
+            out << QStringLiteral("%1(%2)").arg(QLatin1String(tool), QLatin1String(pattern));
+    return out.join(',');
+}
+
+QString procedureMessage(const Project &project, const QString &kind)
+{
+    const Settings settings = Settings::load(project);
+    const QString style = (settings.style.isEmpty() ? QString::fromUtf8(Project::DEFAULT_STYLE) : settings.style);
+    const QString program = settings.program.isEmpty() ? QString() : QStringLiteral(", il programma del corso (`%1`)").arg(settings.program);
+    const QString look = QStringLiteral("Leggi lo stile del progetto (`%1.sty` e la sua descrizione `%1.stile.json`: gli ambienti con il loro ruolo), "
+                                        "il profilo che c'è (`%2`), le lezioni in `src/` e le fonti in `fonti/` se ce ne sono%3.")
+                             .arg(style, QString::fromUtf8(Project::PROFILE), program);
+    const QString profileShape = QStringLiteral(
+        "Il profilo dice come si scrive per questo corso: «# Nome», poi «## Come si scrive», «## Riquadri», «## Controlli», «## Notazione», "
+        "«## Figure», «## Regole in più» (una regola per voce). Regole brevi, a elenco, che parlano dei ruoli dello stile (una tesi, un "
+        "esempio), non dei nomi degli ambienti; niente di ciò che Texfix fa sempre (sorgente, etichette e rimandi, larghezza delle righe, "
+        "posto delle figure, aggiunte e correzioni dichiarate, impaginazione): è già nelle sue regole.");
+    if (kind == "crea-profilo")
+        return QStringLiteral("Crea il profilo di questo corso.\n- %1\n- Fai all'utente poche domande, al più cinque e tutte insieme: la materia, "
+                              "a che cosa gli servono gli appunti, come vuole formule, citazioni, figure, esempi. Aspetta le risposte.\n- %2\n"
+                              "- Consegnalo con proponi_profilo (nuovo: vero), con un nome suo, e fermati.").arg(look, profileShape);
+    if (kind == "migliora-profilo")
+        return QStringLiteral("Migliora il profilo di questo corso.\n- %1\n- Chiedi all'utente che cosa non va o che cosa vuole diverso, se non lo ha "
+                              "già detto. Aspetta la risposta.\n- %2\n- Consegna il profilo intero, cambiato, con proponi_profilo (nuovo: falso), e fermati.")
+            .arg(look, profileShape);
+    const QString styleShape = QStringLiteral(
+        "Uno stile è un pacchetto LaTeX per `article` (amsthm, o tcolorbox se l'utente vuole riquadri colorati) con un ambiente per ogni "
+        "ruolo che serve al corso, numerati per sezione, i nomi dei rimandi per `\\cref` in italiano, e le macro che il corso usa. La "
+        "descrizione dà a ogni ambiente il suo ruolo in una o due parole («tesi», «caso clinico»), il prefisso delle etichette, se ha un "
+        "titolo, una nota d'uso breve. Non carica pacchetti esotici e non tocca la pagina oltre il necessario.");
+    if (kind == "crea-stile")
+        return QStringLiteral("Crea lo stile di questo corso.\n- %1\n- Fai all'utente poche domande, al più cinque e tutte insieme: che riquadri "
+                              "gli servono, se li vuole colorati o sobri, una colonna o due. Aspetta le risposte.\n- %2\n- Consegnalo con "
+                              "proponi_stile (nuovo: vero), con un nome nuovo: lo compila su una pagina di prova; se non compila, correggi e "
+                              "riprova. Poi fermati.").arg(look, styleShape);
+    return QStringLiteral("Migliora lo stile di questo corso (`%1.sty`).\n- %2\n- Chiedi all'utente che cosa vuole diverso, se non lo ha già detto. "
+                          "Aspetta la risposta.\n- %3\n- Consegna lo stile intero, cambiato, con proponi_stile (stesso nome, nuovo: falso): lo "
+                          "compila su una pagina di prova; se non compila, correggi e riprova. Poi fermati.").arg(style, look, styleShape);
+}
+
 bool outside(const QString &root, const QJsonObject &input)
 {
     const QString base = QFileInfo(root).canonicalFilePath();
@@ -282,8 +424,9 @@ int serve(const QString &root)
             // i file del progetto sì, fuori no; uno strumento di Texfix solo se è fra i suoi
             const QJsonObject asked = params.value("arguments").toObject(), input = asked.value("input").toObject();
             const QString tool = asked.value("tool_name").toString();
+            const bool writes = QStringList{"Edit", "Write", "MultiEdit"}.contains(tool);
             const bool allowed = QStringList{"Read", "Edit", "Write", "MultiEdit", "Grep", "Glob"}.contains(tool)
-                                     ? !outside(root, input)
+                                     ? !outside(root, input) && !(writes && guarded(root, input))
                                      : tool.startsWith("mcp__texfix__") && WORKER_TOOLS.contains(tool.mid(13));
             const QJsonObject decision = allowed ? QJsonObject{{"behavior", "allow"}, {"updatedInput", input}}
                                                  : QJsonObject{{"behavior", "deny"}, {"message", "Non è permesso: lavora solo sui file del progetto e con gli strumenti che hai."}};

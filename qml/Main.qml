@@ -30,10 +30,27 @@ ApplicationWindow {
             Workspace.proposeStyle(result.name)        // il modello legge lo stile e propone i ruoli: poi le domande
     }
 
-    function createProject(path, profile, byTopic, program) {
-        const error = Workspace.newProject(path, profile, byTopic === true)
+    // Un progetto nuovo: il profilo e lo stile scelti (un nome; «@file:<percorso>» da caricare; «@agente» da creare con
+    // l'agente, prima il profilo poi lo stile), e per argomento il programma del corso.
+    property bool styleAgentNext: false
+    function createProject(path, profile, byTopic, program, style) {
+        const named = profile && !profile.startsWith("@") ? profile : ""
+        const error = Workspace.newProject(path, named, byTopic === true)
         if (error === "" && program)
             Workspace.setProgram(program)
+        if (error === "") {
+            if (profile && profile.startsWith("@file:"))
+                Workspace.importProfile(profile.substring(6))
+            if (style && style.startsWith("@file:"))
+                window.importStyle(style.substring(6))
+            else if (style && !style.startsWith("@") && style !== "science_default")
+                Workspace.useLibraryStyle(style)
+            styleAgentNext = style === "@agente" && profile === "@agente"
+            if (profile === "@agente")
+                Qt.callLater(() => Workspace.askAgent("crea-profilo"))
+            else if (style === "@agente")
+                Qt.callLater(() => Workspace.askAgent("crea-stile"))
+        }
         if (error !== "") {
             notice.text = error + " Per un progetto nuovo serve una cartella vuota; una cartella con dei file si apre con «Apri cartella»."
             notice.open()
@@ -213,7 +230,73 @@ ApplicationWindow {
     }
     OutcomeSheet { id: outcomeSheet; onLogAsked: project.showConsole() }
     RenameSheet { id: renameSheet }
-    ProfileSheet { id: profileSheet; onChosen: (path, profile, byTopic, program) => window.createProject(path, profile, byTopic, program) }
+    ProfileSheet { id: profileSheet; onChosen: (path, profile, byTopic, program, style) => window.createProject(path, profile, byTopic, program, style) }
+    // ciò che l'agente propone per il profilo o lo stile: accanto a ciò che c'è, e decide l'utente
+    TxSheet {
+        id: proposalSheet
+        readonly property var item: Workspace.proposals.length > 0 ? Workspace.proposals[0] : null
+        property string error
+        title: item ? (item.kind === "profilo" ? "L'agente propone il profilo «" + item.name + "»" : "L'agente propone lo stile «" + item.name + "»") : ""
+        wantedWidth: 1000
+        wantedHeight: 720
+        TxLabel {
+            Layout.fillWidth: true
+            text: !proposalSheet.item ? "" : proposalSheet.item.kind === "profilo"
+                  ? (proposalSheet.item.fresh ? "Un profilo nuovo: applicato, va anche nella libreria." : "Il profilo di questo progetto, cambiato.")
+                  : (proposalSheet.item.now === "" ? "Uno stile nuovo: applicato, le lezioni passano a lui (si annulla con ⌘Z)." : "Lo stile di questo progetto, cambiato.")
+            color: Theme.textMuted
+            wrapMode: Text.WordWrap
+            elide: Text.ElideNone
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 2 * Theme.gap
+            Repeater {
+                model: proposalSheet.item ? (proposalSheet.item.now === "" ? [["Come diventa", proposalSheet.item.proposed]]
+                                                                             : [["Com'è", proposalSheet.item.now], ["Come diventa", proposalSheet.item.proposed]]) : []
+                ColumnLayout {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Layout.alignment: Qt.AlignTop
+                    spacing: 4
+                    TxLabel { Layout.fillWidth: true; text: parent.modelData[0]; font.weight: Font.DemiBold }
+                    Text {
+                        Layout.fillWidth: true
+                        text: parent.modelData[1]
+                        textFormat: proposalSheet.item && proposalSheet.item.kind === "profilo" ? Text.MarkdownText : Text.PlainText
+                        font.family: proposalSheet.item && proposalSheet.item.kind === "profilo" ? Qt.application.font.family : Theme.monoFamily
+                        wrapMode: Text.WordWrap
+                        color: Theme.text
+                        font.pixelSize: Theme.smallSize + 1
+                    }
+                }
+            }
+        }
+        TxLabel { Layout.fillWidth: true; visible: proposalSheet.error !== ""; text: proposalSheet.error; color: Theme.warn; wrapMode: Text.WordWrap; elide: Text.ElideNone }
+        buttons: [
+            TxButton { text: "Scarta"; onClicked: { const kind = proposalSheet.item.kind; Workspace.discardProposal(kind); proposalSheet.close(); window.afterProposal(kind) } },
+            TxButton {
+                text: "Applica"
+                primary: true
+                onClicked: {
+                    const kind = proposalSheet.item.kind
+                    proposalSheet.error = Workspace.acceptProposal(kind)
+                    if (proposalSheet.error === "") {
+                        proposalSheet.close()
+                        window.afterProposal(kind)
+                    }
+                }
+            }
+        ]
+    }
+    Connections { target: Workspace; function onProposalsChanged() { if (Workspace.proposals.length > 0 && !proposalSheet.opened) { proposalSheet.error = ""; proposalSheet.open() } } }
+    function afterProposal(kind) {                     // un progetto nuovo con profilo e stile dall'agente: dopo il profilo, lo stile
+        if (kind === "profilo" && styleAgentNext) {
+            styleAgentNext = false
+            Qt.callLater(() => Workspace.askAgent("crea-stile"))
+        }
+    }
     OutlineSheet { id: outlineSheet }
     Connections { target: Workspace; function onOutlineReady(topics) { outlineSheet.show(topics) } }
     FileDialog {
@@ -275,6 +358,22 @@ ApplicationWindow {
                 Workspace.newVersion(argument.split(" ")[0], argument.split(" ")[1])
             } else if (name === "programma") {
                 Workspace.setProgram(argument)
+            } else if (name === "scheda-nuovo") {
+                profileSheet.ask(argument)
+            } else if (name === "profilo-usa") {
+                Workspace.say(Workspace.useProfile(argument))
+            } else if (name === "profilo-salva") {
+                Workspace.say(Workspace.saveProfile(argument))
+            } else if (name === "stile-salva") {
+                Workspace.say(Workspace.saveStyleToLibrary(argument))
+            } else if (name === "agente") {
+                Workspace.askAgent(argument)
+            } else if (name === "proposta") {
+                if (Workspace.proposals.length > 0) {
+                    const kind = Workspace.proposals[0].kind
+                    if (argument === "si") Workspace.say(Workspace.acceptProposal(kind)); else Workspace.discardProposal(kind)
+                    proposalSheet.close()
+                }
             } else if (name === "salva-profilo") {
                 Workspace.say(Workspace.saveProfile(argument))
             } else if (name === "argomenti") {

@@ -133,9 +133,31 @@ public:
     // Un progetto nuovo, per data o per argomento, anche da un profilo di partenza (vuoto: nessuno). I profili: i nomi;
     // saveProfile salva le scelte del progetto aperto (vuoto se è andata).
     Q_INVOKABLE QString newProject(const QString &path, const QString &profile = {}, bool byTopic = false);
-    Q_INVOKABLE QStringList profiles() const;
-    Q_INVOKABLE QString saveProfile(const QString &name);
+    Q_INVOKABLE QStringList profiles() const;                              // i predefiniti, poi la libreria
+    Q_INVOKABLE QStringList builtinProfiles() const;
+    Q_INVOKABLE QStringList libraryProfiles() const;
+    // La copia del profilo del progetto va nella libreria con quel nome (unico; replace per sostituirne uno dell'utente).
+    Q_INVOKABLE QString saveProfile(const QString &name, bool replace = false);
     Q_INVOKABLE void removeProfile(const QString &name);
+    Q_INVOKABLE QString useProfile(const QString &name);                   // il profilo diventa la copia del progetto
+    Q_INVOKABLE QString importProfile(const QString &path);                // nella libreria, e il progetto lo usa
+    Q_INVOKABLE QString exportProfile(const QString &path);
+    Q_INVOKABLE QString importProfileToLibrary(const QString &path);       // solo nella libreria (Preferenze)
+    Q_INVOKABLE QVariantList structuralSections() const;                   // ciò che Texfix fa sempre, in sola lettura
+    // Lo stile del progetto: nella libreria con un nome suo (cambia nome anche nel progetto), o in una cartella.
+    Q_INVOKABLE QString saveStyleToLibrary(const QString &name, bool replace = false);
+    Q_INVOKABLE QString exportStyle(const QString &dir);
+    // L'agente crea o migliora il profilo e lo stile in una chat sua (agentAsked); consegna una proposta, che l'utente
+    // vede accanto a ciò che c'è e applica o scarta: proposals [{kind: profilo|stile, name, now, proposed, fresh}].
+    Q_INVOKABLE void askAgent(const QString &kind);                        // crea-profilo, migliora-profilo, crea-stile, migliora-stile
+    Q_PROPERTY(QVariantList proposals READ proposals NOTIFY proposalsChanged)
+    QVariantList proposals() const { return m_proposals; }
+    Q_INVOKABLE QString acceptProposal(const QString &kind);
+    Q_INVOKABLE void discardProposal(const QString &kind);
+    Q_PROPERTY(QString profileName READ profileName NOTIFY settingsChanged)
+    Q_PROPERTY(bool styleModified READ styleModified NOTIFY settingsChanged)
+    QString profileName() const { return m_settings.profile.name; }
+    bool styleModified() const;
     Q_INVOKABLE void closeProject();
     Q_INVOKABLE static QString localPath(const QUrl &url);
 
@@ -409,7 +431,8 @@ signals:
     void styleQuestions(const QString &name, const QVariantList &questions);
     void outlineReady(const QVariantList &topics);
     void fileRenamed(const QString &from, const QString &to);
-    void agentAsked(const QString &message, const QString &title);   // una procedura da affidare all'agente, in una chat sua con il suo nome
+    void agentAsked(const QString &message, const QString &title);
+    void proposalsChanged();   // una procedura da affidare all'agente, in una chat sua con il suo nome
     void runChanged();
     void runOpened(const QString &id);                 // aprire la finestra del lavoro
     void settingsChanged();
@@ -469,6 +492,8 @@ private:
     tx::Compiler m_compiler;
     tx::Settings m_settings;
     tx::Style m_style = tx::Style::classic();
+    QVariantList m_proposals;                          // le proposte dell'agente su profilo e stile, da decidere
+    void readProposals();
     std::unique_ptr<tx::History> m_history;
     std::unique_ptr<tx::JobControl> m_jobControl;
     QThread *m_jobThread = nullptr;

@@ -11,6 +11,7 @@
 #include "core/NewLesson.h"
 #include "core/Pages.h"
 #include "core/Plans.h"
+#include "core/AgentTools.h"
 #include "core/Profiles.h"
 #include "core/Provenance.h"
 #include "core/Reorganize.h"
@@ -166,10 +167,78 @@ QString Workspace::newProject(const QString &path, const QString &profile, bool 
 }
 
 QStringList Workspace::profiles() const { return profiles::builtin() + profiles::library(); }
+QStringList Workspace::builtinProfiles() const { return profiles::builtin(); }
+QStringList Workspace::libraryProfiles() const { return profiles::library(); }
 
-QString Workspace::saveProfile(const QString &name)
+QString Workspace::useProfile(const QString &name)
 {
-    const QString error = profiles::saveToLibrary(m_project, name);
+    if (!hasProject())
+        return QStringLiteral("Apri prima un progetto.");
+    const QString error = profiles::setForProject(m_project, name);
+    if (!error.isEmpty())
+        return error;
+    loadSettings();
+    emit settingsChanged();
+    refreshTree();
+    say(QStringLiteral("Il progetto usa il profilo «%1».").arg(name));
+    return {};
+}
+
+QString Workspace::importProfileToLibrary(const QString &path) { return profiles::importFile(path); }
+
+QString Workspace::importProfile(const QString &path)
+{
+    const QString error = profiles::importFile(path);
+    if (!error.isEmpty())
+        return error;
+    bool ok = false;
+    const rules::Profile p = rules::Profile::parse(files::read(path), &ok);
+    return useProfile(ok ? p.name : QFileInfo(path).fileName().section('.', 0, 0));
+}
+
+QString Workspace::exportProfile(const QString &path)
+{
+    const QString error = profiles::exportFile(m_project, path);
+    if (error.isEmpty())
+        say(QStringLiteral("Profilo esportato in %1.").arg(QFileInfo(path).fileName()));
+    return error;
+}
+
+QVariantList Workspace::structuralSections() const
+{
+    QVariantList out;
+    for (const rules::Section &s : rules::structural())
+        out << QVariantMap{{"id", s.id}, {"title", s.title}, {"text", s.text}};
+    return out;
+}
+
+bool Workspace::styleModified() const { return hasProject() && styleswitch::modified(m_project); }
+
+QString Workspace::saveStyleToLibrary(const QString &name, bool replace)
+{
+    if (!hasProject())
+        return QStringLiteral("Apri prima un progetto.");
+    const QString error = styleswitch::saveToLibrary(m_project, name.trimmed(), replace);
+    if (!error.isEmpty())
+        return error;
+    loadSettings();
+    refreshTree();
+    emit settingsChanged();
+    say(QStringLiteral("Lo stile «%1» è nella libreria.").arg(name.trimmed()));
+    return {};
+}
+
+QString Workspace::exportStyle(const QString &dir)
+{
+    const QString error = styleswitch::exportTo(m_project, dir);
+    if (error.isEmpty())
+        say(QStringLiteral("Lo stile è in %1.").arg(dir));
+    return error;
+}
+
+QString Workspace::saveProfile(const QString &name, bool replace)
+{
+    const QString error = profiles::saveToLibrary(m_project, name, replace);
     if (error.isEmpty()) {
         loadSettings();
         say(QStringLiteral("Profilo «%1» salvato nella libreria: un progetto nuovo può partire da qui.").arg(name.trimmed()));
@@ -269,7 +338,7 @@ void Workspace::closeProject()
 void Workspace::watch()
 {
     QStringList paths{m_project.root(), m_project.path(Project::MAIN), m_project.path("src"), m_project.path("fonti/coda"),
-                      m_project.path("docs"), m_project.path("imgs")};
+                      m_project.path("docs"), m_project.path("imgs"), m_project.path("salvataggi"), m_project.path(agent::PROPOSALS)};
     for (const QVariant &lesson : std::as_const(m_lessons))
         paths << m_project.path(lesson.toMap().value("file").toString());
     for (const QString &path : std::as_const(paths))
@@ -277,10 +346,107 @@ void Workspace::watch()
             m_watcher.addPath(path);
 }
 
+void Workspace::readProposals()
+{
+    QVariantList out;
+    const QString dir = m_project.path(agent::PROPOSALS);
+    if (QFileInfo::exists(dir + "/profilo.md")) {
+        const rules::Profile proposed = rules::Profile::parse(files::read(dir + "/profilo.md"));
+        out << QVariantMap{{"kind", "profilo"}, {"name", proposed.name}, {"now", m_settings.profile.markdown()}, {"proposed", proposed.markdown()},
+                           {"fresh", QJsonDocument::fromJson(files::read(dir + "/profilo.json").toUtf8()).object().value("nuovo").toBool()}};
+    }
+    if (const QJsonObject style = QJsonDocument::fromJson(files::read(dir + "/stile.json").toUtf8()).object(); !style.isEmpty()) {
+        const QString name = style.value("nome").toString();
+        out << QVariantMap{{"kind", "stile"}, {"name", name}, {"now", files::read(m_project.path(name + ".sty"))},
+                           {"proposed", files::read(dir + '/' + name + ".sty")}, {"fresh", style.value("nuovo").toBool()}};
+    }
+    if (out != m_proposals) {
+        m_proposals = out;
+        emit proposalsChanged();
+    }
+}
+
+void Workspace::askAgent(const QString &kind)
+{
+    static const QHash<QString, QString> titles{{"crea-profilo", "Il profilo del corso"}, {"migliora-profilo", "Migliora il profilo"},
+                                                {"crea-stile", "Lo stile del corso"}, {"migliora-stile", "Migliora lo stile"}};
+    if (hasProject() && titles.contains(kind))
+        emit agentAsked(agent::procedureMessage(m_project, kind), titles.value(kind));
+}
+
+QString Workspace::acceptProposal(const QString &kind)
+{
+    const QString dir = m_project.path(agent::PROPOSALS);
+    QString note;
+    if (kind == "profilo") {
+        rules::Profile p = rules::Profile::parse(files::read(dir + "/profilo.md"));
+        const bool fresh = QJsonDocument::fromJson(files::read(dir + "/profilo.json").toUtf8()).object().value("nuovo").toBool();
+        checkpoint(QStringLiteral("Modifiche a mano"));
+        if (const QString error = profiles::saveToProject(m_project, p); !error.isEmpty())
+            return error;
+        if (fresh) {                                   // un profilo nuovo va anche nella libreria, con un nome libero
+            QString name = p.name;
+            for (int n = 2; profiles::exists(name); ++n)
+                name = QStringLiteral("%1 (%2)").arg(p.name).arg(n);
+            note = profiles::saveToLibrary(m_project, name);
+        }
+        QFile::remove(dir + "/profilo.md");
+        QFile::remove(dir + "/profilo.json");
+        checkpoint(QStringLiteral("Profilo «%1»").arg(profiles::ofProject(m_project).name));
+        loadSettings();
+        emit settingsChanged();
+    } else if (kind == "stile") {
+        const QJsonObject style = QJsonDocument::fromJson(files::read(dir + "/stile.json").toUtf8()).object();
+        const QString name = style.value("nome").toString();
+        const QString sty = dir + '/' + name + ".sty", description = dir + '/' + Style::descriptionFile(name);
+        if (!QFileInfo::exists(sty))
+            return QStringLiteral("La proposta non c'è più.");
+        const bool same = name == (m_settings.style.isEmpty() ? QString::fromUtf8(Project::DEFAULT_STYLE) : m_settings.style);
+        checkpoint(QStringLiteral("Modifiche a mano"));
+        for (const QString &file : {sty, description}) {
+            QFile::remove(m_project.path(QFileInfo(file).fileName()));
+            QFile::copy(file, m_project.path(QFileInfo(file).fileName()));
+        }
+        if (style.value("nuovo").toBool())
+            note = styleswitch::addToLibrary(m_project.path(name + ".sty"));
+        for (const QString &file : {sty, description, dir + "/stile.json"})
+            QFile::remove(file);
+        if (same) {                                    // lo stesso stile, cambiato: la descrizione è quella proposta
+            m_project.complete();
+            checkpoint(QStringLiteral("Stile «%1» cambiato").arg(name));
+            loadSettings();
+            emit settingsChanged();
+        } else {
+            applyStyle(name);                          // uno stile nuovo: le lezioni passano a lui (con le domande, se servono)
+        }
+    }
+    readProposals();
+    refreshTree();
+    if (!note.isEmpty())
+        say(note);
+    return {};
+}
+
+void Workspace::discardProposal(const QString &kind)
+{
+    const QString dir = m_project.path(agent::PROPOSALS);
+    if (kind == "profilo") {
+        QFile::remove(dir + "/profilo.md");
+        QFile::remove(dir + "/profilo.json");
+    } else {
+        const QString name = QJsonDocument::fromJson(files::read(dir + "/stile.json").toUtf8()).object().value("nome").toString();
+        QFile::remove(dir + '/' + name + ".sty");
+        QFile::remove(dir + '/' + Style::descriptionFile(name));
+        QFile::remove(dir + "/stile.json");
+    }
+    readProposals();
+}
+
 void Workspace::refreshTree()
 {
     if (!hasProject())
         return;
+    readProposals();
     QVariantList lessons, others;
     QStringList inMain;
     m_openDoubts = m_openDeclared = m_openFigures = m_openLayout = 0;
@@ -367,6 +533,8 @@ void Workspace::refreshTree()
     if (const QString style = m_settings.style.isEmpty() ? QString::fromUtf8(Project::DEFAULT_STYLE) : m_settings.style;
         QFileInfo::exists(m_project.path(style + ".sty")))
         others << QVariantMap{{"file", style + ".sty"}, {"name", style + ".sty"}, {"indent", 22}, {"detail", QStringLiteral("stile")}};
+    if (!m_settings.profile.name.isEmpty())                // il profilo del corso: si apre nella sua finestra
+        others << QVariantMap{{"file", QStringLiteral("profilo:")}, {"name", m_settings.profile.name}, {"indent", 22}, {"detail", QStringLiteral("profilo")}};
     for (const QString &name : QDir(m_project.path("src")).entryList({"*.tex"}, QDir::Files, QDir::Name))
         if (!inMain.contains("src/" + name))
             others << QVariantMap{{"file", "src/" + name}, {"name", name}};

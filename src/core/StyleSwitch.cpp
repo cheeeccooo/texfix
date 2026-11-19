@@ -313,6 +313,74 @@ QString addToLibrary(const QString &styPath)
     return style.save(libraryHome() + '/' + Style::descriptionFile(name)) ? QString() : QStringLiteral("Non riesco a salvare la descrizione dello stile.");
 }
 
+namespace {
+QString projectStyle(const Project &project)
+{
+    const QString name = Settings::load(project).style;
+    return name.isEmpty() ? QString::fromUtf8(Project::DEFAULT_STYLE) : name;
+}
+}
+
+bool modified(const Project &project)
+{
+    const QString name = projectStyle(project);
+    const QString master = isBundled(name) ? QStringLiteral(":/stili/%1.sty").arg(name) : libraryHome() + '/' + name + ".sty";
+    QFile a(project.path(name + ".sty")), b(master);
+    return !(a.open(QIODevice::ReadOnly) && b.open(QIODevice::ReadOnly) && a.readAll() == b.readAll());
+}
+
+QString rename(const Project &project, const QString &name)
+{
+    static const QRegularExpression shape(R"(^[A-Za-z][A-Za-z0-9_-]*$)");
+    const QString old = projectStyle(project);
+    if (!shape.match(name).hasMatch())
+        return QStringLiteral("Il nome di uno stile è una parola sola: lettere, cifre, - e _.");
+    if (name == old)
+        return {};
+    if (name == "texfix" || isBundled(name) || library().contains(name) || QFileInfo::exists(project.path(name + ".sty")))
+        return QStringLiteral("C'è già uno stile «%1»: scegli un altro nome.").arg(name);
+    QString sty = files::read(project.path(old + ".sty"));
+    static const QRegularExpression provides(R"(\\ProvidesPackage\s*\{[^}]*\})");
+    sty.replace(provides, QStringLiteral("\\ProvidesPackage{%1}").arg(name));
+    bool ok = false;
+    Style style = Style::load(project.path(Style::descriptionFile(old)), &ok);
+    style.name = name;
+    if (!files::write(project.path(name + ".sty"), sty) || !style.save(project.path(Style::descriptionFile(name))))
+        return QStringLiteral("Non riesco a scrivere lo stile con il nome nuovo.");
+    QFile::remove(project.path(old + ".sty"));
+    QFile::remove(project.path(Style::descriptionFile(old)));
+    Settings settings = Settings::load(project);
+    settings.style = name;
+    settings.save(project);
+    project.complete();                                // texfix.sty carica il nome nuovo
+    return {};
+}
+
+QString saveToLibrary(const Project &project, const QString &name, bool replace)
+{
+    if (isBundled(name))
+        return QStringLiteral("«%1» è uno stile di Texfix: scegli un altro nome.").arg(name);
+    if (library().contains(name) && !replace)
+        return QStringLiteral("C'è già uno stile «%1» nella libreria: scegli un altro nome.").arg(name);
+    if (name != projectStyle(project) && !library().contains(name))
+        if (const QString error = rename(project, name); !error.isEmpty())
+            return error;
+    if (name != projectStyle(project))
+        return QStringLiteral("Lo stile del progetto si chiama «%1»: per sostituire «%2» nella libreria serve lo stesso nome.").arg(projectStyle(project), name);
+    return addToLibrary(project.path(name + ".sty"));
+}
+
+QString exportTo(const Project &project, const QString &dir)
+{
+    const QString name = projectStyle(project);
+    for (const QString &file : {name + ".sty", Style::descriptionFile(name)}) {
+        const QString target = files::freeName(dir + '/' + file);
+        if (!QFile::copy(project.path(file), target))
+            return QStringLiteral("Non riesco a copiare %1.").arg(file);
+    }
+    return {};
+}
+
 bool removeFromLibrary(const QString &name)
 {
     if (isBundled(name))

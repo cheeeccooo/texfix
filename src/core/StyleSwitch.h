@@ -27,6 +27,17 @@ QStringList library();
 QString addToLibrary(const QString &styPath);
 bool removeFromLibrary(const QString &name);
 bool isBundled(const QString &name);
+// Lo stile del progetto è diverso da quello della libreria con lo stesso nome (o la libreria non l'ha): è dello stile
+// del progetto, e si salva nella libreria con un nome suo.
+bool modified(const Project &project);
+// Lo stile del progetto cambia nome: il file, \ProvidesPackage, la descrizione, le impostazioni e texfix.sty. Il nome
+// è una parola sola (lettere, cifre, - e _), libero nella libreria. Vuoto se è andata.
+QString rename(const Project &project, const QString &name);
+// Lo stile del progetto va nella libreria con il nome `name` (se è un altro, prima cambia nome nel progetto). Un nome
+// della libreria si sostituisce solo con replace, e mai uno stile di Texfix. Vuoto se è andata.
+QString saveToLibrary(const Project &project, const QString &name, bool replace = false);
+// Il .sty e la descrizione dello stile del progetto in una cartella. Vuoto se è andata.
+QString exportTo(const Project &project, const QString &dir);
 void setLibraryHome(const QString &dir);              // per le prove
 
 // Il modello legge il .sty e propone la descrizione: il ruolo di ogni ambiente, se si spezza, a che cosa servono le

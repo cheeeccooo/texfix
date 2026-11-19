@@ -1,9 +1,10 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
 import Texfix
 
-// Impostazioni del progetto (⌘,): le scelte che valgono per ogni lavoro e le regole del progetto. Ogni scelta è
+// Impostazioni del progetto (⌘,): le scelte che valgono per ogni lavoro, il profilo e lo stile. Ogni scelta è
 // salvata subito.
 TxSheet {
     id: root
@@ -11,7 +12,6 @@ TxSheet {
     wantedWidth: 560
     signal importAsked()
     signal programAsked()                              // si passa per argomento: prima la domanda sul programma
-    property string profileNote
 
     readonly property var entries: [
         { key: "scrittura", label: "Come si scrive", hint: "Da studiare: prosa che spiega, correzioni dichiarate, aggiunte marcate. Fedele: uno a uno, niente di aggiunto." },
@@ -22,7 +22,8 @@ TxSheet {
     ]
     property int revision: 0                           // cambia quando cambiano le impostazioni: le voci si rileggono
     Connections { target: Workspace; function onSettingsChanged() { root.revision++ } }
-    onAboutToShow: rules.text = Workspace.projectRules.join("\n")
+    onAboutToShow: note = ""
+    property string note
 
     // per data o per argomento: con delle lezioni il cambio passa da Riorganizza (la scaletta, o il ritorno per data)
     TxLabel { Layout.fillWidth: true; text: "Organizzazione"; font.weight: Font.Medium }
@@ -98,92 +99,128 @@ TxSheet {
             Item { implicitHeight: 4 }
         }
     }
-    TxLabel { Layout.fillWidth: true; text: "Stile"; font.weight: Font.Medium }
+    // il profilo e lo stile del progetto: quale, cambiarlo, importarne uno, esportarlo (in un file o nella libreria).
+    // Il profilo si legge e si cambia nella sua finestra; lo stile nell'editor.
+    TxLabel { Layout.fillWidth: true; text: "Profilo"; font.weight: Font.Medium }
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.gap
+        TxLabel { Layout.fillWidth: true; text: root.revision >= 0 ? "«" + Workspace.profileName + "»: come si scrive per questo corso." : ""; wrapMode: Text.WordWrap; elide: Text.ElideNone }
+        TxButton { text: "Cambia…"; onClicked: profileMenu.popup() }
+        TxButton { text: "Importa…"; onClicked: profileImport.open() }
+        TxButton { text: "Esporta…"; onClicked: profileExport.popup() }
+    }
+    Menu {
+        id: profileMenu
+        Instantiator {
+            model: root.revision >= 0 ? Workspace.profiles() : []
+            delegate: MenuItem {
+                required property string modelData
+                text: modelData + (modelData === Workspace.profileName ? "  ✓" : "")
+                onTriggered: root.note = Workspace.useProfile(modelData)
+            }
+            onObjectAdded: (index, object) => profileMenu.insertItem(index, object)
+            onObjectRemoved: (index, object) => profileMenu.removeItem(object)
+        }
+    }
+    Menu {
+        id: profileExport
+        MenuItem { text: "In un file…"; onTriggered: profileFile.open() }
+        MenuItem { text: "Nella libreria…"; onTriggered: { saveName.text = Workspace.profileName; saveSheet.kind = "profilo"; saveSheet.error = ""; saveSheet.open() } }
+    }
+    FileDialog {
+        id: profileImport
+        title: "Un profilo di Texfix (.profilo.md)"
+        nameFilters: ["Profili di Texfix (*.profilo.md *.md)"]
+        onAccepted: root.note = Workspace.importProfile(Workspace.localPath(selectedFile))
+    }
+    FileDialog {
+        id: profileFile
+        title: "Esporta il profilo"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["Profili di Texfix (*.profilo.md)"]
+        onAccepted: root.note = Workspace.exportProfile(Workspace.localPath(selectedFile))
+    }
+
+    TxLabel { Layout.fillWidth: true; Layout.topMargin: 4; text: "Stile"; font.weight: Font.Medium }
     RowLayout {
         Layout.fillWidth: true
         spacing: Theme.gap
         TxLabel {
             Layout.fillWidth: true
-            text: "«" + (Workspace.styleName === "" ? "science_default" : Workspace.styleName) + "»"
-            color: Theme.textMuted
+            text: root.revision >= 0 ? "«" + (Workspace.styleName === "" ? "science_default" : Workspace.styleName) + "»" + (Workspace.styleModified ? ", cambiato in questo progetto." : ".") : ""
+            wrapMode: Text.WordWrap
+            elide: Text.ElideNone
         }
-        Repeater {                                     // gli stili della libreria, pronti
-            model: Workspace.styleLibrary()
-            TxButton {
+        TxButton { text: "Cambia…"; onClicked: styleMenu.popup() }
+        TxButton { text: "Importa…"; onClicked: root.importAsked() }
+        TxButton { text: "Esporta…"; onClicked: styleExport.popup() }
+    }
+    Menu {
+        id: styleMenu
+        Instantiator {
+            model: root.revision >= 0 ? Workspace.styleLibrary() : []
+            delegate: MenuItem {
                 required property string modelData
-                visible: Workspace.styleName !== modelData
-                text: "Usa «" + modelData + "»"
-                onClicked: { root.close(); Workspace.useLibraryStyle(modelData) }
+                text: modelData + (modelData === Workspace.styleName ? "  ✓" : "")
+                onTriggered: if (modelData !== Workspace.styleName) { root.close(); Workspace.useLibraryStyle(modelData) }
             }
+            onObjectAdded: (index, object) => styleMenu.insertItem(index, object)
+            onObjectRemoved: (index, object) => styleMenu.removeItem(object)
         }
-        TxButton { text: "Importa uno stile…"; onClicked: root.importAsked() }
+    }
+    Menu {
+        id: styleExport
+        MenuItem { text: "In una cartella…"; onTriggered: styleFolder.open() }
+        MenuItem { text: "Nella libreria…"; onTriggered: { saveName.text = Workspace.styleName; saveSheet.kind = "stile"; saveSheet.error = ""; saveSheet.open() } }
+    }
+    FolderDialog {
+        id: styleFolder
+        title: "Dove esportare lo stile"
+        onAccepted: root.note = Workspace.exportStyle(Workspace.localPath(selectedFolder))
     }
     TxLabel {
         Layout.fillWidth: true
-        text: Theme.keys("Cambiare stile riscrive tutte le lezioni per il nuovo stile. Si annulla con ⌘Z.")
-        color: Theme.textMuted
+        text: root.note !== "" ? root.note : Theme.keys("Cambiare stile riscrive tutte le lezioni per il nuovo stile. Si annulla con ⌘Z.")
+        color: root.note !== "" ? Theme.warn : Theme.textMuted
         font.pixelSize: Theme.smallSize
         wrapMode: Text.WordWrap
         elide: Text.ElideNone
     }
-    Item { implicitHeight: 4 }
-    TxLabel { Layout.fillWidth: true; text: "Profilo di partenza"; font.weight: Font.Medium }
-    RowLayout {
-        Layout.fillWidth: true
-        spacing: Theme.gap
-        Rectangle {
+
+    TxSheet {
+        id: saveSheet
+        property string kind
+        property string error
+        title: kind === "stile" ? "Salva lo stile nella libreria" : "Salva il profilo nella libreria"
+        TxLabel {
             Layout.fillWidth: true
-            implicitHeight: Theme.rowHeight + 4
-            radius: Theme.radius
-            color: Theme.surface
-            border.width: 1
-            border.color: profileName.activeFocus ? Theme.accent : Theme.border
-            TextInput {
-                id: profileName
-                anchors.fill: parent
-                anchors.leftMargin: Theme.gap
-                anchors.rightMargin: Theme.gap
-                verticalAlignment: TextInput.AlignVCenter
-                color: Theme.text
-                font.pixelSize: Theme.textSize
-                selectByMouse: true
-                clip: true
-                onTextEdited: root.profileNote = ""
-                TxLabel { anchors.fill: parent; visible: parent.text === ""; text: "Il nome del profilo"; color: Theme.textFaint }
-            }
+            text: saveSheet.kind === "stile" ? "Con un nome suo, una parola sola (lettere, cifre, - e _). Se è un altro nome, lo stile cambia nome anche in questo progetto."
+                                             : "Con un nome suo, diverso da quelli che ci sono: i profili di Texfix e i tuoi."
+            wrapMode: Text.WordWrap
+            elide: Text.ElideNone
         }
-        TxButton {
-            text: "Salva come profilo"
-            enabled: profileName.text.trim() !== ""
-            onClicked: {
-                const error = Workspace.saveProfile(profileName.text)
-                root.profileNote = error !== "" ? error : "Salvato. Un progetto nuovo può partire da «" + profileName.text.trim() + "»."
+        TxTextArea { id: saveName; Layout.fillWidth: true; minHeight: Theme.rowHeight; placeholder: "Il nome" }
+        TxLabel { Layout.fillWidth: true; visible: saveSheet.error !== ""; text: saveSheet.error; color: Theme.warn; wrapMode: Text.WordWrap; elide: Text.ElideNone }
+        buttons: [
+            TxButton { text: "Annulla"; onClicked: saveSheet.close() },
+            TxButton {
+                visible: saveSheet.error.startsWith("C'è già")
+                text: "Sostituiscilo"
+                onClicked: {
+                    saveSheet.error = saveSheet.kind === "stile" ? Workspace.saveStyleToLibrary(saveName.text.trim(), true) : Workspace.saveProfile(saveName.text.trim(), true)
+                    if (saveSheet.error === "") saveSheet.close()
+                }
+            },
+            TxButton {
+                text: "Salva"
+                primary: true
+                onClicked: {
+                    saveSheet.error = saveSheet.kind === "stile" ? Workspace.saveStyleToLibrary(saveName.text.trim()) : Workspace.saveProfile(saveName.text.trim())
+                    if (saveSheet.error === "") saveSheet.close()
+                }
             }
-        }
-    }
-    TxLabel {
-        Layout.fillWidth: true
-        text: root.profileNote !== "" ? root.profileNote : "Salva lo stile, queste impostazioni e le regole del progetto, per riusarli in un progetto nuovo."
-        color: Theme.textMuted
-        font.pixelSize: Theme.smallSize
-        wrapMode: Text.WordWrap
-        elide: Text.ElideNone
-    }
-    Item { implicitHeight: 4 }
-    TxLabel { Layout.fillWidth: true; text: "Regole del progetto"; font.weight: Font.Medium }
-    TxLabel {
-        Layout.fillWidth: true
-        text: "Una per riga. Valgono più delle regole delle Preferenze, solo in questo progetto."
-        color: Theme.textMuted
-        font.pixelSize: Theme.smallSize
-        wrapMode: Text.WordWrap
-        elide: Text.ElideNone
-    }
-    TxTextArea {
-        id: rules
-        Layout.fillWidth: true
-        placeholder: "Per esempio: i vettori si scrivono con la freccia."
-        onEdited: Workspace.projectRules = text.split("\n")
+        ]
     }
 
     buttons: TxButton { text: "Chiudi"; primary: true; onClicked: root.close() }

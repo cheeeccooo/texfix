@@ -3,11 +3,12 @@ import QtQuick.Dialogs
 import QtQuick.Layouts
 import Texfix
 
-// Preferenze: le regole editoriali, per tutti i progetti. Una sezione alla volta: si legge impaginata, si modifica,
-// si riporta al predefinito.
+// Preferenze: le librerie, per tutti i progetti. I profili (come si scrive per un corso) e gli stili (come appare):
+// quelli di Texfix e quelli dell'utente, che si importano e si tolgono. Un progetto ne usa uno per tipo, e lo cambia
+// dalle sue Impostazioni; il profilo di un progetto si legge e si cambia nella sua finestra.
 TxSheet {
     id: root
-    title: "Preferenze: come voglio i miei appunti"
+    title: "Preferenze: le mie librerie"
     wantedWidth: 760
     wantedHeight: 620
 
@@ -19,9 +20,13 @@ TxSheet {
     property var styles: []
     property string styleNote
     readonly property bool stylesPage: section !== null && section.id === "@stili"
+    property var builtinProfiles: []
+    property var myProfiles: []
     function reload() {
-        sections = Workspace.ruleSections().concat([{ id: "@stili", title: "Stili", text: "", custom: false }])
+        sections = [{ id: "@profili", title: "Profili", text: "", custom: false }, { id: "@stili", title: "Stili", text: "", custom: false }]
         styles = Workspace.libraryStyles()
+        builtinProfiles = Workspace.builtinProfiles()
+        myProfiles = Workspace.libraryProfiles()
     }
     onAboutToShow: { editing = false; reload() }
 
@@ -67,35 +72,45 @@ TxSheet {
                 Layout.fillWidth: true
                 spacing: Theme.gap
                 TxLabel { Layout.fillWidth: true; text: root.section ? root.section.title : ""; font.weight: Font.DemiBold; font.pixelSize: Theme.textSize + 1 }
-                TxButton {
-                    visible: root.section !== null && root.section.custom && !root.stylesPage
-                    text: "Riporta al predefinito"
-                    onClicked: { Workspace.resetRule(root.section.id); root.editing = false; root.reload() }
+            }
+            // la libreria dei profili: quelli di Texfix (si usano così o si copiano cambiandoli in un progetto) e i tuoi
+            ColumnLayout {
+                Layout.fillWidth: true
+                visible: root.section !== null && root.section.id === "@profili"
+                spacing: Theme.gap
+                TxLabel {
+                    Layout.fillWidth: true
+                    text: "Come si scrive per un corso. Un progetto ne usa uno, che si sceglie nelle sue Impostazioni e si cambia nella sua finestra; per riusarne uno cambiato, lo si salva qui con un nome suo."
+                    color: Theme.textMuted
+                    wrapMode: Text.WordWrap
+                    elide: Text.ElideNone
                 }
-                TxButton {
-                    visible: !root.stylesPage
-                    text: root.editing ? "Fatto" : "Modifica"
-                    primary: root.editing
-                    onClicked: {
-                        if (root.editing) {
-                            Workspace.setRuleText(root.section.id, editor.text)
-                            root.reload()
-                        } else {
-                            editor.text = root.section.text
+                Repeater {
+                    model: root.builtinProfiles.concat(root.myProfiles)
+                    RowLayout {
+                        id: profileRow
+                        required property string modelData
+                        readonly property bool mine: root.myProfiles.includes(modelData)
+                        property bool sure: false
+                        Layout.fillWidth: true
+                        spacing: Theme.gap
+                        TxLabel { text: profileRow.modelData }
+                        TxLabel { Layout.fillWidth: true; text: profileRow.mine ? "tuo" : "di Texfix"; color: Theme.textFaint; font.pixelSize: Theme.smallSize }
+                        TxButton {
+                            visible: profileRow.mine
+                            text: profileRow.sure ? "Sì, togli" : "Togli"
+                            flat: !profileRow.sure
+                            onClicked: {
+                                if (!profileRow.sure)
+                                    return profileRow.sure = true
+                                Workspace.removeProfile(profileRow.modelData)
+                                root.reload()
+                            }
                         }
-                        root.editing = !root.editing
                     }
                 }
-            }
-            Text {
-                Layout.fillWidth: true
-                visible: !root.editing && !root.stylesPage
-                text: root.section ? root.section.text : ""
-                textFormat: Text.MarkdownText
-                wrapMode: Text.WordWrap
-                color: Theme.text
-                font.pixelSize: Theme.textSize
-                lineHeight: 1.15
+                TxButton { text: "Importa un profilo…"; onClicked: profileDialog.open() }
+                TxLabel { Layout.fillWidth: true; visible: root.profileNote !== ""; text: root.profileNote; color: Theme.warn; wrapMode: Text.WordWrap; elide: Text.ElideNone }
             }
             // la libreria degli stili: quelli di Texfix e quelli messi qui; un progetto li prende dalle sue Impostazioni
             ColumnLayout {
@@ -104,7 +119,7 @@ TxSheet {
                 spacing: Theme.gap
                 TxLabel {
                     Layout.fillWidth: true
-                    text: "Gli stili pronti per i progetti. Un progetto ne usa uno alla volta, o nessuno: lo si sceglie nelle Impostazioni del progetto."
+                    text: "Gli stili pronti per i progetti. Un progetto ne usa uno alla volta: lo si sceglie nelle sue Impostazioni, e lo si cambia nell'editor."
                     color: Theme.textMuted
                     wrapMode: Text.WordWrap
                     elide: Text.ElideNone
@@ -129,15 +144,16 @@ TxSheet {
                 TxButton { text: "Aggiungi uno stile…"; onClicked: libraryDialog.open() }
                 TxLabel { Layout.fillWidth: true; visible: root.styleNote !== ""; text: root.styleNote; color: Theme.warn; wrapMode: Text.WordWrap; elide: Text.ElideNone }
             }
-            TxTextArea {
-                id: editor
-                Layout.fillWidth: true
-                visible: root.editing
-                mono: true
-            }
         }
     }
 
+    property string profileNote
+    FileDialog {
+        id: profileDialog
+        title: "Un profilo di Texfix (.profilo.md)"
+        nameFilters: ["Profili di Texfix (*.profilo.md *.md)"]
+        onAccepted: { root.profileNote = Workspace.importProfileToLibrary(Workspace.localPath(selectedFile)); root.reload() }
+    }
     FileDialog {
         id: libraryDialog
         title: "Uno stile (.sty) da mettere nella libreria"
@@ -145,5 +161,5 @@ TxSheet {
         onAccepted: { root.styleNote = Workspace.addStyleToLibrary(Workspace.localPaths([selectedFile])[0]); root.reload() }
     }
 
-    buttons: TxButton { text: "Chiudi"; primary: true; onClicked: { if (root.editing) Workspace.setRuleText(root.section.id, editor.text); root.close() } }
+    buttons: TxButton { text: "Chiudi"; primary: true; onClicked: root.close() }
 }

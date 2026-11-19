@@ -27,6 +27,16 @@ inline const QStringList WORKER_TOOLS{"stato_progetto", "compila_lezione", "dubb
 
 // Una richiesta di permesso dell'agente (lo strumento e i suoi argomenti) tocca un file fuori dal progetto?
 bool outside(const QString &root, const QJsonObject &input);
+// Tocca il profilo o lo stile del progetto (salvataggi/profilo.md, un .sty, una descrizione, le proposte)? Quelli
+// l'agente non li scrive mai: li propone (proponi_profilo, proponi_stile) e l'utente decide.
+bool guarded(const QString &root, const QJsonObject &input);
+// I file che l'agente della chat non scrive, come regole di permesso del CLI (--disallowedTools).
+QString guardedRules();
+
+// Le procedure della chat su profilo e stile: «crea-profilo», «migliora-profilo», «crea-stile», «migliora-stile».
+QString procedureMessage(const Project &project, const QString &kind);
+// Le proposte che l'agente ha consegnato e che l'utente non ha ancora deciso (in salvataggi/proposte/).
+constexpr const char *PROPOSALS = "salvataggi/proposte";
 
 // Gli strumenti senza la finestra: `Texfix --strumenti-progetto <cartella>` legge le richieste da stdin e risponde su
 // stdout, sul progetto su disco. Li usa l'agente di un lavoro: solo WORKER_TOOLS, e alle richieste di permesso risponde
