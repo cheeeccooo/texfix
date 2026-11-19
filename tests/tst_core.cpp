@@ -2378,10 +2378,11 @@ private slots:
         QMutex mutex;
         stopping.onEvent = [&](const QJsonObject &e) { QMutexLocker lock(&mutex); events << e; };
         auto future = std::async(std::launch::async, [&] { return run::execute(p, Settings::load(p), Style::classic(), "20261118-170000", &stopping); });
-        for (int i = 0; i < 200; ++i) {                // finché l'agente non è partito
-            QTest::qWait(50);
+        for (int i = 0; i < 200; ++i) {                // finché l'agente non è partito e non ha letto la sua conversazione
+            QTest::qWait(50);                          // (su Windows sh parte lento: fermato prima, non leggerebbe niente)
             QMutexLocker lock(&mutex);
-            if (std::any_of(events.begin(), events.end(), [](const QJsonObject &e) { return e.value("fase").toString() == "integrate"; }))
+            if (std::any_of(events.begin(), events.end(), [](const QJsonObject &e) { return e.value("fase").toString() == "integrate"; })
+                && QFileInfo::exists(dir.filePath("ripresa")))
                 break;
         }
         stopping.stop();

@@ -9,6 +9,7 @@
 #include <QFileInfo>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QThread>
 
 #include <optional>
 
@@ -273,8 +274,12 @@ void Compiler::stop()
 
 void Compiler::dropAux() const
 {
-    for (const char *ext : {".aux", ".fdb_latexmk"})   // senza .fdb_latexmk latexmk rifà tutte le passate
-        QFile::remove(base() + QLatin1String(ext));
+    for (const char *ext : {".aux", ".fdb_latexmk"}) { // senza .fdb_latexmk latexmk rifà tutte le passate
+        const QString file = base() + QLatin1String(ext);
+        // su Windows pdflatex appena fermato può tenere ancora aperto il file: si riprova per un momento
+        for (int i = 0; i < 20 && QFileInfo::exists(file) && !QFile::remove(file); ++i)
+            QThread::msleep(100);
+    }
 }
 
 void Compiler::finish()

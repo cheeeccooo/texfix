@@ -165,6 +165,8 @@ QStringList Project::adopt(const QString &dir)
     const QStringList entries = d.entryList(QDir::AllEntries | QDir::NoDotAndDotDot, QDir::Name);   // senza i nascosti
     QDir().mkpath(dir + "/docs");
     for (const QString &entry : entries) {
+        if (entry.startsWith('.'))
+            continue;                                   // su Windows un file col punto davanti non è nascosto
         if (entry == "docs")
             continue;                                   // ciò che era già in docs/ resta lì
         const QString to = files::freeName(dir + "/docs/" + entry);

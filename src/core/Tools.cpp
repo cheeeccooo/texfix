@@ -189,7 +189,10 @@ Output run(const QString &program, const QStringList &arguments, const QString &
         process.waitForFinished(1000);
         return {};
     }
-    return {process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0, QString::fromUtf8(process.readAllStandardOutput())};
+    // su Windows synctex e altri chiudono le righe con \r\n: chi legge vuole solo \n
+    QString text = QString::fromUtf8(process.readAllStandardOutput());
+    text.replace(QLatin1String("\r\n"), QLatin1String("\n"));
+    return {process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0, text};
 }
 
 bool imageToPng(const QString &source, const QString &target, int maxSide)
