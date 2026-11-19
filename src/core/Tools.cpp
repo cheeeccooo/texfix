@@ -6,6 +6,7 @@
 #include <QFileInfo>
 #include <QHash>
 #include <QMutex>
+#include <QAtomicInt>
 #include <QImage>
 #include <QImageReader>
 #include <QPageSize>
@@ -126,12 +127,23 @@ void launch(QProcess &process, const QString &name, const QStringList &arguments
 #if defined(Q_OS_WIN)
     // un programma senza estensione è uno script (i finti modelli delle prove): lo esegue sh, quello di Git
     if (QFileInfo(resolved).isFile() && QFileInfo(resolved).suffix().isEmpty()) {
-        // MSYS non deve riscrivere gli argomenti che sembrano percorsi Unix (i prompt ne hanno)
+        // sh di Git legge la riga di comando con regole sue: i prompt lunghi, con virgolette e barre rovesciate, gli
+        // arriverebbero spezzati. Gli argomenti passano da un file («set -- '…' '…'»), che sh legge prima dello script.
+        static QAtomicInt counter;
+        const QString file = QDir::tempPath() + QStringLiteral("/texfix-argomenti-%1-%2.sh").arg(QCoreApplication::applicationPid()).arg(counter.fetchAndAddRelaxed(1));
+        QString line = QStringLiteral("set --");
+        for (QString a : arguments)
+            line += QStringLiteral(" '") + a.replace(QLatin1String("'"), QLatin1String("'\\''")) + QLatin1Char('\'');
+        QFile out(file);
+        if (out.open(QIODevice::WriteOnly | QIODevice::Truncate))
+            out.write(line.toUtf8() + '\n');
+        out.close();
+        QObject::connect(&process, &QProcess::finished, &process, [file] { QFile::remove(file); });
         QProcessEnvironment env = process.processEnvironment().isEmpty() ? environment() : process.processEnvironment();
         env.insert("MSYS2_ARG_CONV_EXCL", "*");
         env.insert("MSYS_NO_PATHCONV", "1");
         process.setProcessEnvironment(env);
-        process.start(program("sh"), QStringList{resolved} + arguments);
+        process.start(program("sh"), {"-c", "s=$1; . \"$0\"; . \"$s\"", QDir::fromNativeSeparators(file), QDir::fromNativeSeparators(resolved)});
         return;
     }
     // claude.cmd (npm) e gli altri .cmd/.bat: CreateProcess li apre solo attraverso cmd
