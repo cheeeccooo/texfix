@@ -91,7 +91,7 @@ $TexFiles = [ordered]@{ 'amsthm.sty' = 'amscls'; 'amssymb.sty' = 'amsfonts'; 'ma
     'titlesec.sty' = 'titlesec'; 'fancyhdr.sty' = 'fancyhdr'; 'stackengine.sty' = 'stackengine'; 'listofitems.sty' = 'listofitems'
     'cancel.sty' = 'cancel'; 'contour.sty' = 'contour'; 'truncate.sty' = 'truncate'; 'microtype.sty' = 'microtype'
     'caption.sty' = 'caption'; 'float.sty' = 'float'; 'bm.sty' = 'tools'; 'raleway.sty' = 'raleway'; 'plex-serif.sty' = 'plex'
-    'fontaxes.sty' = 'fontaxes'; 'mweights.sty' = 'mweights'; 'bookmark.sty' = 'bookmark'; 'geometry.sty' = 'geometry'
+    'fontaxes.sty' = 'fontaxes'; 'mweights.sty' = 'mweights'; 'ly1enc.def' = 'ly1'; 'bookmark.sty' = 'bookmark'; 'geometry.sty' = 'geometry'
     'ecrm1000.tfm' = 'ec' }
 function Tex-Missing {
     $out = @()

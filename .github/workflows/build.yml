@@ -78,6 +78,7 @@ jobs:
             raleway
             fontaxes
             mweights
+            ly1
 
       - name: Poppler (Linux)
         if: runner.os == 'Linux'

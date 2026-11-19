@@ -80,6 +80,8 @@ qt_add_executable(texfix MACOSX_BUNDLE
 qt_add_qml_module(texfix
     URI Texfix
     VERSION 1.0
+    # non in build/Texfix: su Linux lì va il programma
+    OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/qml/Texfix
     QML_FILES
         qml/Main.qml
         qml/Welcome.qml

@@ -76,7 +76,7 @@ TEX_FILES="amsthm.sty:amscls amssymb.sty:amsfonts mathtools.sty:mathtools clever
            enumitem.sty:enumitem titlesec.sty:titlesec fancyhdr.sty:fancyhdr stackengine.sty:stackengine
            listofitems.sty:listofitems cancel.sty:cancel contour.sty:contour truncate.sty:truncate microtype.sty:microtype
            caption.sty:caption float.sty:float bm.sty:tools raleway.sty:raleway plex-serif.sty:plex fontaxes.sty:fontaxes
-           mweights.sty:mweights bookmark.sty:bookmark geometry.sty:geometry ecrm1000.tfm:ec"
+           mweights.sty:mweights ly1enc.def:ly1 bookmark.sty:bookmark geometry.sty:geometry ecrm1000.tfm:ec"
 tex_missing() { # pacchetti TeX Live che mancano, separati da spazi
     local out="" pair
     for pair in $TEX_FILES; do
