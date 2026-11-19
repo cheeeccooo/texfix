@@ -306,6 +306,16 @@ bool imageToPdf(const QString &source, const QString &target)
 #endif
 }
 
+QString documentMarkdown(const QString &source, const QString &root, const QString &media)
+{
+    // senza gli attributi di pandoc ({width=…}, i div e gli span): al modello serve il testo
+    const Output out = run("pandoc", {"-t", "markdown-raw_html-native_divs-native_spans-fenced_divs-bracketed_spans-header_attributes"
+                                            "-link_attributes-raw_attribute-smart",
+                                      "--wrap=none", "--extract-media=" + media, QFileInfo(source).absoluteFilePath()},
+                           root, 120000);
+    return out.ok ? out.text : QString();
+}
+
 QString documentText(const QString &source)
 {
 #if defined(Q_OS_MACOS)

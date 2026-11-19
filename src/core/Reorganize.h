@@ -42,5 +42,8 @@ QString place(const Project &project, const QString &lesson, const QString &topi
 // o subito prima del più vicino dopo, se no `after`. Così l'ordine è quello del piano qualunque sia l'ordine in cui le
 // lezioni sono pronte. Non contano come collocate le lezioni che aspettano ancora un posto (`src/srcN.tex`).
 QString anchor(const Project &project, const QStringList &group, int rank, const QString &after);
+// Riordina gli argomenti del documento: quelli il cui titolo (il primo \section) è in `titles` prendono quell'ordine,
+// nei posti che avevano; gli altri restano dove sono. Sposta solo le righe \input di main.tex. Vero se ha cambiato.
+bool reorder(const Project &project, const QStringList &titles);
 
 }

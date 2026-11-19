@@ -40,6 +40,10 @@ Output run(const QString &program, const QStringList &arguments, const QString &
 bool imageToPng(const QString &source, const QString &target, int maxSide);
 bool imageToPdf(const QString &source, const QString &target);
 QString documentText(const QString &source);
+// Un documento (.docx, .odt, .rtf, .doc) in markdown con pandoc: le tabelle come tabelle, le formule di Word come
+// $…$, le immagini estratte in `media` (relativa a `root`, da dove si lancia pandoc: i riferimenti nel testo sono
+// relativi a root). Vuoto se pandoc non c'è o non lo legge.
+QString documentMarkdown(const QString &source, const QString &root, const QString &media);
 // /dev/null, o NUL su Windows.
 QString nullDevice();
 }

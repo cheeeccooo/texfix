@@ -121,7 +121,7 @@ show_status() {
     label="latexmk, synctex e pacchetti LaTeX (amsthm, tcolorbox, TikZ, ...)" status test -z "$(tex_missing)"
     label="Poppler (pdftoppm, pdfunite, pdfseparate)" status pdftoppm_ok
     label="Claude Code" status have claude
-    [ "$(uname -s)" = Darwin ] || { label="pandoc (facoltativo: legge i .docx, .odt, .rtf)" status have pandoc; }
+    label="pandoc (legge i .docx, .odt, .rtf con figure, tabelle e formule)" status have pandoc
 }
 
 install_macos() {
@@ -138,6 +138,7 @@ install_macos() {
     cmake_ok || brew_pkgs="$brew_pkgs cmake"
     qt_ok || brew_pkgs="$brew_pkgs qtbase qtdeclarative qtwebengine"
     pdftoppm_ok || brew_pkgs="$brew_pkgs poppler"
+    have pandoc || brew_pkgs="$brew_pkgs pandoc"
     have pdflatex || need_tex=1
     if have brew; then prefix=$(brew --prefix)
     elif [ "$(uname -m)" = arm64 ]; then prefix=/opt/homebrew

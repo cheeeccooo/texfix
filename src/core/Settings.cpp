@@ -82,6 +82,7 @@ Settings Settings::load(const Project &project)
             s.rules << rule.toString().trimmed();
     s.style = root.value("stile").toString();
     s.topics = root.value("argomenti").toObject();
+    s.program = root.value("programma").toString();
     for (const QJsonValue &name : root.value("pacchetti").toArray())
         s.packages << name.toString();
     for (const QJsonValue &line : root.value("macro_portate").toArray())
@@ -104,6 +105,8 @@ bool Settings::save(const Project &project) const
         root.insert("stile", style);
     if (!topics.isEmpty())
         root.insert("argomenti", topics);
+    if (!program.isEmpty())
+        root.insert("programma", program);
     if (!packages.isEmpty())
         root.insert("pacchetti", QJsonArray::fromStringList(packages));
     if (!carried.isEmpty())

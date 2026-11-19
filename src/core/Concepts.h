@@ -53,11 +53,16 @@ Holder fromPages(const Project &project, Model &model, const QString &key, const
 
 // La mappa, come la restituisce il modello e la controlla Texfix:
 // shared [{name, items [id…], note, proposal: one|both|skip, keep: id}], place [{concepts [id…], into: «L3» | «new»,
-// title, date, why}], skip [{concepts [id…], why}]. Ogni concetto nuovo sta in place o in skip; quelli in comune anche
-// in shared. byTopic: il corso è fatto di argomenti, non di lezioni.
-// previous: la mappa di prima con le decisioni e le istruzioni dell'utente («Rivedi piano»), come la legge il modello.
+// title, date, after, why}], skip [{concepts [id…], why}], order [«L2», «new:titolo», …] (per argomento, solo se un
+// altro ordine è più logico). Ogni concetto nuovo sta in place o in skip; quelli in comune anche in shared. byTopic: il
+// corso è fatto di argomenti, non di lezioni. previous: la mappa di prima con le decisioni e le istruzioni dell'utente
+// («Rivedi piano»), come la legge il modello. program: i temi del programma del corso, in ordine (program()).
 QJsonObject map(Model &model, const QList<Holder> &course, const QList<Holder> &fresh, bool byTopic, QString *failure,
-                const QString &previous = {});
+                const QString &previous = {}, const QStringList &program = {});
+
+// I temi del programma del corso (Settings::program), in ordine, una riga ciascuno («1. Titolo: che cosa tratta»). Il
+// modello lo legge una volta: la risposta resta in build/lavori/concetti/. Vuoto se il corso non ne ha uno.
+QStringList program(const Project &project, Model &model);
 
 // Tutto il giro per del materiale in arrivo: i concetti del corso e delle fonti (in parallelo), ciò che è già nel corso
 // tale e quale (senza modello: le lezioni di un .tex che il corso contiene), la mappa. Il risultato va anche in

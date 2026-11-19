@@ -627,6 +627,41 @@ int unadopted(const Project &project, const Style &style)
     return n;
 }
 
+int bringImages(const Project &project, const QString &lesson)
+{
+    QString text = files::read(project.path(lesson));
+    static const QRegularExpression include(R"(\\includegraphics\s*(\[[^\]]*\])?\s*\{([^}]+)\})");
+    const QString stem = QFileInfo(lesson).completeBaseName();
+    QHash<QString, QString> moved;                     // lo stesso file incluso due volte va in imgs/ una volta
+    int n = 0, next = 1;
+    QString out;
+    qsizetype last = 0;
+    for (auto it = include.globalMatch(text); it.hasNext();) {
+        const auto m = it.next();
+        const QString path = m.captured(2).trimmed();
+        QString target = moved.value(path);
+        if (target.isEmpty() && !path.startsWith("imgs/") && !QFileInfo(path).isAbsolute() && QFileInfo(project.path(path)).isFile()) {
+            const QString ext = QFileInfo(path).suffix().toLower();
+            do
+                target = QStringLiteral("imgs/%1-d%2.%3").arg(stem).arg(next++, 2, 10, QChar('0')).arg(ext);
+            while (QFileInfo::exists(project.path(target)));
+            QDir().mkpath(project.path("imgs"));
+            if (QFile::copy(project.path(path), project.path(target))) {
+                moved.insert(path, target);
+                ++n;
+            } else {
+                target.clear();
+            }
+        }
+        out += text.mid(last, m.capturedStart() - last);
+        out += target.isEmpty() ? m.captured(0) : QStringLiteral("\\includegraphics%1{%2}").arg(m.captured(1), target);
+        last = m.capturedEnd();
+    }
+    if (n > 0)
+        files::write(project.path(lesson), out + text.mid(last));
+    return n;
+}
+
 int adopt(const Project &project, const Style &style)
 {
     int n = 0;

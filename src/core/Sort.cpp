@@ -207,6 +207,28 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
         destinations.append(QJsonObject{{"into", p.value("into")}, {"title", p.value("title")}, {"date", p.value("date")}, {"after", p.value("after")}, {"concepts", p.value("concepts")},
                                         {"why", plain(p.value("why"))}, {"fare", true}, {"nota", ""}});
     }
+    // l'ordine nuovo degli argomenti, se il modello ne propone uno: per nome, con il posto che aveva ognuno
+    QJsonArray order;
+    if (settings.byTopic()) {
+        QHash<QString, QString> unitName;
+        for (const QJsonValue &v : course)
+            unitName.insert(v.toObject().value("key").toString(), v.toObject().value("name").toString());
+        for (const QJsonValue &v : s.map.value("order").toArray()) {
+            const QString key = v.toString().trimmed();
+            if (key.startsWith("new:"))
+                order.append(QJsonObject{{"key", key}, {"title", key.mid(4).trimmed()}});
+            else if (unitName.contains(key))
+                order.append(QJsonObject{{"key", key}, {"title", unitName.value(key).section(" · ", 1).trimmed()}});
+        }
+        QStringList now, proposed;
+        for (const QJsonValue &v : course)
+            now << v.toObject().value("key").toString();
+        for (const QJsonValue &v : order)
+            if (!v.toObject().value("key").toString().startsWith("new:"))
+                proposed << v.toObject().value("key").toString();
+        if (proposed == now.mid(0, proposed.size()) && proposed.size() == now.size())
+            order = {};                                // gli argomenti di prima restano come sono: niente da proporre
+    }
     QStringList unread;
     for (auto it = out.unread.begin(); it != out.unread.end(); ++it)
         unread << QStringLiteral("%1 (%2)").arg(QFileInfo(it.key()).fileName(), it.value());
@@ -225,6 +247,7 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
                              return out;
                          }()}, {"gia", QJsonArray::fromStringList(known)}, {"versioni", versions},
                          {"illeggibili", QJsonArray::fromStringList(unread)}, {"commento", ""}, {"impostazioni", settingsLine(settings)},
+                         {"ordine", QJsonObject{{"proposta", order}, {"valore", !order.isEmpty()}}},
                          {"stima", Convert::estimate(settings.quality, estimated)}, {"costo", out.cost}, {"sezioni", QJsonArray()},
                          {"domande", QJsonArray()}};
     out.plan = plans::create(project, QJsonObject{{"titolo", "Aggiungi materiale"}, {"sezioni", QJsonArray{QJsonObject{{"titolo", "-"}, {"voci", QJsonArray{"-"}}}}}}, &out.failure);
@@ -495,6 +518,10 @@ Prepared prepare(const Project &project, const QJsonObject &document)
         }
         const int n = number++;
         Convert::Wanted where{n, d.value("date").toString()};
+        if (!byTopic && d.value("date").toString().trimmed().isEmpty()) {   // per data, senza data: dove dice la logica
+            const QString after = d.value("after").toString();
+            where.after = after == "first" ? QStringLiteral("^") : lessonOf.value(after);
+        }
         if (byTopic) {                                 // un argomento nuovo: dopo quale (o in testa, o in fondo)
             where.title = title.isEmpty() ? QStringLiteral("Argomento %1").arg(n) : title;
             const QString after = d.value("after").toString();
@@ -503,6 +530,8 @@ Prepared prepare(const Project &project, const QJsonObject &document)
             where.rank = int(where.group.indexOf(where.title));
         }
         if (made.size() == 1 && notes.isEmpty()) {
+            if (made.first().endsWith(".pdf", Qt::CaseInsensitive))   // pagine intere: possono portare concetti di altri posti
+                where.only = onlyThese(ids, title).join(' ');
             out.sources << made.first();
             out.wanted.insert(made.first(), where);
         } else {
@@ -532,7 +561,13 @@ Prepared prepare(const Project &project, const QJsonObject &document)
         if (f.where.byTopic())
             out.placements.insert(file, QJsonObject{{"argomento", f.where.topic}, {"titolo", f.where.title}, {"dopo", f.where.after},
                                                     {"gruppo", QJsonArray::fromStringList(f.where.group)}, {"posto", f.where.rank}});
+        else if (!f.where.after.isEmpty())             // per data, una lezione senza data: dopo quella che dice il piano
+            out.placements.insert(file, QJsonObject{{"dopo", f.where.after}});
     }
+    // l'ordine nuovo degli argomenti, se l'utente l'ha tenuto: si applica alla fine del lavoro, quando ci sono tutti
+    if (const QJsonObject order = document.value("ordine").toObject(); byTopic && order.value("valore").toBool())
+        for (const QJsonValue &v : order.value("proposta").toArray())
+            out.order << v.toObject().value("title").toString();
     // le fonti smistate (tutto ciò che contenevano è in un pezzo, nel corso o saltato) vanno fra le usate; i doppioni si tolgono
     QSet<QString> read;
     for (const QJsonObject &src : std::as_const(sources))

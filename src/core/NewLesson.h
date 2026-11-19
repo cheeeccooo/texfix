@@ -20,6 +20,11 @@ QStringList toQueue(const Project &project, const QStringList &paths);
 // titolo, dopo): le colloca chiudi_lezione. Restano alla chiusura.
 constexpr const char *PROCEDURES = "salvataggi/procedure.json";
 void addPlacements(const Project &project, const QJsonObject &placements);
+// Mette una lezione nel documento, se non c'è. Per data: prima della prima lezione con una data più tardi (a parità di
+// data, con un numero più alto), perché le lezioni nuove di un lavoro sono pronte in un ordine qualsiasi; una lezione
+// senza data va dopo `after` (la lezione che il piano le indica), altrimenti in fondo. Per argomento: in fondo (poi la
+// colloca reorganize::place). Vero se l'ha messa.
+bool addToMain(const Project &project, const QString &lesson, const QString &after = {});
 // Chiude una lezione scritta dall'agente: la mette nel documento se manca, aggiunge i marcatori dei blocchi che
 // mancano, porta le fonti fra quelle usate e, se ha una collocazione, la mette nel suo argomento
 // (reorganize::place). Restituisce che cosa ha fatto.

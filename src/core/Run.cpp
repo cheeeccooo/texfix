@@ -2,6 +2,7 @@
 
 #include "core/Files.h"
 #include "core/History.h"
+#include "core/Reorganize.h"
 #include "core/NewLesson.h"
 #include "core/Plans.h"
 #include "core/Sort.h"
@@ -97,7 +98,7 @@ Result execute(const Project &project, const Settings &settings, const Style &st
         QJsonObject chosen;
         for (auto it = prepared.wanted.begin(); it != prepared.wanted.end(); ++it)
             chosen.insert(it.key(), QJsonObject{{"numero", it->number}, {"data", it->date}, {"argomento", it->topic}, {"titolo", it->title},
-                                                {"dopo", it->after}, {"nota", it->note}, {"gruppo", QJsonArray::fromStringList(it->group)},
+                                                {"dopo", it->after}, {"nota", it->note}, {"solo", it->only}, {"gruppo", QJsonArray::fromStringList(it->group)},
                                                 {"posto", it->rank}});
         QJsonArray tasks;
         for (const sort::Task &t : std::as_const(prepared.tasks))
@@ -105,7 +106,8 @@ Result execute(const Project &project, const Settings &settings, const Style &st
                                      {"fonti", QJsonArray::fromStringList(t.sources)}, {"messaggio", t.message}, {"stato", "da_fare"}});
         state = QJsonObject{{"preparato", true}, {"inizio", QDateTime::currentDateTime().toString(Qt::ISODate)},
                             {"fatto", QJsonArray::fromStringList(prepared.done)}, {"fonti", QJsonArray::fromStringList(prepared.sources)},
-                            {"scelte", chosen}, {"compiti", tasks}, {"stima", plan.value("stima").toDouble()}};
+                            {"scelte", chosen}, {"compiti", tasks}, {"stima", plan.value("stima").toDouble()},
+                            {"ordine", QJsonArray::fromStringList(prepared.order)}};
         plan["stato"] = "in_corso";
         plans::save(project, id, plan);
     }
@@ -183,7 +185,7 @@ Result execute(const Project &project, const Settings &settings, const Style &st
             group << title.toString();
         wanted.insert(it.key(), Convert::Wanted{w.value("numero").toInt(), w.value("data").toString(), w.value("argomento").toString(),
                                                 w.value("titolo").toString(), w.value("dopo").toString(), w.value("nota").toString(),
-                                                group, w.value("posto").toInt(-1)});
+                                                w.value("solo").toString(), group, w.value("posto").toInt(-1)});
     }
     // la conversione, in un thread suo
     std::future<Convert::Result> converting = std::async(std::launch::async, [&] {
@@ -335,6 +337,19 @@ Result execute(const Project &project, const Settings &settings, const Style &st
     }
     if (control)
         control->onPause = previousPause;
+    // l'ordine nuovo degli argomenti, quando tutti sono al loro posto
+    if (!stopped && !out.converted.stopped && !(control && (control->stopped() || control->pausedUntil().isValid()))) {
+        QStringList order;
+        for (const QJsonValue &title : state.value("ordine").toArray())
+            order << title.toString();
+        if (!order.isEmpty() && reorganize::reorder(project, order))
+            change([&](QJsonObject &s) {
+                QJsonArray done = s.value("fatto").toArray();
+                done.append(QStringLiteral("argomenti riordinati come nel piano"));
+                s["fatto"] = done;
+                s.remove("ordine");
+            });
+    }
 
     // l'esito
     out.stopped = stopped || out.converted.stopped || (control && (control->stopped() || control->pausedUntil().isValid()));

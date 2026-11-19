@@ -59,6 +59,10 @@ Authored authored(const Project &project, const Settings &settings, const Style 
 // Dov'è la resa di una figura per mostrarla: il ritaglio, o l'ultima prova di disegno (vuoto se non c'è).
 QString preview(const Project &project, const Figure &figure);
 
+// Le immagini che una lezione include da fuori di imgs/ (quelle di un documento, in build/lavori/documenti/) si copiano
+// in imgs/<lezione>-dNN.<ext> e la lezione le include da lì: build/ si rifà, imgs/ resta. Quante ne ha portate.
+int bringImages(const Project &project, const QString &lesson);
+
 // Rivedi figure. Tutte le figure delle lezioni sono nel registro: quelle scritte fuori da Converti (a mano, dall'agente,
 // portate da fuori) ci entrano con `adopt`, che dà loro il segno sulla riga del \begin (quante).
 int adopt(const Project &project, const Style &style);

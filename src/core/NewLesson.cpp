@@ -1,9 +1,11 @@
 #include "core/NewLesson.h"
 
 #include "core/Blocks.h"
+#include "core/Figures.h"
 #include "core/Files.h"
 #include "core/Pages.h"
 #include "core/Reorganize.h"
+#include "core/Settings.h"
 #include "core/TexSource.h"
 #include "core/Tools.h"
 #include <QDirIterator>
@@ -64,6 +66,49 @@ QStringList toQueue(const Project &project, const QStringList &paths)
     return out;
 }
 
+bool addToMain(const Project &project, const QString &lesson, const QString &after)
+{
+    const QStringList inputs = project.inputs();
+    if (inputs.contains(lesson))
+        return false;
+    QString main = files::read(project.path(Project::MAIN));
+    qsizetype at = main.lastIndexOf("\\end{document}");
+    if (!Settings::load(project).byTopic()) {
+        const Lesson mine = Project::lessonOf(lesson, files::read(project.path(lesson)));
+        const QDate date = QDate::fromString(mine.date, "dd/MM/yyyy");
+        static const QRegularExpression input(R"(^[ \t]*\\input\{\s*(src/[^}\s]+)\s*\}[ \t]*\n?(?:[ \t]*\\clearpage[ \t]*\n?)?(?:[ \t]*\n)?)",
+                                              QRegularExpression::MultilineOption);
+        const qsizetype body = main.indexOf("\\begin{document}");
+        for (auto it = input.globalMatch(main); it.hasNext();) {
+            const auto m = it.next();
+            QString file = m.captured(1);
+            if (!file.endsWith(".tex"))
+                file += ".tex";
+            if (!inputs.contains(file) || m.capturedStart() < body)
+                continue;
+            if (!date.isValid()) {                     // senza data: dopo la lezione che il piano dice, se c'è
+                if (after == "^") {                    // prima di tutte
+                    at = m.capturedStart();
+                    break;
+                }
+                if (file == after) {
+                    at = m.capturedEnd();
+                    break;
+                }
+                continue;
+            }
+            const Lesson other = Project::lessonOf(file, files::read(project.path(file)));
+            const QDate when = QDate::fromString(other.date, "dd/MM/yyyy");
+            if (when.isValid() && (when > date || (when == date && other.number > mine.number))) {
+                at = m.capturedStart();
+                break;
+            }
+        }
+    }
+    const QString input = QStringLiteral("\\input{%1}\n\\clearpage\n\n").arg(lesson);
+    return files::write(project.path(Project::MAIN), at < 0 ? main + '\n' + input : main.left(at) + input + main.mid(at));
+}
+
 QStringList settle(const Project &project, const QStringList &boxes, const QString &figureEnv, const QString &lesson, const QStringList &sources)
 {
     QStringList did;
@@ -74,13 +119,14 @@ QStringList settle(const Project &project, const QStringList &boxes, const QStri
     const QString marked = blocks::mark(text, info.number, blocks::Units{boxes, {figureEnv, "figure"}});
     if (marked != text && files::write(project.path(lesson), marked))
         did << QStringLiteral("aggiunti i marcatori dei blocchi che mancavano");
-    if (!project.inputs().contains(lesson)) {
-        QString main = files::read(project.path(Project::MAIN));
-        const qsizetype end = main.lastIndexOf("\\end{document}");
-        const QString input = QStringLiteral("\\input{%1}\n\\clearpage\n\n").arg(lesson);
-        files::write(project.path(Project::MAIN), end < 0 ? main + '\n' + input : main.left(end) + input + main.mid(end));
+    QJsonObject saved = QJsonDocument::fromJson(files::read(project.path(PROCEDURES)).toUtf8()).object();
+    QJsonObject placements = saved.value("collocazioni").toObject();
+    const QJsonObject where = placements.value(lesson).toObject();
+    const bool byTopic = Settings::load(project).byTopic();
+    if (addToMain(project, lesson, byTopic ? QString() : where.value("dopo").toString()))
         did << QStringLiteral("lezione aggiunta al documento");
-    }
+    if (const int images = figures::bringImages(project, lesson))
+        did << (images == 1 ? QStringLiteral("un'immagine del documento portata in imgs/") : QStringLiteral("%1 immagini dei documenti portate in imgs/").arg(images));
     const QString used = project.path(QStringLiteral("fonti/usate/lezione %1").arg(info.number));
     for (const QString &source : sources) {
         const QString file = texsource::parseSpec(source).path, from = project.path(file), name = QFileInfo(file).fileName();
@@ -101,9 +147,11 @@ QStringList settle(const Project &project, const QStringList &boxes, const QStri
             did << QStringLiteral("%1 portata fra le fonti usate").arg(name);
     }
     // per argomento: la lezione va dove l'ha messa il piano, come quelle della conversione
-    QJsonObject saved = QJsonDocument::fromJson(files::read(project.path(PROCEDURES)).toUtf8()).object();
-    QJsonObject placements = saved.value("collocazioni").toObject();
-    if (const QJsonObject where = placements.value(lesson).toObject(); !where.isEmpty()) {
+    if (!where.isEmpty() && !byTopic) {                // per data il posto l'ha già dato addToMain
+        placements.remove(lesson);
+        saved["collocazioni"] = placements;
+        files::write(project.path(PROCEDURES), QString::fromUtf8(QJsonDocument(saved).toJson()));
+    } else if (!where.isEmpty()) {
         QStringList group;
         for (const QJsonValue &title : where.value("gruppo").toArray())
             group << title.toString();
@@ -187,13 +235,20 @@ QString readable(const Project &project, const QString &file)
     const QString ext = source.suffix().toLower();
     if (!documents.contains(ext) && !images.contains(ext))
         return {};
-    const QString copy = QStringLiteral("build/lavori/leggibili/%1.%2").arg(source.fileName(), documents.contains(ext) ? "txt" : "png");
+    const QString copy = QStringLiteral("build/lavori/leggibili/%1.%2").arg(source.fileName(), documents.contains(ext) ? "md" : "png");
     const QFileInfo made(project.path(copy));
     if (made.exists() && made.lastModified() >= source.lastModified())
         return copy;
     QDir().mkpath(made.path());
     const bool ok = documents.contains(ext)
-        ? [&] { const QString text = tools::documentText(source.filePath()); return !text.trimmed().isEmpty() && files::write(made.filePath(), text); }()
+        ? [&] {                                        // con le figure al loro posto (i percorsi relativi al progetto)
+              QString text;
+              try {
+                  text = Pages::read(source.filePath(), project.path("build/lavori/leggibili"), project.root()).text;
+              } catch (const std::runtime_error &) {
+              }
+              return !text.trimmed().isEmpty() && files::write(made.filePath(), text);
+          }()
         : tools::imageToPng(source.filePath(), made.filePath(), 2000);
     return ok && QFileInfo::exists(made.filePath()) ? copy : QString();
 }

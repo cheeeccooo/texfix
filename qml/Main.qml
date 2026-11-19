@@ -30,8 +30,10 @@ ApplicationWindow {
             Workspace.proposeStyle(result.name)        // il modello legge lo stile e propone i ruoli: poi le domande
     }
 
-    function createProject(path, profile, byTopic) {
+    function createProject(path, profile, byTopic, program) {
         const error = Workspace.newProject(path, profile, byTopic === true)
+        if (error === "" && program)
+            Workspace.setProgram(program)
         if (error !== "") {
             notice.text = error + " Per un progetto nuovo serve una cartella vuota; una cartella con dei file si apre con «Apri cartella»."
             notice.open()
@@ -211,7 +213,7 @@ ApplicationWindow {
     }
     OutcomeSheet { id: outcomeSheet; onLogAsked: project.showConsole() }
     RenameSheet { id: renameSheet }
-    ProfileSheet { id: profileSheet; onChosen: (path, profile, byTopic) => window.createProject(path, profile, byTopic) }
+    ProfileSheet { id: profileSheet; onChosen: (path, profile, byTopic, program) => window.createProject(path, profile, byTopic, program) }
     OutlineSheet { id: outlineSheet }
     Connections { target: Workspace; function onOutlineReady(topics) { outlineSheet.show(topics) } }
     FileDialog {
@@ -228,7 +230,28 @@ ApplicationWindow {
         onAccepted: Workspace.addMaterial(Workspace.localPaths(selectedFiles), lesson)
     }
     Connections { target: Workspace; function onOutcomeReady(outcome) { outcomeSheet.show(outcome) } }
-    SettingsSheet { id: settingsSheet; onImportAsked: styleDialog.open() }
+    SettingsSheet { id: settingsSheet; onImportAsked: styleDialog.open(); onProgramAsked: programSheet.open() }
+    // il primo passaggio per argomento: il programma del corso, se c'è, dà l'ordine degli argomenti
+    TxSheet {
+        id: programSheet
+        title: "Il programma del corso"
+        TxLabel {
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            elide: Text.ElideNone
+            text: "Hai il programma, l'indice o la scaletta del corso? Con quello Texfix dispone gli argomenti nell'ordine del corso; senza, li dispone nell'ordine più logico per il materiale. Lo puoi aggiungere quando vuoi dalle impostazioni."
+        }
+        buttons: [
+            TxButton { text: "Non ce l'ho"; onClicked: { programSheet.close(); Workspace.setByTopic(true) } },
+            TxButton { text: "Scegli il file…"; primary: true; onClicked: { programSheet.close(); programAsk.open() } }
+        ]
+    }
+    FileDialog {
+        id: programAsk
+        title: "Il programma, l'indice o la scaletta del corso"
+        onAccepted: { Workspace.setProgram(Workspace.localPath(selectedFile)); Workspace.setByTopic(true) }
+        onRejected: Workspace.setByTopic(true)
+    }
     StyleRolesSheet { id: rolesSheet; onConfirmed: Workspace.applyStyle(styleName) }
     StyleMatchSheet { id: matchSheet }
     Connections {
@@ -250,6 +273,8 @@ ApplicationWindow {
                 window.createProject(argument.split(" ")[0], argument.split(" ").slice(1).join(" "), name === "nuovo-argomenti")
             } else if (name === "versione-nuova") {
                 Workspace.newVersion(argument.split(" ")[0], argument.split(" ")[1])
+            } else if (name === "programma") {
+                Workspace.setProgram(argument)
             } else if (name === "salva-profilo") {
                 Workspace.say(Workspace.saveProfile(argument))
             } else if (name === "argomenti") {

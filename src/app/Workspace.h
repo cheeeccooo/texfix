@@ -234,6 +234,7 @@ public:
     Q_INVOKABLE void setPlanEntry(const QString &id, int section, int entry, const QString &key, const QVariant &value);
     Q_INVOKABLE void setPlanChoice(const QString &id, int section, const QString &field, const QString &value);   // field: scelta, intreccio
     Q_INVOKABLE void setPlanAnswer(const QString &id, int question, const QString &answer);
+    Q_INVOKABLE void setPlanOrder(const QString &id, bool keep);   // l'ordine nuovo degli argomenti: tenerlo o no
     Q_INVOKABLE void setPlanComment(const QString &id, const QString &text);
     // Il piano dei concetti: una voce di un elenco (comuni, destinazioni, versioni) e il suo campo (valore, fare, nota).
     Q_INVOKABLE void setPlanField(const QString &id, const QString &list, int index, const QString &key, const QVariant &value);
@@ -290,8 +291,13 @@ public:
     // setByTopic: l'organizzazione del progetto dalle impostazioni; un progetto senza lezioni cambia e basta, gli altri
     // passano da proposeTopics o da backToLessons.
     Q_PROPERTY(bool byTopic READ byTopic NOTIFY settingsChanged)
+    // Il programma (o l'indice, la scaletta) del corso: un file in docs/ che la mappa dei concetti segue per l'ordine
+    // degli argomenti. setProgram lo copia in docs/ se viene da fuori; vuoto lo toglie.
+    Q_PROPERTY(QString program READ program NOTIFY settingsChanged)
 public:
     bool byTopic() const { return m_settings.byTopic(); }
+    QString program() const { return m_settings.program; }
+    Q_INVOKABLE void setProgram(const QString &path);
     Q_INVOKABLE void proposeTopics();
     Q_INVOKABLE QString applyTopics(const QVariantList &topics);          // vuoto se è andata
     Q_INVOKABLE void backToLessons();

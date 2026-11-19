@@ -3,7 +3,9 @@
 #include "core/Files.h"
 #include "core/Tools.h"
 
+#include <QCryptographicHash>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QRegularExpression>
 
@@ -35,7 +37,7 @@ QString Pages::kindOf(const QString &file)
     return ext == "tex" ? "tex" : "altro";
 }
 
-Pages Pages::read(const QString &source, const QString &dir)
+Pages Pages::read(const QString &source, const QString &dir, const QString &root)
 {
     Pages pages;
     const QFileInfo info(source);
@@ -68,7 +70,42 @@ Pages Pages::read(const QString &source, const QString &dir)
         return pages;
     }
     pages.isText = true;
-    pages.text = DOCUMENTS.contains(ext) ? tools::documentText(source) : files::read(source);
+    if (DOCUMENTS.contains(ext) && !root.isEmpty()) {
+        QFile f(source);
+        const QString media = f.open(QIODevice::ReadOnly)
+            ? QStringLiteral("build/lavori/documenti/") + QString::fromLatin1(QCryptographicHash::hash(f.readAll(), QCryptographicHash::Sha1).toHex().left(12))
+            : QString();
+        pages.text = media.isEmpty() ? QString() : tools::documentMarkdown(source, root, media);
+        if (!pages.text.trimmed().isEmpty()) {
+            // le immagini: quelle che LaTeX e il modello leggono restano; le altre diventano PNG; emf e wmf no
+            static const QStringList kept{"png", "jpg", "jpeg", "pdf"}, convertible{"gif", "bmp", "tif", "tiff", "webp", "heic"};
+            static const QRegularExpression image(R"(!\[[^\]]*\]\(([^)\s]+)[^)]*\))");
+            QStringList unread;
+            for (auto it = image.globalMatch(pages.text); it.hasNext();) {
+                const QString path = it.next().captured(1), kind = QFileInfo(path).suffix().toLower();
+                if (kept.contains(kind)) {
+                    pages.figures << path;
+                } else if (convertible.contains(kind)) {
+                    const QString png = path.left(path.size() - kind.size()) + "png";
+                    if (tools::imageToPng(root + '/' + path, root + '/' + png, 2000)) {
+                        pages.text.replace(path, png);
+                        pages.figures << png;
+                    } else {
+                        unread << QFileInfo(path).fileName();
+                    }
+                } else {
+                    unread << QFileInfo(path).fileName();
+                }
+            }
+            if (!unread.isEmpty())
+                pages.note = QStringLiteral("di %1 non si leggono %2 figure (%3)").arg(info.fileName()).arg(unread.size()).arg(unread.join(", "));
+        } else {
+            pages.text = tools::documentText(source);
+            pages.note = QStringLiteral("di %1 si legge solo il testo: figure, tabelle e formule chiedono pandoc").arg(info.fileName());
+        }
+    } else {
+        pages.text = DOCUMENTS.contains(ext) ? tools::documentText(source) : files::read(source);
+    }
     if (pages.text.trimmed().isEmpty())
         throw std::runtime_error((info.fileName() + " è vuoto.").toStdString());
     return pages;

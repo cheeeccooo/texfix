@@ -206,7 +206,9 @@ Rectangle {
                     radius: 10
                     color: dest.item.into === "new" ? Theme.selected : Theme.panel
                     TxLabel { id: kind; anchors.centerIn: parent; font.pixelSize: Theme.smallSize - 1
-                              text: dest.item.into === "new" ? "Lezione nuova" + (dest.item.date ? " · " + root.dateWords(dest.item.date) : " · senza data") : "Si aggiunge a una lezione che hai" }
+                              text: dest.item.into !== "new" ? (Workspace.byTopic ? "Si aggiunge a un argomento che hai" : "Si aggiunge a una lezione che hai")
+                                  : Workspace.byTopic ? "Argomento nuovo"
+                                  : "Lezione nuova" + (dest.item.date ? " · " + root.dateWords(dest.item.date) : " · senza data") }
                 }
                 Item { Layout.fillWidth: true }
             }
@@ -623,6 +625,51 @@ Rectangle {
                 Repeater {
                     model: (root.plan.destinazioni || []).map((d, i) => ({ d: d, i: i })).filter(e => !root.touches(e.d))
                     Destination { required property var modelData; item: modelData.d; index: modelData.i }
+                }
+            }
+
+            // l'ordine degli argomenti, se il modello ne propone uno più logico: com'è e come diventa
+            Heading {
+                visible: ((root.plan.ordine || {}).proposta || []).length > 0
+                title: "Ordine degli argomenti"
+                detail: "Un ordine più logico, con gli argomenti nuovi al loro posto. Si applica alla fine del lavoro; il contenuto non cambia."
+            }
+            RowLayout {
+                visible: ((root.plan.ordine || {}).proposta || []).length > 0
+                Layout.fillWidth: true
+                spacing: Theme.gap * 2
+                Rectangle {                            // la spunta
+                    Layout.alignment: Qt.AlignTop
+                    implicitWidth: 18; implicitHeight: 18; radius: 4
+                    readonly property bool on: (root.plan.ordine || {}).valore === true
+                    color: on ? Theme.accent : Theme.surface
+                    border.width: 1
+                    border.color: on ? Theme.accent : Theme.border
+                    Text { anchors.centerIn: parent; visible: parent.on; text: "✓"; color: Theme.onAccent; font.pixelSize: 12; font.weight: Font.Bold }
+                    MouseArea { anchors.fill: parent; enabled: root.editable; onClicked: Workspace.setPlanOrder(root.planId, !parent.on) }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    spacing: 4
+                    TxLabel { Layout.fillWidth: true; text: "Com'è"; color: Theme.textMuted; font.pixelSize: Theme.smallSize }
+                    Repeater {
+                        model: root.plan.corso || []
+                        TxLabel { required property var modelData; required property int index; Layout.fillWidth: true
+                                  text: (index + 1) + ". " + root.pretty(String(modelData.name).split(" · ").slice(1).join(" · ")); textFormat: Text.RichText }
+                    }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    spacing: 4
+                    TxLabel { Layout.fillWidth: true; text: "Come diventa"; color: Theme.textMuted; font.pixelSize: Theme.smallSize }
+                    Repeater {
+                        model: (root.plan.ordine || {}).proposta || []
+                        TxLabel { required property var modelData; required property int index; Layout.fillWidth: true
+                                  text: (index + 1) + ". " + root.pretty(modelData.title) + (String(modelData.key).startsWith("new:") ? " <font color=\"" + Theme.textMuted + "\">· nuovo</font>" : "")
+                                  textFormat: Text.RichText }
+                    }
                 }
             }
 

@@ -24,6 +24,7 @@ struct Settings {
     // Il progetto è riorganizzato per argomenti: le lezioni com'erano (numero → file e titolo), per tornare indietro.
     QJsonObject topics;
     bool byTopic() const { return !topics.isEmpty(); }
+    QString program;                       // il programma o l'indice del corso (in docs/), per l'ordine degli argomenti
 
     static Settings load(const Project &project);
     bool save(const Project &project) const;

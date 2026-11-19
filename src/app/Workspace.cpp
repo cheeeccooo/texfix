@@ -1781,6 +1781,18 @@ void Workspace::setPlanField(const QString &id, const QString &list, int index, 
         emit planEdited(id);
 }
 
+void Workspace::setPlanOrder(const QString &id, bool keep)
+{
+    QJsonObject plan = plans::load(m_project, id);
+    if (!hasProject() || !plan.contains("ordine"))
+        return;
+    QJsonObject order = plan.value("ordine").toObject();
+    order["valore"] = keep;
+    plan["ordine"] = order;
+    plans::save(m_project, id, plan);
+    emit planEdited(id);
+}
+
 void Workspace::setPlanComment(const QString &id, const QString &text)
 {
     QJsonObject plan = plans::load(m_project, id);
@@ -2684,6 +2696,34 @@ void Workspace::backToLessons()
     refreshTree();
     emit filesChanged();
     m_compiler.compileDocument();
+}
+
+void Workspace::setProgram(const QString &path)
+{
+    if (!hasProject())
+        return;
+    Settings settings = Settings::load(m_project);
+    if (path.isEmpty()) {
+        settings.program.clear();
+    } else {
+        const QFileInfo info(path);
+        QString inside = m_project.relative(info.absoluteFilePath());
+        if (!info.isFile())
+            return say(QStringLiteral("Non trovo %1.").arg(path));
+        if (inside.isEmpty() || inside.startsWith("..") || QFileInfo(inside).isAbsolute()) {   // da fuori: va fra i documenti
+            const QString copy = files::freeName(m_project.path("docs/" + info.fileName()));
+            QDir().mkpath(m_project.path("docs"));
+            if (!QFile::copy(path, copy))
+                return say(QStringLiteral("Non riesco a copiare %1 nel progetto.").arg(info.fileName()));
+            inside = m_project.relative(copy);
+        }
+        settings.program = inside;
+    }
+    settings.save(m_project);
+    loadSettings();
+    refreshTree();
+    say(path.isEmpty() ? QStringLiteral("Il corso non ha più un programma.")
+                       : QStringLiteral("Il programma del corso è %1: gli argomenti seguiranno il suo ordine.").arg(QFileInfo(settings.program).fileName()));
 }
 
 void Workspace::setByTopic(bool on)

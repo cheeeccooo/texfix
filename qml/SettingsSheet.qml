@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import Texfix
 
@@ -9,6 +10,7 @@ TxSheet {
     title: "Impostazioni del progetto"
     wantedWidth: 560
     signal importAsked()
+    signal programAsked()                              // si passa per argomento: prima la domanda sul programma
     property string profileNote
 
     readonly property var entries: [
@@ -31,10 +33,33 @@ TxSheet {
         onChosen: value => {
             if ((value === "argomento") === Workspace.byTopic)
                 return
+            if (value === "argomento" && Workspace.program === "") {   // prima il programma del corso, se c'è
+                root.close()
+                return root.programAsked()
+            }
             if (Workspace.lessons.length > 0)
                 root.close()                           // si apre la scaletta, o si torna per data
             Workspace.setByTopic(value === "argomento")
         }
+    }
+    RowLayout {                                        // il programma del corso: l'ordine che gli argomenti seguono
+        visible: root.revision >= 0 && Workspace.byTopic
+        Layout.fillWidth: true
+        spacing: Theme.gap
+        TxLabel {
+            Layout.fillWidth: true
+            text: Workspace.program === "" ? "Nessun programma del corso: l'ordine lo decide la logica del materiale."
+                                           : "Programma del corso: " + Workspace.program.split("/").pop()
+            wrapMode: Text.WordWrap
+            elide: Text.ElideNone
+        }
+        TxButton { text: Workspace.program === "" ? "Scegli…" : "Cambia…"; onClicked: programDialog.open() }
+        TxButton { visible: Workspace.program !== ""; text: "Togli"; flat: true; onClicked: Workspace.setProgram("") }
+    }
+    FileDialog {
+        id: programDialog
+        title: "Il programma, l'indice o la scaletta del corso"
+        onAccepted: Workspace.setProgram(Workspace.localPath(selectedFile))
     }
     TxLabel {
         Layout.fillWidth: true

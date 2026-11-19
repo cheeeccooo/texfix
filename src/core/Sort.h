@@ -48,6 +48,7 @@ struct Prepared {
     QString failure;
     // per argomento: dove vanno le lezioni che scrive l'agente (file → argomento, titolo, dopo); le colloca chiudi_lezione
     QJsonObject placements;
+    QStringList order;                                 // per argomento: l'ordine nuovo, per titolo (reorganize::reorder)
 };
 Prepared prepare(const Project &project, const QJsonObject &planDocument);
 

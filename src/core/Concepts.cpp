@@ -28,11 +28,17 @@ Concepts in reading order; every part of the material belongs to one of them.)";
 const char *const MAP_PROMPT =
     R"(You compare the concepts of a university course with the concepts of new material, to decide where the new material goes. A concept is a unit of content (a definition, a derivation, a circuit with its analysis, an example, an exercise), with an id. The course is made of UNITS (lectures, or topics) whose concepts have ids like L3.2; the new material is made of SOURCES whose concepts have ids like A.4.
 1. "shared": every concept that appears in more than one place, in the course and in the new material, or in two new sources. Two concepts are shared when they explain the same thing (the same definition, derivation, circuit, example), even with other words or another depth; not when one only uses or continues the other. For each: "name" (Italian, at most 8 words, plain words without formulas), "items" (the ids, at least two), "note" (Italian prose, one or two natural sentences of at most 35 words: what one version has that the other lacks, how they differ; not telegraphic, no lists of symbols; a formula only when it is the point, in LaTeX between $...$), "proposal": "one" when a single version is enough (then "keep": the id of the version whose place should host it, preferably the course's), "both" when they are really different treatments worth keeping, "skip" when the new versions add nothing.
-2. "place": where every new concept goes as its own content: into an existing unit ("into": its key, like "L3": it completes it) or into a new unit ("into": "new", with "title", Italian, at most 40 characters; in a course by lectures, "date" GG/MM/AAAA if the sources give it, else empty; in a course by topics, "after": the key of the unit it should follow, "first" to put it before all, empty for the end). One entry per destination; concepts that belong together go in the same new unit even when they come from different sources; concepts in reading order. "why": one natural Italian sentence, at most 18 words.
+2. "place": where every new concept goes as its own content: into an existing unit ("into": its key, like "L3": it completes it) or into a new unit ("into": "new", with "title", Italian, at most 40 characters; in a course by lectures, "date" GG/MM/AAAA if the sources give it, else empty, and for a new lecture without a date "after": the key of the lecture it logically follows, or "first"; in a course by topics, always "after": the key of the unit it should follow, or "first", chosen so that the whole course reads in the most logical order, the order of THE COURSE PROGRAM when it is given). One entry per destination; concepts that belong together go in the same new unit even when they come from different sources; concepts in reading order. "why": one natural Italian sentence, at most 18 words.
+Material without a date, in a course by lectures, is sorted by logic, not put at the end: its concepts go into the lectures they complete; only what no lecture covers becomes a new lecture, with its "after".
 3. "skip": new concepts with nothing to keep (title pages, indexes, administrative notes), with "why".
+4. "order", only in a course by topics and only when another order of the units makes the course clearly more logical (prerequisites before what uses them, the order of THE COURSE PROGRAM when it is given): the whole sequence, existing keys like "L3" and new units as "new:<their title>". Leave it out when the order is already right; never move units only to move them.
 Every new concept is in exactly one entry of "place" or "skip"; a shared new concept too (its place is where it would go if kept).
 The ids are only for you: never write them in "note" or "why" (name the material instead, like "la lezione 5" or "gli appunti del 20 ottobre").
-Return only a JSON object: {"shared": [...], "place": [{"concepts": [ids], "into": "L3" | "new", "title": "...", "date": "...", "why": "..."}], "skip": [{"concepts": [ids], "why": "..."}]})";
+Return only a JSON object: {"shared": [...], "place": [{"concepts": [ids], "into": "L3" | "new", "title": "...", "date": "...", "after": "...", "why": "..."}], "skip": [{"concepts": [ids], "why": "..."}], "order": ["L2", "new:...", "L1"]})";
+
+const char *const PROGRAM_PROMPT =
+    R"(You read the program, index or outline of a university course (usually in Italian). List its topics in the order the course follows them: one entry per topic a student studies as one chapter, with its sub-items merged into it.
+Return only a JSON object: {"topics": [{"title": "<Italian, at most 8 words, plain words without formulas>", "what": "<Italian, one short sentence: what it covers>"}]})";
 
 QString hashOf(const QByteArray &bytes) { return QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha1).toHex().left(16)); }
 
@@ -83,7 +89,7 @@ QString textOf(const Project &project, const QString &source)
         return ref.date.isValid() ? texsource::workerText(document, ref.date, ref.nth) : texsource::body(document);
     }
     if (kind == "testo")
-        return Pages::read(path, project.path("build/lavori/concetti/testi")).text;
+        return Pages::read(path, project.path("build/lavori/concetti/testi"), project.root()).text;
     return {};
 }
 
@@ -162,9 +168,65 @@ Holder fromPages(const Project &project, Model &model, const QString &key, const
     return parse(Holder{key, name, source, false, {}, {}}, answer);
 }
 
-QJsonObject map(Model &model, const QList<Holder> &course, const QList<Holder> &fresh, bool byTopic, QString *failure, const QString &previous)
+QStringList program(const Project &project, Model &model)
 {
-    QStringList request{QStringLiteral("THE COURSE, BY %1").arg(byTopic ? "TOPICS" : "LECTURES")};
+    const QString file = Settings::load(project).program;
+    if (file.isEmpty() || !QFileInfo::exists(project.path(file)))
+        return {};
+    QStringList parts;
+    QByteArray seen = PROGRAM_PROMPT;
+    const QString kind = Pages::kindOf(file), path = project.path(file);
+    try {
+        if (kind == "tex" || kind == "testo") {
+            const QString text = kind == "tex" ? texsource::body(files::read(path))
+                                               : Pages::read(path, project.path("build/lavori/concetti/programma"), project.root()).text;
+            parts << "THE PROGRAM\n" + text;
+            seen += text.toUtf8();
+        } else if (kind == "pagine") {
+            const Pages pages = Pages::read(path, project.path("build/lavori/concetti/programma"));
+            for (int p = 0; p < pages.count(); ++p) {
+                parts << QStringLiteral("P%1").arg(p + 1) << pages.full.value(p);
+                QFile f(pages.full.value(p));
+                if (f.open(QIODevice::ReadOnly))
+                    seen += f.readAll();
+            }
+        } else {
+            return {};
+        }
+    } catch (const std::runtime_error &) {           // un programma che non si legge: si va avanti senza
+        return {};
+    }
+    const QString cache = project.path("build/lavori/concetti/programma-" + hashOf(seen) + ".json");
+    QJsonObject answer = QJsonDocument::fromJson(files::read(cache).toUtf8()).object();
+    if (answer.value("topics").toArray().isEmpty()) {
+        try {
+            answer = Model::json(model.ask("program", QString::fromUtf8(PROGRAM_PROMPT), parts, "programma")).toObject();
+        } catch (const LimitReached &) {
+            throw;
+        } catch (const Stopped &) {
+            throw;
+        } catch (const std::exception &) {
+            answer = {};
+        }
+        if (!answer.value("topics").toArray().isEmpty())
+            files::write(cache, QString::fromUtf8(QJsonDocument(answer).toJson()));
+    }
+    QStringList out;
+    for (const QJsonValue &v : answer.value("topics").toArray()) {
+        const QJsonObject t = v.toObject();
+        if (!t.value("title").toString().trimmed().isEmpty())
+            out << QStringLiteral("%1. %2: %3").arg(out.size() + 1).arg(t.value("title").toString().trimmed(), t.value("what").toString().trimmed());
+    }
+    return out;
+}
+
+QJsonObject map(Model &model, const QList<Holder> &course, const QList<Holder> &fresh, bool byTopic, QString *failure, const QString &previous,
+                const QStringList &program)
+{
+    QStringList request;
+    if (!program.isEmpty())
+        request << "THE COURSE PROGRAM (the order the course follows)" << program << QString();
+    request << QStringLiteral("THE COURSE, BY %1").arg(byTopic ? "TOPICS" : "LECTURES");
     for (const Holder &h : course) {
         request << QStringLiteral("UNIT %1: %2").arg(h.key, h.name);
         for (const Concept &c : h.concepts)
@@ -346,7 +408,7 @@ Survey survey(const Project &project, const QString &quality, const QStringList 
             control->progress(0.9, QStringLiteral("cerco le intersezioni"));
         QString failure;
         try {
-            out.map = map(model, out.course, out.fresh, byTopic, &failure, previous);
+            out.map = map(model, out.course, out.fresh, byTopic, &failure, previous, program(project, model));
         } catch (const LimitPause &) {
             failure = limited();
         }

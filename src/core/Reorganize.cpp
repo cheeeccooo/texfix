@@ -290,6 +290,44 @@ void startByTopic(const Project &project)
     settings.save(project);
 }
 
+bool reorder(const Project &project, const QStringList &titles)
+{
+    QStringList main = files::read(project.path(Project::MAIN)).split('\n');
+    static const RE input(R"(\\input\{\s*(src/[^}\s]+)\s*\})");
+    QHash<QString, QString> titleOf;
+    for (const Lesson &l : project.lessons())
+        titleOf.insert(l.file, l.title.trimmed());
+    QList<qsizetype> places;                           // le righe degli argomenti nominati, nell'ordine del documento
+    QHash<QString, QString> lineOf;                    // titolo → la sua riga \input
+    bool body = false;
+    for (qsizetype i = 0; i < main.size(); ++i) {
+        const QStringView code = uncommented(main[i]);
+        body = body || code.contains(QLatin1String("\\begin{document}"));
+        const auto m = body ? input.matchView(code) : QRegularExpressionMatch();
+        if (!m.hasMatch())
+            continue;
+        QString file = m.captured(1);
+        if (!file.endsWith(".tex"))
+            file += ".tex";
+        const QString title = titleOf.value(file);
+        if (!title.isEmpty() && titles.contains(title) && !lineOf.contains(title)) {
+            places << i;
+            lineOf.insert(title, main[i]);
+        }
+    }
+    QStringList wanted;
+    for (const QString &title : titles)
+        if (lineOf.contains(title.trimmed()) && !wanted.contains(title.trimmed()))
+            wanted << title.trimmed();
+    bool changed = false;
+    for (qsizetype k = 0; k < places.size() && k < wanted.size(); ++k) {
+        const QString line = lineOf.value(wanted[k]);
+        changed = changed || main[places[k]] != line;
+        main[places[k]] = line;
+    }
+    return changed && files::write(project.path(Project::MAIN), main.join('\n'));
+}
+
 QString anchor(const Project &project, const QStringList &group, int rank, const QString &after)
 {
     if (rank < 0 || rank >= group.size())

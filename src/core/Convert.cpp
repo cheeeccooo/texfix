@@ -11,6 +11,7 @@
 #include "core/Prompts.h"
 #include "core/Reorganize.h"
 #include "core/TexSource.h"
+#include "core/Tools.h"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -67,6 +68,8 @@ struct Convert::Work {
     QDate texDate;                                     // la lezione del .tex, se il file ne ha più d'una
     int texNth = 1;                                    // la prima, la seconda… lezione di quel giorno
     QString note;                                      // dal piano: ciò che il corso spiega già e non si riscrive
+    QString after;                                     // per data, una lezione senza data: dopo quale lezione va
+    QString only;                                      // dal piano: le pagine portano anche altro, si scrivono solo questi concetti
     bool assembled = false;                            // già nel documento da un lavoro interrotto: si riprende dalle figure
 };
 
@@ -264,8 +267,25 @@ QJsonObject Convert::chunk(const Work &work, int k, Model &model) const
             const int a = qMax(1, spec.value("from").toInt()), b = qMin(int(lines.size()), spec.value("to").toInt());
             out << QStringLiteral("SOURCE TEXT (lines %1-%2 of the lecture):\n").arg(a).arg(b)
                        + (a > head.size() ? head.join('\n') + "\n\n" : QString()) + lines.mid(a - 1, b - a + 1).join('\n');
-        } else if (work.pages.isText)
+        } else if (work.pages.isText) {
             out << "SOURCE TEXT:\n" + work.pages.text;
+            // le immagini del documento: il modello le vede, e nel LaTeX vanno così come sono
+            for (const QString &figure : work.pages.figures) {
+                QString seen = m_project.path(figure);
+                if (!seen.endsWith(".png", Qt::CaseInsensitive)) {
+                    const QString png = seen + ".vista.png";
+                    seen = QFileInfo::exists(png) || tools::imageToPng(seen, png, 1600) ? png : QString();
+                }
+                if (!seen.isEmpty())
+                    out << QStringLiteral("IMAGE %1").arg(figure) << seen;
+            }
+            if (!work.pages.figures.isEmpty())
+                out << QStringLiteral("THE DOCUMENT'S IMAGES (this overrides the figure rule above): an image of the document, written ![](path) in the "
+                                      "source text, is not drawn and gets no \\imgslot. Where it belongs write\n    \\begin{%1}\n        "
+                                      "\\includegraphics[width=0.8\\linewidth]{<the path, exactly as in the source text>}\n    \\end{%1}\n"
+                                      "with the caption the style wants when the text needs one, and leave it out of \"figures\" in the inventory. "
+                                      "A table of the document becomes a tabular; a formula stays a formula.").arg(m_style.figureWrapper());
+        }
         else
             for (const QJsonValue &p : spec.value("pages").toArray())
                 out << QStringLiteral("P%1").arg(p.toInt()) << work.pages.full.value(p.toInt() - 1);
@@ -274,8 +294,13 @@ QJsonObject Convert::chunk(const Work &work, int k, Model &model) const
             : QStringLiteral("\n\nTHE COURSE ALREADY EXPLAINS: %1\nWhere this source repeats those things, do not write them again: one sentence that "
                              "recalls them and a reference to that lecture; write in full only what is new. When checking, these omissions are "
                              "not missing content.").arg(work.note);
+        // ciò che il piano manda altrove (le pagine sono intere): chi scrive lo lascia fuori, chi verifica non lo cerca
+        const QString only = work.only.isEmpty() ? QString()
+            : QStringLiteral("\n\nONLY THESE CONCEPTS: these pages also carry material that goes to other units of the course. %1\nWrite only "
+                             "these concepts, in full; leave the rest out. When checking, what belongs to other units is not missing content.")
+                  .arg(work.only);
         out << QStringLiteral("Lecture: %1\nPlan of the whole file:\n%2\n\nYou are chunk %3: pages %4.\n%5")
-                   .arg(work.outline.value("title").toString(), planLines.join('\n')).arg(k + 1).arg(pageList(spec.value("pages").toArray()), request) + known;
+                   .arg(work.outline.value("title").toString(), planLines.join('\n')).arg(k + 1).arg(pageList(spec.value("pages").toArray()), request) + known + only;
         return out;
     };
     const QString system = prompts::transcribe(work.file, m_settings, m_style) + (work.isTex ? prompts::texSource(m_style) : QString());
@@ -552,7 +577,9 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
                     } else {
                         work.key = hash(file.readAll());
                         Step reading(m_control, QStringLiteral("Preparo le pagine di %1").arg(QFileInfo(work.path).fileName()));
-                        work.pages = Pages::read(m_project.path(work.path), workDir(work.key + "/pagine"));
+                        work.pages = Pages::read(m_project.path(work.path), workDir(work.key + "/pagine"), m_project.root());
+                        if (!work.pages.note.isEmpty())
+                            m_control->log(QStringLiteral("Attenzione: %1.").arg(work.pages.note));
                         reading.done(work.pages.isText ? QStringLiteral("testo") : work.pages.full.size() == 1 ? QStringLiteral("1 pagina") : QStringLiteral("%1 pagine").arg(work.pages.full.size()));
                     }
                     plan(work);
@@ -621,6 +648,8 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
             const int written = work.outline.value("lesson").toString().toInt();
             const QString writtenDate = work.outline.value("date").toString().trimmed();
             work.note = wanted.value(work.source).note;
+            work.only = wanted.value(work.source).only;
+            work.after = wanted.value(work.source).byTopic() ? QString() : wanted.value(work.source).after;
             if (const Wanted chosen = wanted.value(work.source); chosen.number > 0) {
                 work.lesson.number = chosen.number;    // scelti dall'utente, non dedotti
                 work.lesson.date = chosen.date;
@@ -699,11 +728,8 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
                     }
                     assemble(work);
                     work.lesson.file = work.file;
-                    QString main = files::read(m_project.path(Project::MAIN));
-                    const qsizetype end = main.lastIndexOf("\\end{document}");
-                    const QString input = QStringLiteral("\\input{%1}\n\\clearpage\n\n").arg(work.file);
-                    main = end < 0 ? main + '\n' + input : main.left(end) + input + main.mid(end);
-                    files::write(m_project.path(Project::MAIN), main);
+                    newlesson::addToMain(m_project, work.file, work.after);
+                    figures::bringImages(m_project, work.file);
                     assembled << work.source;              // da qui una ripresa non la riscrive
                     saveRunning();
                     site(work, QStringLiteral("Lezione"), QStringLiteral("fatta"));
