@@ -456,12 +456,22 @@ Prepared prepare(const Project &project, const QJsonObject &document)
     QList<Fuse> fuses;
     QStringList destinations;                          // i titoli dei posti del piano: ciò che non è di uno va negli altri
     QHash<QString, QStringList> groups;                // per argomento: i titoli dei nuovi che vanno nello stesso posto, in ordine
+    QHash<QString, QString> afterOf;                   // titolo di un nuovo → il suo «dopo» (anche «new:<titolo>»: dopo un altro nuovo)
+    for (const QJsonValue &v : document.value("destinazioni").toArray())
+        if (const QJsonObject d = v.toObject(); d.value("fare").toBool() && d.value("into").toString() == "new")
+            afterOf.insert(d.value("title").toString().trimmed(), d.value("after").toString());
+    // il posto vero di un nuovo che segue un altro nuovo: quello in cima alla catena
+    auto rootAfter = [&](QString after) {
+        for (int guard = 0; after.startsWith("new:") && guard < 50; ++guard)
+            after = afterOf.value(after.mid(4).trimmed());
+        return after;
+    };
     for (const QJsonValue &v : document.value("destinazioni").toArray())
         if (const QJsonObject d = v.toObject(); d.value("fare").toBool()) {
             const bool fresh = d.value("into").toString() == "new";
             destinations << (fresh ? d.value("title").toString().trimmed() : lessonName(lessonOf.value(d.value("into").toString())));
             if (fresh && !d.value("title").toString().trimmed().isEmpty())
-                groups[d.value("after").toString()] << d.value("title").toString().trimmed();
+                groups[rootAfter(d.value("after").toString())] << d.value("title").toString().trimmed();
         }
     // le pagine di una fonte e le righe vicine portano anche concetti di altri posti: l'agente prende solo i suoi
     auto onlyThese = [&](const QStringList &ids, const QString &here) {
@@ -524,7 +534,7 @@ Prepared prepare(const Project &project, const QJsonObject &document)
         }
         if (byTopic) {                                 // un argomento nuovo: dopo quale (o in testa, o in fondo)
             where.title = title.isEmpty() ? QStringLiteral("Argomento %1").arg(n) : title;
-            const QString after = d.value("after").toString();
+            const QString after = rootAfter(d.value("after").toString());
             where.after = after == "first" ? QStringLiteral("^") : lessonOf.value(after);
             where.group = groups.value(after);         // con gli altri nuovi dello stesso posto, nell'ordine del piano
             where.rank = int(where.group.indexOf(where.title));
@@ -556,7 +566,8 @@ Prepared prepare(const Project &project, const QJsonObject &document)
     for (const Fuse &f : std::as_const(fuses)) {
         const QString file = QStringLiteral("src/src%1.tex").arg(++next);
         out.tasks << Task{QStringLiteral("fondi"), file, QStringLiteral("Lezione nuova %1: %2").arg(f.number).arg(f.where.title.isEmpty() ? f.title : f.where.title), f.sources,
-                          newlesson::fuseMessage(file, f.number, f.date, f.named) + "\n- " + f.concepts.join("\n- ")
+                          newlesson::fuseMessage(file, f.number, f.date, f.named, {}, f.where.byTopic() ? f.where.title : QString())
+                              + "\n- " + f.concepts.join("\n- ")
                               + (f.notes.isEmpty() ? QString() : "\nIstruzioni dell'utente: " + f.notes.join("; "))};
         if (f.where.byTopic())
             out.placements.insert(file, QJsonObject{{"argomento", f.where.topic}, {"titolo", f.where.title}, {"dopo", f.where.after},

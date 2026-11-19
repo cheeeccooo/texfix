@@ -214,7 +214,9 @@ e accanto ai file. Per argomento: scelto alla creazione (`ProfileSheet`, `reorga
 (`Workspace::setByTopic`). Per argomento Texfix chiede il programma del corso, alla creazione e al primo passaggio
 (`Workspace::setProgram`, una riga nelle impostazioni): la mappa lo segue. Se propone un ordine più logico, il piano ha
 «Ordine degli argomenti» (com'è, come diventa, la spunta: `Workspace::setPlanOrder`); «Avvia» lo applica alla fine del lavoro
-(`reorganize::reorder`, solo le righe `\input`). L'agente riceve una copia leggibile di `.docx`, `.odt`, `.doc`, `.rtf` (markdown con tabelle, formule e figure,
+(`reorganize::reorder`, solo le righe `\input`). Il modello può mettere un argomento nuovo dopo un altro nuovo (`after`
+«new:<titolo>»): stanno nello stesso gruppo, in ordine. Per argomento `\lezione` stampa solo la data, se c'è
+(`Project::packageText`), e il compito dell'agente dice «Crea l'argomento». L'agente riceve una copia leggibile di `.docx`, `.odt`, `.doc`, `.rtf` (markdown con tabelle, formule e figure,
 letto con pandoc), HEIC e TIFF (`newlesson::forAgent`); la conversione vede le figure di un documento e le include
 così come sono. Provato con il modello vero su una copia di labss (lettura del corso e delle nove lezioni nuove
 2,46 $, la mappa da sola 0,49 $): concetti in comune trovati, esercizi di labssex divisi fra le lezioni 3 e 5 e le
@@ -332,7 +334,7 @@ A confronto con la vecchia app sulle stesse pagine (`../prova-texfix`, src4.pdf 
 riquadri, stesso numero di definizioni e di figure; la nuova dà titoli alle sezioni, mette in un riquadro
 un'osservazione che la vecchia lasciava in prosa, e non va a capo nel sorgente. Simili, non uguali.
 
-**§5 Prove.** `./build.sh prove` (66 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
+**§5 Prove.** `./build.sh prove` (67 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
 spesso, contro `tests/misure.txt`; `--scrivi` li riscrive). Dei riferimenti della vecchia app sono portate le formule in display vere (`tests/dati/display.json`), per la mossa
 sulle formule; il resto dipende da prompt e stile, che qui sono cambiati per scelta.
 

@@ -272,8 +272,15 @@ QStringList forAgent(const Project &project, const QStringList &sources)
     return out;
 }
 
-QString fuseMessage(const QString &file, int number, const QString &date, const QStringList &sources, const QStringList &main)
+QString fuseMessage(const QString &file, int number, const QString &date, const QStringList &sources, const QStringList &main, const QString &topic)
 {
+    if (!topic.isEmpty())                              // per argomento: un argomento, non una lezione (\lezione resta il segno dell'origine)
+        return QStringLiteral("Crea l'argomento «%1» fondendo queste fonti: %2.\n"
+                              "- Leggile tutte per intero. Se non è detto altro sotto, non c'è una fonte che comanda: la struttura la dà la più ricca, e "
+                              "dove due fonti dicono cose diverse scegli la più fedele e dillo nell'esito.\n"
+                              "- Scrivi `%3` (comincia con `\\section{%1}` e sotto `\\lezione{%4}{}`), compilala finché è pulita, poi chiama "
+                              "chiudi_lezione con il file e le fonti.")
+            .arg(topic, sources.join(", "), file).arg(number);
     const QString weight = main.isEmpty() ? QString()
         : QStringLiteral("\n- Fonti principali: %1. La struttura la danno loro, e dove le fonti dicono cose diverse decidono loro, senza farne una "
                          "domanda; le altre sono integrative: completano, non riordinano.").arg(main.join(", "));

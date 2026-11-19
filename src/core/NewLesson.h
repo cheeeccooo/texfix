@@ -67,7 +67,8 @@ QStringList forAgent(const Project &project, const QStringList &sources);
 // Ciò che si chiede all'agente di un lavoro (core/Worker), dentro un piano già approvato: fondere più fonti in una lezione
 // nuova, integrare fonti nuove in una lezione, portare una versione nuova di una fonte. `main`:
 // le fonti principali, quando ce ne sono anche di integrative: danno la struttura e decidono dove le fonti non concordano.
-QString fuseMessage(const QString &file, int number, const QString &date, const QStringList &sources, const QStringList &main = {});
+QString fuseMessage(const QString &file, int number, const QString &date, const QStringList &sources, const QStringList &main = {},
+                    const QString &topic = {});    // con topic: per argomento, «Crea l'argomento»
 QString integrateMessage(const QString &lesson, const QStringList &sources);
 
 }

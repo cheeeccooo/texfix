@@ -210,7 +210,7 @@ QStringList Project::complete() const
     QStringList carried;
     for (const QJsonValue &line : state.value("macro_portate").toArray())
         carried << line.toString();
-    const QString package = packageText(state.value("stile").toString(), packages, carried);
+    const QString package = packageText(state.value("stile").toString(), packages, carried, !state.value("argomenti").toObject().isEmpty());
     if (files::read(path(PACKAGE)) != package && files::write(path(PACKAGE), package))
         added << QString::fromUtf8(PACKAGE);
 
@@ -226,7 +226,7 @@ QStringList Project::complete() const
     return added;
 }
 
-QString Project::packageText(const QString &style, const QStringList &packages, const QStringList &carried)
+QString Project::packageText(const QString &style, const QStringList &packages, const QStringList &carried, bool byTopic)
 {
     QString middle = QStringLiteral("\n% Lo stile del progetto\n\\RequirePackage{%1}\n").arg(style.isEmpty() ? QString::fromUtf8(Project::DEFAULT_STYLE) : style);
     // le figure: TikZ e pgfplots ci sono sempre, i pacchetti che un disegno chiede si aggiungono
@@ -239,7 +239,15 @@ QString Project::packageText(const QString &style, const QStringList &packages, 
         for (const QString &line : carried)
             middle += line + '\n';
     }
-    return QString::fromUtf8(PACKAGE_HEAD) + middle + QString::fromUtf8(PACKAGE_TAIL);
+    QString tail = QString::fromUtf8(PACKAGE_TAIL);
+    if (byTopic)                                       // per argomento: dove comincia il materiale di un giorno, solo la data (se c'è)
+        tail.replace(QStringLiteral("\\if\\relax\\detokenize{#1}\\relax\\else Lezione~#1\\if\\relax\\detokenize{#2}\\relax\\else\\ --\\ \\fi\\fi#2"),
+                     QStringLiteral("#2"))
+            .replace(QStringLiteral("\\providecommand{\\lezione}[2]{\\par\\noindent\\textbf{%"),
+                     QStringLiteral("\\providecommand{\\lezione}[2]{\\if\\relax\\detokenize{#2}\\relax\\else\\par\\noindent\\textit{%"));
+    if (byTopic)
+        tail.replace(QStringLiteral("#2}\\par\\nobreak}"), QStringLiteral("#2}\\par\\nobreak\\fi}"));
+    return QString::fromUtf8(PACKAGE_HEAD) + middle + tail;
 }
 
 QStringList Project::inputs() const { return inputsOf(files::read(path(MAIN))); }

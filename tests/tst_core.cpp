@@ -1461,6 +1461,42 @@ private slots:
         QCOMPARE(figures::bringImages(p, "src/src1.tex"), 0);                           // già in imgs/
     }
 
+    // Per argomento: gli argomenti nuovi che il modello mette uno dopo l'altro («new:<titolo>») stanno nello stesso
+    // gruppo, in ordine; \lezione stampa solo la data; il compito dell'agente crea un argomento.
+    void topicChain()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        reorganize::startByTopic(p);
+        for (const char *name : {"A", "B", "C"})
+            files::write(p.path(QStringLiteral("fonti/coda/%1.md").arg(name)), QStringLiteral("Testo %1.\n").arg(name));
+        auto source = [](const QString &key) { return QJsonObject{{"key", key}, {"name", key}, {"source", "fonti/coda/" + key + ".md"}, {"file", key}, {"pagine", false}}; };
+        auto one = [](const QString &title) { return QJsonObject{{"title", title}, {"from", 1}, {"to", 1}}; };
+        auto dest = [](const QString &title, const QString &after, const QString &id) {
+            return QJsonObject{{"into", "new"}, {"title", title}, {"after", after}, {"concepts", QJsonArray{id}}, {"fare", true}, {"nota", ""}};
+        };
+        const QJsonObject plan{{"file", QJsonArray{"fonti/coda/A.md", "fonti/coda/B.md", "fonti/coda/C.md"}},
+                               {"fonti", QJsonArray{source("A"), source("B"), source("C")}}, {"corso", QJsonArray()},
+                               {"concetti", QJsonObject{{"A.1", one("Uno")}, {"B.1", one("Due")}, {"C.1", one("Tre")}}},
+                               {"destinazioni", QJsonArray{dest("Clinica", "first", "A.1"), dest("Neurobiologia", "new:Clinica", "B.1"),
+                                                           dest("Terapia", "new:Neurobiologia", "C.1")}}};
+        const sort::Prepared prepared = sort::prepare(p, plan);
+        QCOMPARE(prepared.failure, QString());
+        QCOMPARE(prepared.wanted.size(), 3);
+        for (const Convert::Wanted &w : prepared.wanted) {
+            QCOMPARE(w.group, (QStringList{"Clinica", "Neurobiologia", "Terapia"}));
+            QCOMPARE(w.after, "^");
+        }
+        const QString package = Project::packageText("default", {}, {}, true);
+        QVERIFY(package.contains("\\providecommand{\\lezione}[2]{\\if\\relax\\detokenize{#2}\\relax\\else"));
+        QVERIFY(!package.contains("Lezione~#1"));
+        QVERIFY(Project::packageText("default").contains("Lezione~#1"));                 // per data resta
+        QVERIFY(newlesson::fuseMessage("src/src2.tex", 2, "", {"a.pdf"}, {}, "Terapia").startsWith("Crea l'argomento «Terapia»"));
+        QVERIFY(rules::structuralSection("figure").text.contains("si include così com'è"));
+    }
+
     // Riordinare gli argomenti sposta solo le righe \input dei nominati, nei posti che avevano.
     void reorderTopics()
     {
