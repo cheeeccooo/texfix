@@ -41,7 +41,7 @@ TxSheet {
 
     TxLabel {
         Layout.fillWidth: true
-        text: "Ogni argomento diventa un file. Il contenuto resta lo stesso, riga per riga; si torna indietro con «Riorganizza per data di lezione» o con ⌘Z."
+        text: Theme.keys("Ogni argomento diventa un file. Il contenuto resta lo stesso, riga per riga; si torna indietro con «Riorganizza per data di lezione» o con ⌘Z.")
         color: Theme.textMuted
         wrapMode: Text.WordWrap
         elide: Text.ElideNone

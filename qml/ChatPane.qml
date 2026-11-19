@@ -200,7 +200,7 @@ Rectangle {
                 id: input
                 Layout.fillWidth: true
                 Layout.maximumHeight: 160
-                placeholder: "Scrivi all'agente…  (⌘↩ invia, ⌘L porta qui la selezione)"
+                placeholder: Theme.keys("Scrivi all'agente…  (⌘↩ invia, ⌘L porta qui la selezione)")
                 Keys.onPressed: event => {
                     if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && (event.modifiers & Qt.ControlModifier)) {
                         root.sendNow()

@@ -144,7 +144,7 @@ Result run(const Project &project, const Settings &settings, const Style &style,
         tools::ownGroup(process);
         process.setProcessEnvironment(tools::environment());
         process.setWorkingDirectory(project.root());
-        process.start(program(), arguments);
+        tools::start(process, program(), arguments);
         if (!process.waitForStarted(10000)) {
             out.failure = QStringLiteral("Non trovo il programma «claude»: serve Claude Code installato.");
             report(QStringLiteral("fallita"), {{"motivo", out.failure}});

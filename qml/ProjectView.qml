@@ -496,7 +496,7 @@ Item {
                     }
                     Item { Layout.fillWidth: true }
                     TxLabel {
-                        text: root.manual ? "solo " + root.manual.lesson.substring(root.manual.lesson.lastIndexOf("/") + 1) + " · ⌘J: dal cursore alla prova" : ""
+                        text: root.manual ? "solo " + root.manual.lesson.substring(root.manual.lesson.lastIndexOf("/") + 1) + Theme.keys(" · ⌘J: dal cursore alla prova") : ""
                         color: Theme.textMuted
                         font.pixelSize: Theme.smallSize
                     }

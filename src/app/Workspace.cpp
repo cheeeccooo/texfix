@@ -2594,7 +2594,17 @@ void Workspace::trashFile(const QString &file)
     say(QStringLiteral("«%1» è nel Cestino.").arg(QFileInfo(file).fileName()));
 }
 
-void Workspace::revealFile(const QString &file) const { QProcess::startDetached("open", {"-R", m_project.path(file)}); }
+void Workspace::revealFile(const QString &file) const
+{
+    const QString path = m_project.path(file);
+#if defined(Q_OS_MACOS)
+    QProcess::startDetached("open", {"-R", path});
+#elif defined(Q_OS_WIN)
+    QProcess::startDetached("explorer", {"/select," + QDir::toNativeSeparators(path)});
+#else
+    QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(path).path()));     // la cartella che lo contiene
+#endif
+}
 
 void Workspace::copyText(const QString &text) const { QGuiApplication::clipboard()->setText(text); }
 

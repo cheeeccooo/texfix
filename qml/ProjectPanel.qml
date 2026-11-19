@@ -135,7 +135,7 @@ Rectangle {
         MenuItem { text: "Apri"; onTriggered: root.fileChosen(fileMenu.file) }
         MenuItem { text: "Apri e compila"; visible: fileMenu.text; height: visible ? implicitHeight : 0; onTriggered: root.compileAsked(fileMenu.file) }
         MenuItem { text: "Apri con l'app predefinita"; onTriggered: Workspace.openExternally(fileMenu.file) }
-        MenuItem { text: "Mostra nel Finder"; onTriggered: Workspace.revealFile(fileMenu.file) }
+        MenuItem { text: Qt.platform.os === "osx" ? "Mostra nel Finder" : Qt.platform.os === "windows" ? "Mostra in Esplora file" : "Mostra nella cartella"; onTriggered: Workspace.revealFile(fileMenu.file) }
         MenuSeparator {}
         MenuItem { text: "Copia il percorso"; onTriggered: Workspace.copyText(Workspace.root + "/" + fileMenu.file) }
         MenuItem { text: "Copia il nome"; onTriggered: Workspace.copyText(fileMenu.file.substring(fileMenu.file.lastIndexOf("/") + 1)) }

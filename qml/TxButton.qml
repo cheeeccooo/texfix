@@ -37,5 +37,5 @@ Rectangle {
     }
     ToolTip.visible: hint !== "" && area.containsMouse
     ToolTip.delay: 600
-    ToolTip.text: hint
+    ToolTip.text: Theme.keys(hint)
 }

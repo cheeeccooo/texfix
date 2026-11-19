@@ -59,6 +59,8 @@ public:
     static Theme *instance();
     // Un colore per distinguere le fonti (nel piano dei concetti): pochi, leggibili su tutti e due gli sfondi; si ripetono.
     Q_INVOKABLE QColor sourceColor(int index) const;
+    // Le scorciatoie scritte come sul Mac («⇧⌘B»), come le chiama il sistema: su Linux e Windows «Ctrl+Maiusc+B».
+    Q_INVOKABLE QString keys(const QString &text) const;
     // Un colore del documento (un pastello di un riquadro) come inchiostro leggibile sullo sfondo dell'editor.
     QColor readable(const QColor &color) const;
     static Theme *create(QQmlEngine *, QJSEngine *);

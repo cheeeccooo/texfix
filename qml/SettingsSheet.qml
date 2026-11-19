@@ -38,7 +38,7 @@ TxSheet {
     }
     TxLabel {
         Layout.fillWidth: true
-        text: Workspace.byTopic ? "Il materiale nuovo va negli argomenti. Tornare per data rimette un file per lezione; si annulla con ⌘Z."
+        text: Workspace.byTopic ? Theme.keys("Il materiale nuovo va negli argomenti. Tornare per data rimette un file per lezione; si annulla con ⌘Z.")
                                 : "Il materiale nuovo diventa lezioni in ordine di calendario. Passare per argomento propone una scaletta da sistemare."
         color: Theme.textMuted
         font.pixelSize: Theme.smallSize
@@ -96,7 +96,7 @@ TxSheet {
     }
     TxLabel {
         Layout.fillWidth: true
-        text: "Cambiare stile riscrive tutte le lezioni per il nuovo stile. Si annulla con ⌘Z."
+        text: Theme.keys("Cambiare stile riscrive tutte le lezioni per il nuovo stile. Si annulla con ⌘Z.")
         color: Theme.textMuted
         font.pixelSize: Theme.smallSize
         wrapMode: Text.WordWrap

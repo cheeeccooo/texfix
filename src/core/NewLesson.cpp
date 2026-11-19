@@ -189,8 +189,8 @@ QString readable(const Project &project, const QString &file)
         return copy;
     QDir().mkpath(made.path());
     const bool ok = documents.contains(ext)
-        ? tools::run("textutil", {"-convert", "txt", "-output", made.filePath(), source.filePath()}, made.path(), 60000).ok
-        : tools::run("sips", {"-s", "format", "png", "-Z", "2000", source.filePath(), "--out", made.filePath()}, made.path(), 60000).ok;
+        ? [&] { const QString text = tools::documentText(source.filePath()); return !text.trimmed().isEmpty() && files::write(made.filePath(), text); }()
+        : tools::imageToPng(source.filePath(), made.filePath(), 2000);
     return ok && QFileInfo::exists(made.filePath()) ? copy : QString();
 }
 
@@ -310,7 +310,7 @@ QString unite(const Project &project, const QStringList &sources, const QList<in
         }
         const QString pdf = work + QStringLiteral("/%1.pdf").arg(i);       // un'immagine: una pagina
         QFile::remove(pdf);
-        if (!tools::run("sips", {"-s", "format", "pdf", source, "--out", pdf}, work, 60000).ok || !QFileInfo::exists(pdf))
+        if (!tools::imageToPdf(source, pdf) || !QFileInfo::exists(pdf))
             return {};
         pieces << pdf;
     }

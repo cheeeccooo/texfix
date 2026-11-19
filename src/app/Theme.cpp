@@ -1,6 +1,7 @@
 #include "Theme.h"
 
 #include <QGuiApplication>
+#include <QRegularExpression>
 #include <QStyleHints>
 
 namespace {
@@ -62,4 +63,31 @@ QColor Theme::sourceColor(int index) const
     static const QList<QColor> light{"#2f6fde", "#2e9e5b", "#c2701c", "#8a3fb0"}, dark{"#6fa2ff", "#4cc27c", "#e69a4c", "#c89bea"};
     const QList<QColor> &palette = m_dark ? dark : light;
     return palette.at(((index % palette.size()) + palette.size()) % palette.size());
+}
+
+QString Theme::keys(const QString &text) const
+{
+#if defined(Q_OS_MACOS)
+    return text;
+#else
+    static const QRegularExpression combo(QStringLiteral("([⇧⌥⌘]+)(-?)"));
+    QString out;
+    qsizetype last = 0;
+    for (auto it = combo.globalMatch(text); it.hasNext();) {
+        const QRegularExpressionMatch m = it.next();
+        out += text.mid(last, m.capturedStart() - last);
+        const QString mods = m.captured(1);
+        QString written;
+        if (mods.contains(QChar(0x2318)))
+            written += QStringLiteral("Ctrl+");
+        if (mods.contains(QChar(0x2325)))
+            written += QStringLiteral("Alt+");
+        if (mods.contains(QChar(0x21E7)))
+            written += QStringLiteral("Maiusc+");
+        out += written;
+        last = m.capturedEnd();
+    }
+    out += text.mid(last);
+    return out.replace(QChar(0x21A9), QStringLiteral("Invio"));
+#endif
 }

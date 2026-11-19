@@ -384,7 +384,7 @@ Prepared prepare(const Project &project, const QJsonObject &document)
                         const QString one = work + QStringLiteral("/p%1.pdf").arg(p, 4, 10, QChar('0'));
                         if (path.endsWith(".pdf", Qt::CaseInsensitive)
                                 ? tools::run("pdfseparate", {"-f", QString::number(p), "-l", QString::number(p), project.path(path), one}, work, 120000).ok
-                                : tools::run("sips", {"-s", "format", "pdf", project.path(path), "--out", one}, work, 60000).ok)
+                                : tools::imageToPdf(project.path(path), one))
                             parts << one;
                     }
                 std::sort(parts.begin(), parts.end());

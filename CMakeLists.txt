@@ -4,6 +4,11 @@ project(Texfix VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+if(MSVC)
+    # i sorgenti sono in UTF-8 (testi in italiano, «», ·); __cplusplus vero; niente min/max di windows.h
+    add_compile_options(/utf-8 /Zc:__cplusplus /permissive- /bigobj)
+    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
 
 find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Network Concurrent Qml Quick QuickControls2 Pdf Test)
 qt_standard_project_setup(REQUIRES 6.8)

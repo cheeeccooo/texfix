@@ -61,14 +61,14 @@ Pages Pages::read(const QString &source, const QString &dir)
     if (IMAGES.contains(ext)) {
         const QString png = dir + "/full-1.png";
         if (!QFileInfo::exists(png) || QFileInfo(png).lastModified() < info.lastModified())
-            if (!tools::run("sips", {"-s", "format", "png", "-Z", "1300", source, "--out", png}, dir, 60000).ok)
+            if (!tools::imageToPng(source, png, 1300))
                 throw std::runtime_error(("Non riesco a leggere l'immagine " + info.fileName() + ".").toStdString());
         pages.full << png;
         pages.thumb << png;
         return pages;
     }
     pages.isText = true;
-    pages.text = DOCUMENTS.contains(ext) ? tools::run("textutil", {"-convert", "txt", "-stdout", source}, dir, 60000).text : files::read(source);
+    pages.text = DOCUMENTS.contains(ext) ? tools::documentText(source) : files::read(source);
     if (pages.text.trimmed().isEmpty())
         throw std::runtime_error((info.fileName() + " è vuoto.").toStdString());
     return pages;

@@ -215,7 +215,7 @@ void Chat::launch(const QString &text)
     tools::ownGroup(m_process);
     m_process.setProcessEnvironment(tools::environment());
     m_process.setWorkingDirectory(workspace->root());
-    m_process.start(custom.isEmpty() ? QStringLiteral("claude") : custom, arguments);
+    tools::start(m_process, custom.isEmpty() ? QStringLiteral("claude") : custom, arguments);
     const QJsonObject message{{"type", "user"}, {"message", QJsonObject{{"role", "user"}, {"content", text}}}};
     m_process.write(QJsonDocument(message).toJson(QJsonDocument::Compact) + '\n');
     m_process.closeWriteChannel();

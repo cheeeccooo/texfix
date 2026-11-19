@@ -214,7 +214,7 @@ bool Model::online()
     if (const QString forced = qEnvironmentVariable("TEXFIX_RETE"); !forced.isEmpty())     // le prove
         return forced != "assente";
     // qualunque risposta di api.anthropic.com (anche un errore HTTP) vuol dire che la rete c'è
-    return tools::run("/usr/bin/curl", {"-sS", "-o", "/dev/null", "--max-time", "8", "https://api.anthropic.com"}, QDir::tempPath(), 12000).ok;
+    return tools::run("curl", {"-sS", "-o", tools::nullDevice(), "--max-time", "8", "https://api.anthropic.com"}, QDir::tempPath(), 12000).ok;
 }
 
 bool Model::awaitOnline(JobControl *control, qint64 maxMs)
@@ -362,7 +362,7 @@ QString Model::ask(const QString &stage, const QString &system, const QStringLis
         tools::ownGroup(process);
         process.setProcessEnvironment(tools::environment());
         process.setWorkingDirectory(m_directory);
-        process.start(program(), arguments);
+        tools::start(process, program(), arguments);
         if (!process.waitForStarted(10000)) {
             report(QStringLiteral("fallita"), {{"motivo", "Non trovo il programma «claude»"}});
             throw std::runtime_error("Non trovo il programma «claude»: serve Claude Code installato.");

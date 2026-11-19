@@ -23,13 +23,22 @@
 #include <QQuickWindow>
 #include <QTimer>
 
+#if defined(Q_OS_UNIX)
 #include <unistd.h>
+#endif
 
 Q_IMPORT_QML_PLUGIN(TexfixStylePlugin)    // lo stile dei controlli (qml/style)
 
 namespace {
 
-QString serverName() { return QStringLiteral("texfix-nuovo-%1").arg(::getuid()); }
+QString serverName()
+{
+#if defined(Q_OS_UNIX)
+    return QStringLiteral("texfix-nuovo-%1").arg(::getuid());
+#else
+    return QStringLiteral("texfix-nuovo-%1").arg(qEnvironmentVariable("USERNAME"));
+#endif
+}
 
 // Un'istanza sola: se Texfix è già aperto gli passa la cartella e torna true.
 bool handedToRunningApp(const QString &folder)

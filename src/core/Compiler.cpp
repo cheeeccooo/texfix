@@ -110,7 +110,7 @@ void Compiler::makeProcess()
         if (error != QProcess::FailedToStart)
             return;
         m_watch.stop();
-        m_result.failure = QStringLiteral("Non trovo latexmk: serve una distribuzione TeX (MacTeX).");
+        m_result.failure = QStringLiteral("Non trovo latexmk: serve una distribuzione TeX (MacTeX, TeX Live o MiKTeX).");
         emit finished(m_result);
     });
 }
@@ -213,7 +213,7 @@ void Compiler::launch()
     m_scanned = 0;
     m_pass = m_pages = m_lastPage = 0;
     m_goneTicks = 0;
-    m_process->start("latexmk", arguments(m_result.lesson));
+    tools::start(*m_process, "latexmk", arguments(m_result.lesson));
     m_watch.start();
 }
 
@@ -351,9 +351,9 @@ BuildResult Compiler::compileSync(const Project &project, const QString &lesson,
         process.setWorkingDirectory(project.root());
         process.setStandardOutputFile(QProcess::nullDevice());
         process.setStandardErrorFile(QProcess::nullDevice());
-        process.start("latexmk", arguments(lesson));
+        tools::start(process, "latexmk", arguments(lesson));
         if (!process.waitForStarted(10000)) {
-            result.failure = QStringLiteral("Non trovo latexmk: serve una distribuzione TeX (MacTeX).");
+            result.failure = QStringLiteral("Non trovo latexmk: serve una distribuzione TeX (MacTeX, TeX Live o MiKTeX).");
             if (step)
                 step->done(result.failure, false);
             return result;

@@ -208,7 +208,7 @@ QStringList Project::complete() const
         QProcess git;
         git.setProcessEnvironment(tools::environment());
         git.setWorkingDirectory(m_root);
-        git.start("git", {"init", "--quiet"});
+        tools::start(git, "git", {"init", "--quiet"});
         if (git.waitForFinished(10000) && git.exitStatus() == QProcess::NormalExit && git.exitCode() == 0)
             added << QStringLiteral("il repository");
     }
