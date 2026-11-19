@@ -36,7 +36,11 @@ struct Holder {
 // Il testo di una fonte come lo legge il modello (le righe dei concetti si contano lì): di una lezione di un .tex il suo
 // testo con le macro dell'autore in testa, di un .tex non diviso il corpo, di un documento il testo; vuoto per le pagine.
 QString textOf(const Project &project, const QString &source);
-// Le righe di alcuni concetti (from-to, da 1), allargate ai paragrafi che toccano (fino alle righe vuote), in ordine.
+// Le righe di alcuni concetti (from-to, da 1), in ordine, allargate ai paragrafi che toccano (fino alle righe vuote): i
+// numeri del modello possono sbagliare di una riga. Solo se il testo ha paragrafi, cioè almeno due blocchi separati da
+// righe vuote e nessuno più lungo di PARAGRAPH_LINES righe: il testo di un .docx ha una riga per paragrafo e spesso
+// nessuna riga vuota, e allargando un concetto si porterebbe dietro tutto il file.
+constexpr int PARAGRAPH_LINES = 15;
 QString extract(const QString &text, const QList<std::pair<int, int>> &ranges);
 
 // I concetti di un testo, letto per intero (le righe numerate, per sapere dove sta ogni concetto). Lancia ciò che lancia

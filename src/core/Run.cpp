@@ -97,7 +97,8 @@ Result execute(const Project &project, const Settings &settings, const Style &st
         QJsonObject chosen;
         for (auto it = prepared.wanted.begin(); it != prepared.wanted.end(); ++it)
             chosen.insert(it.key(), QJsonObject{{"numero", it->number}, {"data", it->date}, {"argomento", it->topic}, {"titolo", it->title},
-                                                {"dopo", it->after}, {"nota", it->note}});
+                                                {"dopo", it->after}, {"nota", it->note}, {"gruppo", QJsonArray::fromStringList(it->group)},
+                                                {"posto", it->rank}});
         QJsonArray tasks;
         for (const sort::Task &t : std::as_const(prepared.tasks))
             tasks.append(QJsonObject{{"id", QString::number(tasks.size() + 1)}, {"tipo", t.kind}, {"lezione", t.lesson}, {"titolo", t.title},
@@ -177,8 +178,12 @@ Result execute(const Project &project, const Settings &settings, const Style &st
     const QJsonObject chosen = state.value("scelte").toObject();
     for (auto it = chosen.begin(); it != chosen.end(); ++it) {
         const QJsonObject w = it.value().toObject();
+        QStringList group;
+        for (const QJsonValue &title : w.value("gruppo").toArray())
+            group << title.toString();
         wanted.insert(it.key(), Convert::Wanted{w.value("numero").toInt(), w.value("data").toString(), w.value("argomento").toString(),
-                                                w.value("titolo").toString(), w.value("dopo").toString(), w.value("nota").toString()});
+                                                w.value("titolo").toString(), w.value("dopo").toString(), w.value("nota").toString(),
+                                                group, w.value("posto").toInt(-1)});
     }
     // la conversione, in un thread suo
     std::future<Convert::Result> converting = std::async(std::launch::async, [&] {

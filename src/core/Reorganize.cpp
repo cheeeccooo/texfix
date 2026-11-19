@@ -290,6 +290,30 @@ void startByTopic(const Project &project)
     settings.save(project);
 }
 
+QString anchor(const Project &project, const QStringList &group, int rank, const QString &after)
+{
+    if (rank < 0 || rank >= group.size())
+        return after;
+    static const RE waiting(R"(^src/src\d+\.tex$)");
+    const QList<Lesson> lessons = project.lessons();
+    auto placed = [&](const QString &title) -> QString {
+        for (const Lesson &l : lessons)
+            if (!title.trimmed().isEmpty() && l.title.trimmed() == title.trimmed() && !waiting.match(l.file).hasMatch())
+                return l.file;
+        return {};
+    };
+    for (int i = rank - 1; i >= 0; --i)
+        if (const QString file = placed(group[i]); !file.isEmpty())
+            return file;
+    const QStringList inputs = project.inputs();
+    for (int i = rank + 1; i < group.size(); ++i)
+        if (const QString file = placed(group[i]); !file.isEmpty()) {
+            const qsizetype k = inputs.indexOf(file);
+            return k <= 0 ? QStringLiteral("^") : inputs[k - 1];
+        }
+    return after;
+}
+
 QString place(const Project &project, const QString &lesson, const QString &topic, const QString &title, const QString &after)
 {
     Settings settings = Settings::load(project);

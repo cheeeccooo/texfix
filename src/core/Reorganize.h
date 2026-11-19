@@ -37,5 +37,10 @@ void startByTopic(const Project &project);
 // `\lezione{N}{data}` davanti, e la lezione si ricorda per il ritorno per data. `after` «^»: prima di tutti. Vuoto se è
 // andata.
 QString place(const Project &project, const QString &lesson, const QString &topic, const QString &title, const QString &after = {});
+// Dove va un argomento nuovo che fa parte di un gruppo (gli argomenti nuovi di uno stesso piano, con lo stesso `after`,
+// nell'ordine del piano: `group` i titoli, `rank` il suo posto): subito dopo il più vicino prima di lui già collocato,
+// o subito prima del più vicino dopo, se no `after`. Così l'ordine è quello del piano qualunque sia l'ordine in cui le
+// lezioni sono pronte. Non contano come collocate le lezioni che aspettano ancora un posto (`src/srcN.tex`).
+QString anchor(const Project &project, const QStringList &group, int rank, const QString &after);
 
 }

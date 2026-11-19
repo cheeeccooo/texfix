@@ -325,6 +325,7 @@ Prepared prepare(const Project &project, const QJsonObject &document)
     QHash<QString, QStringList> intoCourse;            // lezione del corso → concetti nuovi da portarci (una versione sola)
     QHash<QString, QStringList> courseNotes;           // lezione del corso → che cosa aggiungono
     QHash<QString, QStringList> joinHost;              // concetto nuovo ospite → altri concetti nuovi che si fondono con lui
+    QHash<QString, QString> sharedNotes;               // concetto nuovo ospite → che cosa dire all'agente che li fonde
     for (const QJsonValue &v : document.value("comuni").toArray()) {
         const QJsonObject g = v.toObject();
         const QString value = g.value("valore").toString(), host = g.value("ospite").toString();
@@ -346,6 +347,8 @@ Prepared prepare(const Project &project, const QJsonObject &document)
                                                        .arg(g.value("name").toString(), titleOf(host), g.value("note").toString());
                 } else {
                     joinHost[host] << id;
+                    sharedNotes[host] = QStringLiteral("«%1» è in più fonti: una versione sola, con ciò che ognuna aggiunge (%2)")
+                                            .arg(g.value("name").toString(), g.value("note").toString());
                 }
             }
         }
@@ -365,7 +368,7 @@ Prepared prepare(const Project &project, const QJsonObject &document)
                 order << key;
             ranges[key] << std::pair{concepts.value(id).toObject().value("from").toInt(), concepts.value(id).toObject().value("to").toInt()};
         }
-        QStringList made;
+        QStringList made, texts;                       // texts: le fonti che finiscono nel .tex (non le pagine)
         QString texBody, texHead;
         for (const QString &key : std::as_const(order)) {
             const QJsonObject src = sources.value(key);
@@ -408,9 +411,10 @@ Prepared prepare(const Project &project, const QJsonObject &document)
                 return {};
             }
             texBody += QStringLiteral("% da %1\n%2\n\n").arg(src.value("name").toString(), concepts::extract(text, ranges.value(key)));
+            texts << key;
         }
         if (!texBody.isEmpty()) {
-            const QString base = order.size() == 1 ? sources.value(order.first()).value("file").toString() : QStringLiteral("insieme");
+            const QString base = texts.size() == 1 ? sources.value(texts.first()).value("file").toString() : QStringLiteral("insieme");
             const QString target = files::freeName(project.path(QStringLiteral("fonti/coda/%1 · %2.tex").arg(base, fileSafe(title))));
             files::write(target, texHead + "\\begin{document}\n" + texBody + "\\end{document}\n");
             made.prepend(project.relative(target));
@@ -420,13 +424,40 @@ Prepared prepare(const Project &project, const QJsonObject &document)
 
     // le destinazioni: in una lezione che c'è (l'agente) o una lezione nuova (la conversione, o l'agente se mescola pagine e testi)
     struct Fuse {
-        QStringList named, notes, sources;
+        QStringList named, notes, sources, concepts;   // concepts: che cosa prendere dalle fonti, per l'agente
         QString title;
         int number;
         QString date;
         Convert::Wanted where;
     };
     QList<Fuse> fuses;
+    QStringList destinations;                          // i titoli dei posti del piano: ciò che non è di uno va negli altri
+    QHash<QString, QStringList> groups;                // per argomento: i titoli dei nuovi che vanno nello stesso posto, in ordine
+    for (const QJsonValue &v : document.value("destinazioni").toArray())
+        if (const QJsonObject d = v.toObject(); d.value("fare").toBool()) {
+            const bool fresh = d.value("into").toString() == "new";
+            destinations << (fresh ? d.value("title").toString().trimmed() : lessonName(lessonOf.value(d.value("into").toString())));
+            if (fresh && !d.value("title").toString().trimmed().isEmpty())
+                groups[d.value("after").toString()] << d.value("title").toString().trimmed();
+        }
+    // le pagine di una fonte e le righe vicine portano anche concetti di altri posti: l'agente prende solo i suoi
+    auto onlyThese = [&](const QStringList &ids, const QString &here) {
+        QStringList what, others;
+        for (const QString &id : ids)
+            if (!what.contains("«" + titleOf(id) + "»"))
+                what << "«" + titleOf(id) + "»";
+        for (const QString &d : std::as_const(destinations))
+            if (d != here && !d.isEmpty())
+                others << "«" + d + "»";
+        QStringList out{QStringLiteral("Sono questi concetti, in quest'ordine: %1.").arg(what.join("; "))};
+        if (!others.isEmpty())
+            out << QStringLiteral("Le fonti possono contenere anche altro (le pagine sono intere): ciò che non è fra questi concetti va in "
+                                  "%1, e qui non si scrive.").arg(others.join(", "));
+        for (const QString &id : ids)
+            if (sharedNotes.contains(id))
+                out << sharedNotes.value(id) + '.';
+        return out;
+    };
     for (const QJsonValue &v : document.value("destinazioni").toArray()) {
         const QJsonObject d = v.toObject();
         QStringList ids;
@@ -454,13 +485,10 @@ Prepared prepare(const Project &project, const QJsonObject &document)
         if (!d.value("nota").toString().trimmed().isEmpty())
             notes << d.value("nota").toString().trimmed();
         if (!fresh) {
-            QStringList what;
-            for (const QString &id : std::as_const(ids))
-                what << titleOf(id);
             Integration &into = integrations[lessonOf.value(d.value("into").toString())];
             into.sources += made;
             into.named += named;
-            into.notes << QStringLiteral("Sono questi concetti: %1.").arg(what.join("; "));
+            into.notes += onlyThese(ids, lessonName(lessonOf.value(d.value("into").toString())));
             if (!notes.isEmpty())
                 into.notes << "Istruzioni dell'utente: " + notes.join("; ");
             continue;
@@ -471,12 +499,14 @@ Prepared prepare(const Project &project, const QJsonObject &document)
             where.title = title.isEmpty() ? QStringLiteral("Argomento %1").arg(n) : title;
             const QString after = d.value("after").toString();
             where.after = after == "first" ? QStringLiteral("^") : lessonOf.value(after);
+            where.group = groups.value(after);         // con gli altri nuovi dello stesso posto, nell'ordine del piano
+            where.rank = int(where.group.indexOf(where.title));
         }
         if (made.size() == 1 && notes.isEmpty()) {
             out.sources << made.first();
             out.wanted.insert(made.first(), where);
         } else {
-            fuses << Fuse{named, notes, made, title, n, d.value("date").toString(), where};
+            fuses << Fuse{named, notes, made, onlyThese(ids, title), title, n, d.value("date").toString(), where};
         }
     }
     // le versioni sole nelle lezioni del corso: l'agente porta ciò che aggiungono
@@ -497,9 +527,11 @@ Prepared prepare(const Project &project, const QJsonObject &document)
     for (const Fuse &f : std::as_const(fuses)) {
         const QString file = QStringLiteral("src/src%1.tex").arg(++next);
         out.tasks << Task{QStringLiteral("fondi"), file, QStringLiteral("Lezione nuova %1: %2").arg(f.number).arg(f.where.title.isEmpty() ? f.title : f.where.title), f.sources,
-                          newlesson::fuseMessage(file, f.number, f.date, f.named) + (f.notes.isEmpty() ? QString() : "\nIstruzioni dell'utente: " + f.notes.join("; "))};
+                          newlesson::fuseMessage(file, f.number, f.date, f.named) + "\n- " + f.concepts.join("\n- ")
+                              + (f.notes.isEmpty() ? QString() : "\nIstruzioni dell'utente: " + f.notes.join("; "))};
         if (f.where.byTopic())
-            out.placements.insert(file, QJsonObject{{"argomento", f.where.topic}, {"titolo", f.where.title}, {"dopo", f.where.after}});
+            out.placements.insert(file, QJsonObject{{"argomento", f.where.topic}, {"titolo", f.where.title}, {"dopo", f.where.after},
+                                                    {"gruppo", QJsonArray::fromStringList(f.where.group)}, {"posto", f.where.rank}});
     }
     // le fonti smistate (tutto ciò che contenevano è in un pezzo, nel corso o saltato) vanno fra le usate; i doppioni si tolgono
     QSet<QString> read;

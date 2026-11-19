@@ -91,6 +91,16 @@ QString extract(const QString &text, const QList<std::pair<int, int>> &ranges)
 {
     const QStringList lines = text.split('\n');
     const int n = int(lines.size());
+    int run = 0, longest = 0, runs = 0;                // la corsa più lunga di righe senza una vuota, e quante sono
+    for (const QString &line : lines) {
+        if (line.trimmed().isEmpty()) {
+            run = 0;
+        } else if (++run == 1) {
+            ++runs;
+        }
+        longest = qMax(longest, run);
+    }
+    const bool paragraphs = runs > 1 && longest <= PARAGRAPH_LINES;   // un blocco solo: nessun paragrafo
     QList<bool> take(n, false);
     for (auto [from, to] : ranges) {
         if (from <= 0 || to <= 0) {                    // dove sta non si sa: tutto
@@ -104,9 +114,9 @@ QString extract(const QString &text, const QList<std::pair<int, int>> &ranges)
             --b;
         if (lines[a].trimmed().isEmpty())              // solo righe vuote: niente
             continue;
-        while (a > 0 && !lines[a - 1].trimmed().isEmpty())
+        while (paragraphs && a > 0 && !lines[a - 1].trimmed().isEmpty())
             --a;                                       // dall'inizio del paragrafo
-        while (b + 1 < n && !lines[b].trimmed().isEmpty() && !lines[b + 1].trimmed().isEmpty())
+        while (paragraphs && b + 1 < n && !lines[b].trimmed().isEmpty() && !lines[b + 1].trimmed().isEmpty())
             ++b;                                       // fino alla sua fine
         for (int i = a; i <= b; ++i)
             take[i] = true;

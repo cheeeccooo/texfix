@@ -142,12 +142,16 @@ QString Compiler::reducedMain(const Project &project, const QString &lesson, QSt
 {
     const QString main = files::read(project.path(Project::MAIN));
     const QStringList inputs = Project::inputsOf(main);
-    const qsizetype at = inputs.indexOf(lesson);
-    if (at < 0) {
+    qsizetype at = inputs.indexOf(lesson);
+    // una lezione nuova che l'agente sta scrivendo non è ancora nel documento: si compila come se fosse in fondo
+    const bool fresh = at < 0 && lesson.startsWith("src/") && lesson.endsWith(".tex") && QFileInfo(project.path(lesson)).isFile();
+    if (at < 0 && !fresh) {
         if (error)
             *error = QStringLiteral("«%1» non è nel documento: manca il suo \\input in main.tex.").arg(lesson);
         return {};
     }
+    if (fresh)
+        at = inputs.size();
     // le sezioni delle lezioni prima: la lezione da sola ha gli stessi numeri che ha nel documento
     int sections = 0;
     for (qsizetype i = 0; i < at; ++i)
@@ -173,6 +177,8 @@ QString Compiler::reducedMain(const Project &project, const QString &lesson, QSt
         if (dropped && clearpage.matchView(code).hasMatch())
             continue;                                   // il \clearpage che seguiva un \input tolto
         dropped = dropped && code.trimmed().isEmpty();
+        if (fresh && body && code.contains(QLatin1String("\\end{document}")))
+            out << QStringLiteral("\\setcounter{section}{%1}").arg(sections) << QStringLiteral("\\input{%1}").arg(lesson);
         out << line;
     }
     return out.join('\n');

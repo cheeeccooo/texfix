@@ -87,7 +87,8 @@ QString call(const Project &project, const Style &style, const QString &name, co
         return why;
     };
     const QString lesson = arguments.value("lezione").toString();
-    if ((name == "compila_lezione" || name == "dubbi" || name == "impagina") && !project.inputs().contains(lesson))
+    const bool writing = name == "compila_lezione" && !Compiler::reducedMain(project, lesson).isEmpty();   // anche una nuova, in src/
+    if ((name == "compila_lezione" || name == "dubbi" || name == "impagina") && !project.inputs().contains(lesson) && !writing)
         return fail(QStringLiteral("«%1» non è una lezione del documento. Le lezioni si vedono con stato_progetto.").arg(lesson));
 
     if (name == "stato_progetto") {

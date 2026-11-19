@@ -822,7 +822,8 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
             const Wanted chosen = wanted.value(work.source);
             if (work.lesson.file.isEmpty() || !chosen.byTopic())
                 continue;
-            if (const QString error = reorganize::place(m_project, work.lesson.file, chosen.topic, chosen.title, chosen.after); !error.isEmpty())
+            if (const QString error = reorganize::place(m_project, work.lesson.file, chosen.topic, chosen.title,
+                                                             reorganize::anchor(m_project, chosen.group, chosen.rank, chosen.after)); !error.isEmpty())
                 m_control->log(QStringLiteral("%1 resta una lezione a sé: %2").arg(work.lesson.file, error));
         }
         QFile::remove(m_project.path(RUNNING));        // arrivato in fondo: niente da riprendere

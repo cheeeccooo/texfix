@@ -10,6 +10,7 @@
 #include "core/Provenance.h"
 #include "core/Prompts.h"
 #include "core/Model.h"
+#include "core/Concepts.h"
 #include "core/Reorganize.h"
 #include "core/Run.h"
 #include "core/Review.h"
@@ -1215,14 +1216,16 @@ private slots:
         QCOMPARE(prepared.wanted.value("fonti/coda/insieme · Serie.tex").date, "05/10/2026");
         QCOMPARE(prepared.wanted.value("fonti/coda/B · Derivate.tex").number, 3);
         const QString serie = files::read(p.path("fonti/coda/insieme · Serie.tex"));
-        QVERIFY(serie.startsWith("\\newcommand{\\RR}{\\mathbb{R}}\n\\begin{document}\n% da A\na3\na4\n"));   // le macro di B, le righe dei concetti
+        QVERIFY2(serie.startsWith("\\newcommand{\\RR}{\\mathbb{R}}\n\\begin{document}\n% da A\na3\na4\n"), qPrintable(serie));   // le macro di B, le righe dei concetti
         QVERIFY(serie.contains("% da B · 5 ottobre\n"));
         QVERIFY(!serie.contains("a1"));                                                   // A.1 va nella lezione 1
         QCOMPARE(prepared.tasks.size(), 1);                                               // le due aggiunte alla lezione 1: un compito solo
         QCOMPARE(prepared.tasks[0].lesson, "src/src1.tex");
         QCOMPARE(prepared.tasks[0].title, "Aggiunte alla lezione 1");
         QVERIFY(prepared.tasks[0].message.startsWith("Integra in `src/src1.tex` queste fonti nuove: fonti/coda/insieme · Secondo.tex, "));
-        QVERIFY(prepared.tasks[0].message.contains("Sono questi concetti: Secondo; Primo."));
+        QVERIFY(prepared.tasks[0].message.contains("Sono questi concetti, in quest'ordine: «Secondo»; «Primo»."));
+        QVERIFY2(prepared.tasks[0].message.contains("ciò che non è fra questi concetti va in «Serie», «Derivate», e qui non si scrive"),
+                 qPrintable(prepared.tasks[0].message));
         QVERIFY(prepared.tasks[0].message.contains("Sono concetti che la lezione ha già: «Il primo» c'è già (Primo): porta solo ciò che aggiunge, uguale."));
         QVERIFY(!prepared.tasks[0].message.contains("consegna_piano"));                    // il piano l'ha già approvato l'utente
         QCOMPARE(prepared.tasks[0].sources.size(), 2);
@@ -1322,6 +1325,42 @@ private slots:
         QVERIFY(QFileInfo::exists(p.path("fonti/usate/smistate/S.pdf")));
     }
 
+    // Gli argomenti nuovi di uno stesso piano vanno nel documento nell'ordine del piano, anche se le lezioni sono pronte
+    // in un altro ordine (due agenti insieme, la conversione accanto).
+    void topicOrder()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        reorganize::startByTopic(p);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/arg1.tex}\n\\clearpage\n\n\\end{document}"));
+        files::write(p.path("src/arg1.tex"), "\\section{Limiti}\n");
+        const QStringList group{"Clinica", "Neurobiologia", "Terapia"};
+        auto ready = [&](int n, const QString &title, int rank) {    // una lezione pronta: nel documento, poi al suo posto
+            const QString file = QStringLiteral("src/src%1.tex").arg(n);
+            files::write(p.path(file), "\\section{" + title + "}\n\\lezione{" + QString::number(n) + "}{}\n");
+            QString text = files::read(p.path("main.tex"));
+            files::write(p.path("main.tex"), text.replace("\\end{document}", "\\input{" + file + "}\n\\clearpage\n\n\\end{document}"));
+            QCOMPARE(reorganize::place(p, file, {}, title, reorganize::anchor(p, group, rank, {})), QString());
+        };
+        // un'altra lezione che aspetta il suo posto non fa da riferimento
+        ready(4, "Terapia", 2);
+        files::write(p.path("src/src9.tex"), "\\section{Clinica}\n");
+        QString text = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), text.replace("\\end{document}", "\\input{src/src9.tex}\n\\end{document}"));
+        QCOMPARE(reorganize::anchor(p, group, 1, {}), "src/arg1.tex");             // prima di «Terapia», non dopo src9
+        files::write(p.path("main.tex"), files::read(p.path("main.tex")).replace("\\input{src/src9.tex}\n", ""));
+        ready(2, "Clinica", 0);
+        ready(3, "Neurobiologia", 1);
+        QStringList titles;
+        for (const Lesson &l : p.lessons())
+            titles << l.title;
+        QCOMPARE(titles, (QStringList{"Limiti", "Clinica", "Neurobiologia", "Terapia"}));
+        QCOMPARE(reorganize::anchor(p, group, -1, "src/arg1.tex"), "src/arg1.tex");   // fuori da un gruppo: il posto dato
+    }
+
     // Un progetto nato per argomento: il materiale nuovo va negli argomenti, ogni pezzo ricorda la sua lezione, e si torna
     // per data quando si vuole.
     void sortByTopic()
@@ -1374,6 +1413,8 @@ private slots:
         QVERIFY(written.startsWith("src/src"));
         QVERIFY(fused.tasks.first().message.contains("`" + written + "`"));
         QCOMPARE(fused.tasks.first().lesson, written);
+        QVERIFY2(fused.tasks.first().message.contains("Sono questi concetti, in quest'ordine: «Potenze»; «Raggio»."), qPrintable(fused.tasks.first().message));
+        QVERIFY(fused.tasks.first().message.contains("ciò che non è fra questi concetti va in «Successioni», e qui non si scrive"));
         newlesson::addPlacements(p, fused.placements);
         files::write(p.path(written), "\\section{Serie di potenze}\n\\lezione{4}{}\n\\subsection{Raggio}\nIl raggio di convergenza.\n");
         const QStringList closed = newlesson::settle(p, Style::classic().boxes(), Style::classic().figureWrapper(), written, {"fonti/coda/insieme · Serie di potenze.tex"});
@@ -2027,6 +2068,24 @@ private slots:
         QString error;
         QVERIFY(Compiler::reducedMain(p, "src/z.tex", &error).isEmpty());
         QVERIFY(!error.isEmpty());
+        // una lezione nuova che l'agente sta scrivendo: non è nel documento, si compila come se fosse in fondo
+        files::write(p.path("src/d.tex"), "\\section{Quattro}\n");
+        QCOMPARE(Compiler::reducedMain(p, "src/d.tex"),
+                 "\\documentclass{article}\n\\begin{document}\n\\tableofcontents\n\n"
+                 "\\setcounter{section}{3}\n\\input{src/d.tex}\n\\end{document}");
+    }
+
+    // Le righe dei concetti: in un testo con i paragrafi fino ai bordi del paragrafo; nel testo di un documento (una riga
+    // per paragrafo, spesso senza righe vuote) solo quelle, o un concetto si porterebbe dietro tutto il file.
+    void extractLines()
+    {
+        QString docx = "Titolo";
+        for (int i = 1; i <= concepts::PARAGRAPH_LINES + 5; ++i)
+            docx += QStringLiteral("\npunto %1").arg(i);
+        QCOMPARE(concepts::extract(docx, {{3, 4}}), "punto 2\npunto 3");
+        QCOMPARE(concepts::extract("Titolo\nuno\ndue\ntre\n", {{2, 3}}), "uno\ndue");   // anche corto: un blocco solo
+        QCOMPARE(concepts::extract("a\nb\n\nc\nd\n", {{4, 4}}), "c\nd");     // con i paragrafi: tutto il suo
+        QCOMPARE(concepts::extract("a\nb\n\nc\nd\n", {{3, 4}}), "c\nd");     // anche se i numeri sbagliano di una riga
     }
 
     void parseLog()

@@ -104,7 +104,11 @@ QStringList settle(const Project &project, const QStringList &boxes, const QStri
     QJsonObject saved = QJsonDocument::fromJson(files::read(project.path(PROCEDURES)).toUtf8()).object();
     QJsonObject placements = saved.value("collocazioni").toObject();
     if (const QJsonObject where = placements.value(lesson).toObject(); !where.isEmpty()) {
-        const QString error = reorganize::place(project, lesson, where.value("argomento").toString(), where.value("titolo").toString(), where.value("dopo").toString());
+        QStringList group;
+        for (const QJsonValue &title : where.value("gruppo").toArray())
+            group << title.toString();
+        const QString after = reorganize::anchor(project, group, where.value("posto").toInt(-1), where.value("dopo").toString());
+        const QString error = reorganize::place(project, lesson, where.value("argomento").toString(), where.value("titolo").toString(), after);
         if (!error.isEmpty())
             return did << QStringLiteral("la lezione resta a sé: %1").arg(error);
         did << (where.value("argomento").toString().isEmpty() ? QStringLiteral("la lezione è diventata l'argomento «%1»").arg(where.value("titolo").toString())
