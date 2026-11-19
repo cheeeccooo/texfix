@@ -150,3 +150,5 @@ add_test(NAME core COMMAND texfix_tests)
 qt_add_executable(texfix_bench tests/bench.cpp)
 target_link_libraries(texfix_bench PRIVATE texfix_core)
 target_compile_definitions(texfix_bench PRIVATE TEXFIX_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+# su Windows qt_add_executable fa un programma a finestre, senza console: prove e misure scrivono sulla console
+set_target_properties(texfix_tests texfix_bench PROPERTIES WIN32_EXECUTABLE FALSE)

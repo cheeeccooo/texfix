@@ -115,7 +115,12 @@ void stopGroup(qint64 pid)
         return;
 #if defined(Q_OS_WIN)
     // Windows non ha gruppi come Unix: taskkill /T ferma lui e l'albero dei suoi figli
-    QProcess::execute("taskkill", {"/F", "/T", "/PID", QString::number(pid)});
+    QProcess kill;
+    kill.setProcessChannelMode(QProcess::ForwardedErrorChannel);
+    kill.setStandardOutputFile(QProcess::nullDevice());
+    kill.setStandardErrorFile(QProcess::nullDevice());
+    kill.start("taskkill", {"/F", "/T", "/PID", QString::number(pid)});
+    kill.waitForFinished(5000);
     if (HANDLE h = OpenProcess(PROCESS_TERMINATE, FALSE, DWORD(pid))) {
         TerminateProcess(h, 1);
         CloseHandle(h);
