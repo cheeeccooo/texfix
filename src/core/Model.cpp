@@ -90,6 +90,52 @@ Site::Site(const QString &key) : m_previous(t_site) { t_site = key; }
 Site::~Site() { t_site = m_previous; }
 QString Site::current() { return t_site; }
 
+namespace {
+thread_local bool t_covered = false;
+}
+
+Step::Step(JobControl *control, const QString &text, bool covers) : m_control(control), m_text(text), m_covers(covers)
+{
+    if (!m_control)
+        return;
+    m_id = m_control->nextCall();
+    m_site = Site::current();
+    m_start = QDateTime::currentMSecsSinceEpoch();
+    m_open = true;
+    if (m_covers) {
+        m_previous = t_covered;
+        t_covered = true;
+    }
+    send(QStringLiteral("in_corso"), {});
+}
+
+Step::~Step()
+{
+    if (m_open)
+        send(QStringLiteral("fermato"), {});
+    if (m_control && m_covers)
+        t_covered = m_previous;
+}
+
+void Step::done(const QString &outcome, bool ok)
+{
+    if (!m_open)
+        return;
+    m_open = false;
+    send(ok ? QStringLiteral("fatto") : QStringLiteral("fallito"), outcome);
+}
+
+bool Step::covered() { return t_covered; }
+
+void Step::send(const QString &state, const QString &outcome) const
+{
+    QJsonObject e{{"tipo", "passo"}, {"id", m_id}, {"cantiere", m_site}, {"testo", m_text}, {"stato", state}, {"inizio", double(m_start)},
+                  {"secondi", (QDateTime::currentMSecsSinceEpoch() - m_start) / 1000.0}};
+    if (!outcome.isEmpty())
+        e["esito"] = outcome;
+    m_control->event(e);
+}
+
 // «You've hit your 5-hour limit · resets 8:50pm (Europe/Rome)», «resets Nov 20, 7:30pm»: l'ora, nel fuso detto fra
 // parentesi (altrimenti quello del computer), più un minuto di margine. Se l'ora non si legge, fra mezz'ora.
 QString Model::when(const QDateTime &at)

@@ -437,6 +437,9 @@ private:
     QHash<int, int> m_runCallAt;                       // id della chiamata → posto in m_runCalls
     QHash<QString, QString> m_runLessonSite;           // «src7» → la chiave del suo cantiere (per le chiamate senza cantiere)
     QHash<int, QVariantList> m_runStreams;             // il flusso delle chiamate dell'agente in corso
+    QList<QVariantMap> m_runSteps;                     // i passi che non sono chiamate (compilazioni, prove), gli ultimi STEPS_KEPT
+    QHash<int, int> m_runStepAt;                       // id del passo → posto in m_runSteps
+    int lastRunId() const;                             // il numero più alto fra chiamate e passi: chi riprende continua da lì
     QVariantMap m_runOutcome;
     QTimer m_runTimer;                                 // più eventi vicini, un aggiornamento solo
     bool m_closing = false;

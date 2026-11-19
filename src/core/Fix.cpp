@@ -2,6 +2,7 @@
 
 #include "core/Compiler.h"
 #include "core/Files.h"
+#include "core/Job.h"
 #include "core/Rules.h"
 
 #include <QFileInfo>
@@ -47,19 +48,33 @@ bool boundary(const QString &line)
     return t.isEmpty() || t.startsWith('%') || structure.match(t).hasMatch();
 }
 
-// Prova un testo nuovo per la lezione: resta se migliora, altrimenti torna quello di prima.
-bool attempt(const Project &project, const QString &file, const QString &text, Measure &current, JobControl *control)
+QString said(const Measure &m)
+{
+    QStringList out;
+    if (m.errors)
+        out << (m.errors == 1 ? QStringLiteral("1 errore") : QStringLiteral("%1 errori").arg(m.errors));
+    if (m.rows)
+        out << (m.rows == 1 ? QStringLiteral("1 riga fuori misura") : QStringLiteral("%1 righe fuori misura").arg(m.rows));
+    return out.isEmpty() ? QStringLiteral("pulita") : out.join(QStringLiteral(" · "));
+}
+
+// Prova un testo nuovo per la lezione: resta se migliora, altrimenti torna quello di prima. what: che cosa prova, per
+// chi guarda il lavoro (un passo che copre la sua compilazione).
+bool attempt(const Project &project, const QString &file, const QString &text, Measure &current, JobControl *control, const QString &what)
 {
     const QString path = project.path(file), before = files::read(path);
     if (text == before)
         return false;
+    Step step(control, what, true);
     files::write(path, text);
     try {
         const Measure now = measure(project, file, control);
         if (now.better(current)) {
+            step.done(QStringLiteral("migliora: %1 → %2").arg(said(current), said(now)));
             current = now;
             return true;
         }
+        step.done(QStringLiteral("non migliora (%1): torna com'era").arg(said(now)));
     } catch (...) {
         files::write(path, before);                    // fermato a metà di una prova: la lezione torna com'era
         throw;
@@ -159,7 +174,8 @@ Result lesson(const Project &project, const Settings &settings, const Style &sty
         }
         try {
             const QJsonArray fixes = Model::json(model.ask(round ? "fix2" : "fix", errorsPrompt(), {cards.join("\n\n")}, QFileInfo(file).completeBaseName())).toArray();
-            if (!attempt(project, file, applyReplacements(lines.join('\n'), fixes), current, control))
+            if (!attempt(project, file, applyReplacements(lines.join('\n'), fixes), current, control,
+                         QStringLiteral("Provo le correzioni del modello (%1)").arg(said(current))))
                 break;
             log(QStringLiteral("errori rimasti %1").arg(current.errors));
         } catch (const Stopped &) {
@@ -201,7 +217,7 @@ Result lesson(const Project &project, const Settings &settings, const Style &sty
                 for (const QString &row : split.split('\n'))
                     piece << before + row;
                 const QStringList changed = lines.mid(0, open) + piece + lines.mid(close + 1);
-                if (attempt(project, file, changed.join('\n'), current, control)) {
+                if (attempt(project, file, changed.join('\n'), current, control, QStringLiteral("Spezzo una formula troppo larga (riga %1)").arg(open + 1))) {
                     fixed = true;
                     ++result.byMoves;
                     break;
@@ -233,7 +249,8 @@ Result lesson(const Project &project, const Settings &settings, const Style &sty
                         continue;
                     const QString split = text.left(m.capturedStart()) + "\n\n" + indent + text.mid(m.capturedEnd());
                     const QStringList changed = lines.mid(0, a - 1) + split.split('\n') + lines.mid(b);
-                    fixed = attempt(project, file, changed.join('\n'), current, control);
+                    fixed = attempt(project, file, changed.join('\n'), current, control,
+                                    QStringLiteral("Divido il paragrafo delle righe %1–%2 a una fine di frase").arg(a).arg(b));
                 }
                 if (fixed) {
                     ++result.byMoves;
@@ -273,7 +290,8 @@ Result lesson(const Project &project, const Settings &settings, const Style &sty
                     const QString text = files::read(path);
                     if (old.isEmpty() || old.contains("% @") || text.count(old) != 1)
                         break;
-                    if (attempt(project, file, QString(text).replace(old, variant.toString()), current, control))
+                    if (attempt(project, file, QString(text).replace(old, variant.toString()), current, control,
+                                QStringLiteral("Provo una riscrittura del modello (riga %1)").arg(text.left(text.indexOf(old)).count('\n') + 1)))
                         break;
                 }
             }

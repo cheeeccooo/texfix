@@ -3,11 +3,14 @@
 #include "core/Blocks.h"
 #include "core/Compiler.h"
 #include "core/Files.h"
+#include "core/Job.h"
 #include "core/SyncTex.h"
 #include "core/Tools.h"
 
 #include <QCryptographicHash>
+#include <exception>
 #include <functional>
+#include <optional>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -643,6 +646,27 @@ bool breakBefore(const Project &project, const Style &style, const QString &file
 }
 }
 
+namespace {
+// Per chi guarda il lavoro: un problema di impaginazione (o un giro) è un passo, che finisce dicendo le mosse che ne sono
+// venute. Le compilazioni delle prove restano passi a parte, dentro.
+struct Trying {
+    Step step;
+    const QList<Move> &fresh;
+    qsizetype before;
+    Trying(JobControl *control, const QString &text, const QList<Move> &f) : step(control, text), fresh(f), before(f.size()) {}
+    ~Trying()
+    {
+        if (std::uncaught_exceptions())
+            return;                                    // fermato: lo dice il passo
+        QStringList said;
+        for (qsizetype i = before; i < fresh.size(); ++i)
+            said << (fresh[i].state == "fatta" ? (fresh[i].same ? QStringLiteral("%1 fatta, invariata") : QStringLiteral("%1 fatta"))
+                     : fresh[i].state == "proposta" ? QStringLiteral("%1 da rivedere") : QStringLiteral("%1 segnalata")).arg(fresh[i].block);
+        step.done(said.isEmpty() ? QStringLiteral("niente da cambiare") : said.join(QStringLiteral(", ")));
+    }
+};
+}
+
 Result lesson(const Project &project, const Style &style, const QString &file, JobControl *control)
 {
     Result result;
@@ -690,6 +714,7 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
         const double hole = 1.0 - problem->top;
         const QString name = nameOf(*problem, style);
         const QString two = style.twoColumns() ? QStringLiteral("due colonne") : QStringLiteral("due pagine");
+        const Trying trying(control, QStringLiteral("Impagino: %1 (%2) è a cavallo di %3").arg(name, problem->block, two), fresh);
         const QString fresh1 = style.twoColumns() ? QStringLiteral("a colonna nuova") : QStringLiteral("a pagina nuova");
         const QString whole1 = style.twoColumns() ? QStringLiteral("della colonna") : QStringLiteral("della pagina");
         const int percent = qRound(hole * 100);
@@ -792,6 +817,8 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
     for (const Move &m : kept + fresh)
         settled << m.block;
     static const QRegularExpression heading(R"(^\s*\\(?:sub)*section\*?[\[{])");
+    std::optional<Trying> looking;
+    looking.emplace(control, QStringLiteral("Impagino: titoli, formule ed elenchi rimasti in fondo a una pagina"), fresh);
     for (int round = 0; round < 12; ++round) {
         if (control)
             control->check();
@@ -871,6 +898,8 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
             result.proposed += 1;
         }
     }
+    looking.reset();
+    looking.emplace(control, QStringLiteral("Impagino: grandi vuoti prima di ciò che non ci stava"), fresh);
     for (int round = 0; round < 40; ++round) {
         bool shrunk = false;
         // un grande vuoto: un'unità che non ci stava è passata oltre da sola. Una figura si prova a rimpicciolirla; per il
@@ -1069,6 +1098,7 @@ Result lesson(const Project &project, const Style &style, const QString &file, J
         if (!shrunk)
             break;
     }
+    looking.reset();
     // L'ordine conta: una mossa fatta dopo, ma più in alto nella lezione, ha spostato tutto ciò che segue. Le mosse fatte
     // prima di lei e che stanno più in basso guardavano una pagina che non c'è più: si tolgono e il giro dopo le rifà.
     // Una mossa che non cambia la pagina («invariata») non sposta niente.

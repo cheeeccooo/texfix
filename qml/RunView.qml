@@ -5,8 +5,9 @@ import Texfix
 
 // Il lavoro di «Avvia», a tutta finestra come le revisioni. In alto lo stato (in corso, in pausa per il limite di
 // utilizzo, fermato, finito), quanto è fatto, il tempo, il costo, i tasti. A sinistra i cantieri: ogni lezione da scrivere
-// con le sue fasi, ogni lezione del corso che l'agente completa. Al centro le chiamate ai sottoagenti, quelle in corso in
-// cima; un clic apre a destra che cosa ha ricevuto, che cosa ha fatto e che cosa ha risposto. Alla fine, l'esito.
+// con le sue fasi, ogni lezione del corso che l'agente completa, e di ognuno che cosa fa ora. Al centro l'attività: le
+// chiamate ai sottoagenti e i passi senza modello (compilazioni, prove), quelli in corso in cima; un clic su una chiamata
+// apre a destra che cosa ha ricevuto, che cosa ha fatto e che cosa ha risposto. Alla fine, l'esito.
 Rectangle {
     id: root
     color: Theme.window
@@ -20,6 +21,7 @@ Rectangle {
     readonly property string runState: mine ? run.state : ""
     readonly property bool working: runState === "in_corso" || runState === "in_pausa"
     property string siteFilter: ""                     // un cantiere scelto: solo le sue chiamate
+    property bool onlyCalls: false                     // l'attività senza compilazioni e prove
     property int chosen: -1                            // la chiamata aperta
     property var detail: ({})
     property bool confirmUndo: false
@@ -45,8 +47,8 @@ Rectangle {
         return s < 60 ? Math.round(s) + " s" : Math.floor(s / 60) + " min " + Math.round(s % 60) + " s"
     }
     function stateColor(s) {
-        return s === "fatta" ? Theme.good : s === "fallita" ? Theme.bad : s === "in_corso" || s === "riprova" ? Theme.accent
-             : s === "limite" ? Theme.warn : s === "saltata" ? Theme.textFaint : Theme.idle
+        return s === "fatta" || s === "fatto" ? Theme.good : s === "fallita" ? Theme.bad : s === "in_corso" || s === "riprova" ? Theme.accent
+             : s === "limite" || s === "fallito" ? Theme.warn : s === "saltata" ? Theme.textFaint : Theme.idle
     }
     function callState(s) {
         return s === "in_corso" ? "in corso" : s === "riprova" ? "riprova" : s === "fatta" ? "fatta" : s === "fallita" ? "non riuscita"
@@ -76,6 +78,9 @@ Rectangle {
     readonly property real progressNow: runState === "finito" ? 1 : run.progress || 0
     readonly property real remaining: progressNow >= 0.03 && progressNow < 1 && worked > 0 ? worked * (1 - progressNow) / progressNow : 0
     readonly property var calls: (run.calls || []).filter(c => siteFilter === "" || c.site === siteFilter)
+    // chiamate e passi (compilazioni, prove, preparazione), del cantiere scelto o di tutti
+    readonly property var activity: (run.activity || []).filter(a => (siteFilter === "" || a.site === siteFilter) && (!onlyCalls || a.kind === "chiamata"))
+    readonly property int stepsShown: (run.activity || []).filter(a => a.kind === "passo" && (siteFilter === "" || a.site === siteFilter)).length
 
     ColumnLayout {
         anchors.fill: parent
@@ -180,6 +185,50 @@ Rectangle {
                 font.pixelSize: Theme.smallSize
                 wrapMode: Text.WordWrap
                 elide: Text.ElideNone
+            }
+            // adesso: che cosa fa ogni cantiere al lavoro (un clic mostra solo il suo)
+            ColumnLayout {
+                Layout.fillWidth: true
+                visible: root.working && (root.run.now || []).length > 0
+                spacing: 2
+                Repeater {
+                    model: root.working ? (root.run.now || []) : []
+                    RowLayout {
+                        id: nowRow
+                        required property var modelData
+                        required property int index
+                        Layout.fillWidth: true
+                        spacing: Theme.gap
+                        TxLabel {
+                            Layout.preferredWidth: 70
+                            text: nowRow.index === 0 ? "Adesso" : ""
+                            font.pixelSize: Theme.smallSize
+                            font.weight: Font.DemiBold
+                            color: Theme.textMuted
+                        }
+                        Rectangle {
+                            implicitWidth: 7; implicitHeight: 7; radius: 3.5
+                            color: Theme.accent
+                            SequentialAnimation on opacity {
+                                running: root.visible && root.runState === "in_corso"
+                                loops: Animation.Infinite
+                                NumberAnimation { to: 0.3; duration: 600 }
+                                NumberAnimation { to: 1; duration: 600 }
+                            }
+                        }
+                        TxLabel {
+                            Layout.fillWidth: true
+                            text: nowRow.modelData.title + ":  " + nowRow.modelData.text
+                            font.pixelSize: Theme.smallSize
+                            MouseArea {
+                                anchors.fill: parent
+                                enabled: nowRow.modelData.key !== ""
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onClicked: root.siteFilter = nowRow.modelData.key
+                            }
+                        }
+                    }
+                }
             }
             // l'esito, quando c'è
             Rectangle {
@@ -314,6 +363,30 @@ Rectangle {
                                         }
                                     }
                                 }
+                                // che cosa fa ora, o perché aspetta
+                                TxLabel {
+                                    Layout.fillWidth: true
+                                    visible: text !== ""
+                                    text: (siteCard.modelData.now || []).length > 0 ? "Ora: " + siteCard.modelData.now.join(" — ")
+                                          : siteCard.modelData.state === "in_corso" && root.runState === "in_corso"
+                                            ? (siteCard.modelData.kind === "converti" ? "Aspetta il suo turno: le lezioni si chiudono una alla volta" : "Aspetta il suo turno")
+                                          : ""
+                                    color: (siteCard.modelData.now || []).length > 0 ? Theme.accent : Theme.textFaint
+                                    font.pixelSize: Theme.smallSize
+                                    wrapMode: Text.WordWrap
+                                    maximumLineCount: 3
+                                }
+                                // le fasi saltate, con il perché
+                                TxLabel {
+                                    Layout.fillWidth: true
+                                    readonly property var skipped: (siteCard.modelData.phases || []).filter(p => p.state === "saltata" && (p.note || "") !== "")
+                                    visible: skipped.length > 0
+                                    text: skipped.map(p => p.name + " saltata: " + p.note).join(" · ")
+                                    color: Theme.textFaint
+                                    font.pixelSize: Theme.smallSize
+                                    wrapMode: Text.WordWrap
+                                    maximumLineCount: 3
+                                }
                                 TxLabel {
                                     Layout.fillWidth: true
                                     visible: (siteCard.modelData.failure || "") !== ""
@@ -358,10 +431,18 @@ Rectangle {
                     spacing: Theme.gap
                     TxLabel {
                         Layout.fillWidth: true
-                        text: "Chiamate ai sottoagenti  " + root.calls.length
+                        text: "Attività   " + (root.calls.length === 1 ? "1 chiamata" : root.calls.length + " chiamate ai sottoagenti")
+                              + (root.stepsShown > 0 ? " · " + (root.stepsShown === 1 ? "1 passo" : root.stepsShown + " passi") + " senza modello" : "")
                               + (root.siteFilter !== "" ? " · solo " + ((root.run.sites || []).find(s => s.key === root.siteFilter) || { title: "" }).title : "")
                         font.weight: Font.DemiBold
                         color: Theme.textMuted
+                    }
+                    TxButton {
+                        visible: root.stepsShown > 0
+                        text: root.onlyCalls ? "Anche compilazioni e prove" : "Solo le chiamate"
+                        flat: true
+                        implicitHeight: Theme.rowHeight - 4
+                        onClicked: root.onlyCalls = !root.onlyCalls
                     }
                 }
                 ListView {
@@ -370,13 +451,14 @@ Rectangle {
                     Layout.fillHeight: true
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
-                    model: root.calls
+                    model: root.activity
                     spacing: 2
                     ScrollBar.vertical: ScrollBar { policy: callList.contentHeight > callList.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
                     delegate: Rectangle {
                         id: callRow
                         required property var modelData
-                        readonly property bool open: root.chosen === modelData.id
+                        readonly property bool step: modelData.kind === "passo"
+                        readonly property bool open: !step && root.chosen === modelData.id
                         x: 2 * Theme.gap
                         width: callList.width - 3 * Theme.gap
                         implicitHeight: callColumn.implicitHeight + 10
@@ -386,6 +468,7 @@ Rectangle {
                             id: callArea
                             anchors.fill: parent
                             hoverEnabled: true
+                            enabled: !callRow.step                // un passo non ha altro da mostrare
                             cursorShape: Qt.PointingHandCursor
                             onClicked: root.chosen = callRow.open ? -1 : callRow.modelData.id
                         }
@@ -399,7 +482,7 @@ Rectangle {
                                 Layout.fillWidth: true
                                 spacing: 6
                                 Rectangle {
-                                    implicitWidth: 8; implicitHeight: 8; radius: 4
+                                    implicitWidth: 8; implicitHeight: 8; radius: callRow.step ? 1.5 : 4      // un passo: un quadratino
                                     color: root.stateColor(callRow.modelData.state)
                                     SequentialAnimation on opacity {
                                         running: callRow.modelData.state === "in_corso" && root.visible
@@ -409,8 +492,10 @@ Rectangle {
                                     }
                                 }
                                 TxLabel {
-                                    text: callRow.modelData.role + (callRow.modelData.what ? " · " + callRow.modelData.what : "")
-                                    font.weight: Font.Medium
+                                    Layout.maximumWidth: callRow.width * 0.6
+                                    text: callRow.step ? callRow.modelData.text : callRow.modelData.role + (callRow.modelData.what ? " · " + callRow.modelData.what : "")
+                                    font.weight: callRow.step ? Font.Normal : Font.Medium
+                                    color: callRow.step ? Theme.textMuted : Theme.text
                                 }
                                 TxLabel {
                                     Layout.fillWidth: true
@@ -419,7 +504,7 @@ Rectangle {
                                     font.pixelSize: Theme.smallSize
                                 }
                                 TxLabel {
-                                    text: [callRow.modelData.model, root.seconds(callRow.modelData),
+                                    text: [callRow.step ? "" : callRow.modelData.model, root.seconds(callRow.modelData),
                                            callRow.modelData.cost > 0 ? root.money(callRow.modelData.cost) : ""].filter(s => s !== "").join(" · ")
                                     color: Theme.textMuted
                                     font.pixelSize: Theme.smallSize
@@ -428,12 +513,15 @@ Rectangle {
                             TxLabel {
                                 Layout.fillWidth: true
                                 visible: text !== ""
-                                text: callRow.modelData.state === "limite" ? (root.runState === "in_pausa" ? "limite di utilizzo raggiunto: si rifà alla ripresa, alle " + root.run.until : "limite di utilizzo raggiunto: si rifà alla ripresa")
+                                text: callRow.step ? (callRow.modelData.state === "fermato" || callRow.modelData.state === "interrotto" ? callRow.modelData.state
+                                                      : callRow.modelData.outcome || "")
+                                      : callRow.modelData.state === "limite" ? (root.working ? "limite di utilizzo raggiunto: si rifà alla ripresa" : "fermata dal limite di utilizzo: si rifà alla ripresa")
                                       : callRow.modelData.state === "fallita" || callRow.modelData.state === "riprova"
                                       ? root.callState(callRow.modelData.state) + (callRow.modelData.error ? ": " + callRow.modelData.error : "")
                                       : callRow.modelData.state === "in_corso" ? (callRow.modelData.last || "")
                                       : callRow.modelData.state === "fermata" || callRow.modelData.state === "interrotta" ? root.callState(callRow.modelData.state) : ""
-                                color: callRow.modelData.state === "fallita" ? Theme.bad : callRow.modelData.state === "in_corso" ? Theme.textMuted : Theme.warn
+                                color: callRow.step ? (callRow.modelData.state === "fallito" ? Theme.warn : Theme.textFaint)
+                                     : callRow.modelData.state === "fallita" ? Theme.bad : callRow.modelData.state === "in_corso" ? Theme.textMuted : Theme.warn
                                 font.pixelSize: Theme.smallSize
                                 leftPadding: 14
                             }
@@ -443,9 +531,9 @@ Rectangle {
                 TxLabel {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    visible: root.calls.length === 0
+                    visible: root.activity.length === 0
                     horizontalAlignment: Text.AlignHCenter
-                    text: root.working ? "Le chiamate compaiono qui appena partono." : "Nessuna chiamata."
+                    text: root.working ? "Chiamate e passi compaiono qui appena partono." : "Niente."
                     color: Theme.textFaint
                 }
             }

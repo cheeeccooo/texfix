@@ -72,7 +72,10 @@ public:
             onEvent(e);
     }
     std::function<void(const QJsonObject &)> onEvent;
+    // Il numero della chiamata (o del passo) che parte; un lavoro ripreso continua dopo quelli che ha già (callsAfter),
+    // perché i registri della volta prima restino.
     int nextCall() { return ++m_calls; }
+    void callsAfter(int last) { m_calls.store(qMax(m_calls.load(), last)); }
     QString records;
 
 private:
@@ -95,6 +98,28 @@ public:
 
 private:
     QString m_previous;
+};
+
+// Un passo di un lavoro che non è una chiamata al modello (una compilazione, una prova, la preparazione dei pezzi): per
+// chi guarda, con il cantiere del thread. Parte quando nasce e finisce con done(); se muore prima (un'eccezione, «Ferma»)
+// è «fermato». Un passo che copre le compilazioni (covers) le tiene per sé: quelle fatte dentro non sono passi a parte.
+// Senza un JobControl non fa niente.
+class Step {
+public:
+    Step(JobControl *control, const QString &text, bool covers = false);
+    ~Step();
+    Step(const Step &) = delete;
+    Step &operator=(const Step &) = delete;
+    void done(const QString &outcome = {}, bool ok = true);
+    static bool covered();                             // questo thread è dentro un passo che copre le compilazioni
+
+private:
+    void send(const QString &state, const QString &outcome) const;
+    JobControl *m_control;
+    int m_id = 0;
+    QString m_text, m_site;
+    qint64 m_start = 0;
+    bool m_open = false, m_covers, m_previous = false;
 };
 
 }

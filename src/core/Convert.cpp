@@ -550,7 +550,9 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
                         work.key = hash(work.pages.text.toUtf8());
                     } else {
                         work.key = hash(file.readAll());
+                        Step reading(m_control, QStringLiteral("Preparo le pagine di %1").arg(QFileInfo(work.path).fileName()));
                         work.pages = Pages::read(m_project.path(work.path), workDir(work.key + "/pagine"));
+                        reading.done(work.pages.isText ? QStringLiteral("testo") : work.pages.full.size() == 1 ? QStringLiteral("1 pagina") : QStringLiteral("%1 pagine").arg(work.pages.full.size()));
                     }
                     plan(work);
                     site(work, QStringLiteral("Scaletta"), QStringLiteral("fatta"));
@@ -706,7 +708,10 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
                     site(work, QStringLiteral("Lezione"), QStringLiteral("fatta"));
                     if (work.isTex) {                      // le figure dell'autore: tenute (e adattate alla colonna) o ridisegnate
                         progress(0.96, QStringLiteral("sistemo le figure dell'autore"));
+                        Step authoredStep(m_control, QStringLiteral("Sistemo le figure dell'autore"));
                         const figures::Authored a = figures::authored(m_project, m_settings, m_style, model, work.file, QFileInfo(work.path).fileName());
+                        authoredStep.done(a.kept + a.fitted + a.redrawn + a.failed == 0 ? QStringLiteral("nessuna figura")
+                                          : QStringLiteral("%1 tenute, %2 adattate alla colonna, %3 ridisegnate").arg(a.kept).arg(a.fitted).arg(a.redrawn));
                         if (a.kept + a.fitted + a.redrawn + a.failed > 0)
                             m_control->log(QStringLiteral("%1, figure dell'autore: %2 tenute, %3 adattate alla colonna, %4 ridisegnate, %5 che non compilano da sole")
                                                .arg(work.file).arg(a.kept).arg(a.fitted).arg(a.redrawn).arg(a.failed));
@@ -721,7 +726,7 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
                 // le figure, insieme: ridisegnate o ritagliate dalla pagina; quelle che non riescono restano segnaposto
                 progress(0.97, QStringLiteral("preparo le figure"));
                 site(work, QStringLiteral("Figure"), work.figures.isEmpty() ? QStringLiteral("saltata") : QStringLiteral("in_corso"),
-                     {{"fatti", 0}, {"totale", int(work.figures.size())}});
+                     {{"fatti", 0}, {"totale", int(work.figures.size())}, {"nota", work.figures.isEmpty() ? QStringLiteral("nessuna figura da disegnare") : QString()}});
                 std::vector<std::future<QString>> drawing;
                 for (const figures::Figure &figure : std::as_const(work.figures)) {
                     figures::save(m_project, figure);
@@ -763,7 +768,9 @@ Convert::Result Convert::run(const QStringList &sources, const QHash<QString, Wa
                     work.lesson.layoutOpen = paged.proposed;
                     site(work, QStringLiteral("Impaginazione"), QStringLiteral("fatta"), {{"mosse", paged.done}, {"proposte", paged.proposed}});
                 } else {
-                    site(work, QStringLiteral("Impaginazione"), QStringLiteral("saltata"));
+                    site(work, QStringLiteral("Impaginazione"), QStringLiteral("saltata"),
+                         {{"nota", m_settings.layout != "da_sola" ? QStringLiteral("a richiesta, nelle impostazioni del progetto")
+                                   : fixed.errorsAfter > 0 ? QStringLiteral("la lezione ha ancora errori") : QStringLiteral("la lezione non compila")}});
                 }
                 const QString used = m_project.path(QStringLiteral("fonti/usate/lezione %1").arg(work.lesson.number));
                 QDir().mkpath(used);

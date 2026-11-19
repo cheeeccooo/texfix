@@ -165,8 +165,10 @@ sua analisi, un esempio, un esercizio) va dove serve, anche se il file da cui vi
   passo solo della cronologia.
 - **[S]** **Il lavoro di «Avvia»** (decisioni del 18/11/2026): Texfix fa da orchestratore, in un lavoro solo, e lo mostra
   in una finestra sua che prende tutto lo spazio come le revisioni: lo stato, quanto è fatto, il tempo, il costo; i
-  cantieri (ogni lezione da scrivere con le sue fasi, ogni lezione del corso da completare); le chiamate ai sottoagenti,
-  con che cosa hanno ricevuto, fatto e risposto; alla fine l'esito, con «Chiudi e archivia» (i registri delle chiamate si
+  cantieri (ogni lezione da scrivere con le sue fasi, una fase saltata con il perché, ogni lezione del corso da completare;
+  di ognuno che cosa fa ora, o che aspetta il suo turno); le chiamate ai sottoagenti, con che cosa hanno ricevuto, fatto e
+  risposto, e insieme a loro i passi senza modello (compilazioni con l'esito, prove di errori e righe e d'impaginazione, la
+  preparazione: niente di ciò che il lavoro fa resta nascosto; decisione del 19/11/2026); alla fine l'esito, con «Chiudi e archivia» (i registri delle chiamate si
   buttano) e «Annulla tutto il lavoro» (il progetto torna com'era prima di «Avvia», il piano da avviare).
 - **[S]** **Il limite di utilizzo non è un errore.** Quando una chiamata lo trova, il lavoro finisce ciò che è in corso,
   non fa partire niente di nuovo e si ferma da sé, come se il programma fosse stato chiuso e riaperto; dice quando si

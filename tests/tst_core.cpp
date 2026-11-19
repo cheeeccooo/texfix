@@ -2245,6 +2245,9 @@ private slots:
         files::write(dir.filePath("limite"), "");
         {
             JobControl limited;
+            QList<QJsonObject> seen;
+            QMutex seenMutex;
+            limited.onEvent = [&](const QJsonObject &e) { QMutexLocker lock(&seenMutex); seen << e; };
             const run::Result first = run::execute(p, Settings::load(p), Style::classic(), "20261118-170000", &limited);
             QVERIFY(first.stopped);
             QVERIFY(limited.pausedUntil().isValid());
@@ -2253,6 +2256,13 @@ private slots:
             QVERIFY(!state.value("pausa").toString().isEmpty());
             QCOMPARE(state.value("compiti").toArray()[0].toObject().value("stato").toString(), "limite");
             QCOMPARE(state.value("compiti").toArray()[0].toObject().value("sessione").toString(), "s1");
+            // anche ciò che non è una chiamata si vede: la preparazione e le compilazioni, con com'è andata
+            auto step = [&](const QString &start, const QString &state) {
+                return std::any_of(seen.begin(), seen.end(), [&](const QJsonObject &e) {
+                    return e.value("tipo").toString() == "passo" && e.value("testo").toString().startsWith(start) && e.value("stato").toString() == state; });
+            };
+            QVERIFY(step("Copio il progetto", "fatto"));
+            QVERIFY(step("Preparo i pezzi delle fonti", "fatto"));
         }
         QFile::remove(dir.filePath("limite"));
 
@@ -2284,6 +2294,18 @@ private slots:
         // la ripresa: niente due volte
         QFile::remove(dir.filePath("ferma"));
         JobControl control;
+        int lastBefore = 0;                            // le chiamate di prima: la ripresa non ne prende il numero
+        for (const QString &name : QDir(run::recordsDir(p, "20261118-170000")).entryList({"*.json"}))
+            lastBefore = qMax(lastBefore, QFileInfo(name).completeBaseName().toInt());
+        QVERIFY(lastBefore > 0);
+        QList<int> resumedIds;
+        QList<QJsonObject> resumed;
+        control.onEvent = [&](const QJsonObject &e) {
+            QMutexLocker lock(&mutex);
+            resumed << e;
+            if (e.value("tipo").toString() == "chiamata" || e.value("tipo").toString() == "passo")
+                resumedIds << e.value("id").toInt();
+        };
         r = run::execute(p, Settings::load(p), Style::classic(), "20261118-170000", &control);
         QVERIFY(!r.stopped);
         QCOMPARE(r.failure, QString());
@@ -2298,7 +2320,14 @@ private slots:
         const QJsonObject done = plans::load(p, "20261118-170000");
         QCOMPARE(done.value("stato").toString(), "esito");
         QVERIFY(done.value("esito").toString().contains("Aggiunto l'esempio dopo la definizione."));
-        QVERIFY(QFileInfo::exists(run::recordsDir(p, "20261118-170000") + "/1.json"));
+        QVERIFY(!QDir(run::recordsDir(p, "20261118-170000")).entryList({"*.json"}).isEmpty());   // i registri delle chiamate
+        QVERIFY(!resumedIds.isEmpty());
+        QVERIFY(std::all_of(resumedIds.begin(), resumedIds.end(), [&](int id) { return id > lastBefore; }));
+        QVERIFY(std::any_of(resumed.begin(), resumed.end(), [](const QJsonObject &e) {
+            return e.value("tipo").toString() == "passo" && e.value("testo").toString() == "Compilo src/src2.tex" && e.value("stato").toString() == "fatto"
+                   && e.value("esito").toString() == "pulita" && !e.value("cantiere").toString().isEmpty(); }));
+        QVERIFY(std::any_of(resumed.begin(), resumed.end(), [](const QJsonObject &e) {   // la fase saltata dice perché
+            return e.value("fase").toString() == "Impaginazione" && e.value("stato").toString() == "saltata" && e.value("nota").toString().contains("a richiesta"); }));
         QCOMPARE(run::started(p), QStringList{"20261118-170000"});
 
         // «Annulla tutto il lavoro»: com'era prima di «Avvia», e il piano di nuovo da avviare

@@ -67,7 +67,22 @@ void runHandsFree(QQuickWindow *window, QStringList gestures, const QString &pho
 {
     auto *timer = new QTimer(window);
     timer->setInterval(350);
+    qint64 waitUntil = 0;
     QObject::connect(timer, &QTimer::timeout, window, [=]() mutable {
+        // «aspetta N» e «foto-ora FILE» non aspettano che il programma sia fermo: per vedere un lavoro mentre gira
+        if (QDateTime::currentMSecsSinceEpoch() < waitUntil)
+            return;
+        const QString next = gestures.isEmpty() ? QString() : gestures.first().trimmed();
+        if (next.startsWith("aspetta ")) {
+            gestures.takeFirst();
+            waitUntil = QDateTime::currentMSecsSinceEpoch() + qint64(next.section(' ', 1, 1).toDouble() * 1000);
+            return;
+        }
+        if (next.startsWith("foto-ora ")) {
+            gestures.takeFirst();
+            window->grabWindow().save(next.section(' ', 1));
+            return;
+        }
         if ((Workspace::instance()->busy() && !Chat::instance()->waiting()) || Workspace::instance()->rendering())
             return;
         if (!gestures.isEmpty()) {

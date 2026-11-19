@@ -70,10 +70,14 @@ Result execute(const Project &project, const Settings &settings, const Style &st
     if (!state.value("preparato").toBool()) {
         // prima di toccare qualcosa, com'era il progetto: «Annulla tutto il lavoro» torna lì
         QDir(folder(project, id)).removeRecursively();
+        Step copying(control, QStringLiteral("Copio il progetto com'è, per «Annulla tutto il lavoro»"));
         if (!History::saveCopy(project.root(), copy)) {
             out.failure = QStringLiteral("Non riesco a fare una copia del progetto prima di cominciare: non ho toccato niente.");
+            copying.done(out.failure, false);
             return out;
         }
+        copying.done();
+        Step preparing(control, QStringLiteral("Preparo i pezzi delle fonti per ogni lezione"));
         sort::Prepared prepared;
         try {
             prepared = sort::prepare(project, plan);
@@ -81,11 +85,14 @@ Result execute(const Project &project, const Settings &settings, const Style &st
             prepared.failure = QString::fromUtf8(e.what());
         }
         if (!prepared.failure.isEmpty()) {             // il progetto torna com'era: nessun lavoro a metà
+            preparing.done(prepared.failure, false);
             History::restoreCopy(project.root(), copy);
             QDir(folder(project, id)).removeRecursively();
             out.failure = QStringLiteral("Non riesco ad avviare il piano: %1").arg(prepared.failure);
             return out;
         }
+        preparing.done((prepared.wanted.size() == 1 ? QStringLiteral("1 lezione nuova da scrivere") : QStringLiteral("%1 lezioni nuove da scrivere").arg(prepared.wanted.size()))
+                       + (prepared.tasks.size() == 1 ? QStringLiteral(", 1 compito per l'agente") : QStringLiteral(", %1 compiti per l'agente").arg(prepared.tasks.size())));
         newlesson::addPlacements(project, prepared.placements);
         QJsonObject chosen;
         for (auto it = prepared.wanted.begin(); it != prepared.wanted.end(); ++it)
@@ -102,8 +109,13 @@ Result execute(const Project &project, const Settings &settings, const Style &st
         plans::save(project, id, plan);
     }
     QDir().mkpath(recordsDir(project, id));
-    if (control)
+    if (control) {
         control->records = recordsDir(project, id);
+        int last = 0;                                  // ripreso: le chiamate nuove dopo quelle che ci sono, i registri restano
+        for (const QString &name : QDir(control->records).entryList({"*.json"}, QDir::Files))
+            last = qMax(last, QFileInfo(name).completeBaseName().toInt());
+        control->callsAfter(last);
+    }
     state["stato"] = "in_corso";
     state.remove("fine");
     state.remove("pausa");
@@ -197,7 +209,9 @@ Result execute(const Project &project, const Settings &settings, const Style &st
                 return;
             }
             // interrotto a metà: la lezione torna com'era prima del lavoro, e il compito si rifà da capo
+            Step restoring(control, QStringLiteral("Rimetto %1 com'era: il compito interrotto si rifà da capo").arg(lesson));
             History::restoreCopy(project.root(), copy, {lesson});
+            restoring.done();
         }
         if (t.value("tipo").toString() == "fondi" && QFileInfo::exists(project.path(lesson)) && !project.inputs().contains(lesson)
             && t.value("stato").toString() != "in_corso") {
@@ -241,7 +255,11 @@ Result execute(const Project &project, const Settings &settings, const Style &st
         // se l'agente non ha chiuso la lezione, la chiude Texfix: marcatori, fonti fra le usate, il posto nel documento
         if (r.ok && QFileInfo::exists(project.path(lesson))
             && std::any_of(sources.begin(), sources.end(), [&](const QString &s) { return QFileInfo::exists(project.path(s)); }))
+        {
+            Step closing(control, QStringLiteral("Chiudo %1: marcatori dei blocchi, fonti fra le usate").arg(lesson));
             newlesson::settle(project, style.boxes(), style.figureWrapper(), lesson, sources);
+            closing.done();
+        }
         change([&](QJsonObject &s) {
             QJsonArray all = s.value("compiti").toArray();
             QJsonObject now = all[index].toObject();

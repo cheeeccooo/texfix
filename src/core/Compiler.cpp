@@ -10,6 +10,8 @@
 #include <QProcess>
 #include <QRegularExpression>
 
+#include <optional>
+
 using RE = QRegularExpression;
 
 namespace tx {
@@ -19,6 +21,26 @@ const char *const OUT = "build";
 const char *const LESSONS = "build/lezioni";
 
 QString stemOf(const QString &lesson) { return QFileInfo(lesson).completeBaseName(); }
+
+// com'è andata una compilazione, in poche parole: «pulita», «2 errori · 3 righe fuori misura»
+QString summary(const BuildResult &built)
+{
+    if (!built.failure.isEmpty())
+        return built.failure;
+    int errors = 0, rows = 0;
+    for (const Issue &issue : built.issues) {
+        if (issue.kind == Issue::Error)
+            ++errors;
+        else if (built.lesson.isEmpty() || issue.file == built.lesson)   // di una lezione, solo le sue righe
+            ++rows;
+    }
+    QStringList said;
+    if (errors)
+        said << (errors == 1 ? QStringLiteral("1 errore") : QStringLiteral("%1 errori").arg(errors));
+    if (rows)
+        said << (rows == 1 ? QStringLiteral("1 riga fuori misura") : QStringLiteral("%1 righe fuori misura").arg(rows));
+    return said.isEmpty() ? QStringLiteral("pulita") : said.join(QStringLiteral(" · "));
+}
 
 int sectionsIn(const QString &text)
 {
@@ -301,6 +323,10 @@ QProcessEnvironment Compiler::environment()
 BuildResult Compiler::compileSync(const Project &project, const QString &lesson, JobControl *control)
 {
     BuildResult result;
+    // per chi guarda il lavoro: un passo, se non è già dentro uno che la copre (una prova che si misura)
+    std::optional<Step> step;
+    if (control && !Step::covered())
+        step.emplace(control, lesson.isEmpty() ? QStringLiteral("Compilo il documento") : QStringLiteral("Compilo %1").arg(lesson));
     result.lesson = lesson;
     result.pdf = pdfOf(project, lesson);
     const QString base = result.pdf.chopped(4);
@@ -309,6 +335,8 @@ BuildResult Compiler::compileSync(const Project &project, const QString &lesson,
         const QString main = reducedMain(project, lesson, &error);
         if (!error.isEmpty()) {
             result.failure = error;
+            if (step)
+                step->done(error, false);
             return result;
         }
         files::write(base + ".main.tex", main);
@@ -326,6 +354,8 @@ BuildResult Compiler::compileSync(const Project &project, const QString &lesson,
         process.start("latexmk", arguments(lesson));
         if (!process.waitForStarted(10000)) {
             result.failure = QStringLiteral("Non trovo latexmk: serve una distribuzione TeX (MacTeX).");
+            if (step)
+                step->done(result.failure, false);
             return result;
         }
         if (control)
@@ -350,6 +380,8 @@ BuildResult Compiler::compileSync(const Project &project, const QString &lesson,
     }
     result.issues = texlog::parse(files::read(base + ".log"));
     result.ms = timer.elapsed();
+    if (step)
+        step->done(summary(result), !result.hasErrors());
     return result;
 }
 

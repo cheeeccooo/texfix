@@ -234,6 +234,8 @@ void Workspace::closeProject()
     m_runCallAt.clear();
     m_runLessonSite.clear();
     m_runStreams.clear();
+    m_runSteps.clear();
+    m_runStepAt.clear();
     m_runOutcome.clear();
     emit runChanged();
     m_unrecognized.clear();
@@ -1939,6 +1941,8 @@ void Workspace::startSortPlan(const QString &id)
     m_runCallAt.clear();
     m_runLessonSite.clear();
     m_runStreams.clear();
+    m_runSteps.clear();
+    m_runStepAt.clear();
     m_runOutcome.clear();
     m_runWorked = 0;
     m_runEstimate = plans::load(m_project, id).value("stima").toDouble();
@@ -1953,7 +1957,8 @@ void Workspace::startRun(const QString &id)
     m_runOutcome.clear();
     emit runChanged();
     emit runOpened(id);
-    startJob(QStringLiteral("Aggiungi materiale"), [this, id, project = m_project, settings = m_settings, style = m_style](JobControl *control) {
+    startJob(QStringLiteral("Aggiungi materiale"), [this, id, project = m_project, settings = m_settings, style = m_style, last = lastRunId()](JobControl *control) {
+        control->callsAfter(last);                    // ripreso: le chiamate e i passi nuovi non prendono il posto dei vecchi
         const run::Result result = run::execute(project, settings, style, id, control);
         return std::function<void()>([this, result] { runFinished(result); });
     }, true);
@@ -2112,6 +2117,10 @@ void Workspace::loadRun()
         m_runCallAt.insert(call.value("id").toInt(), int(m_runCalls.size()));
         m_runCalls << call;
     }
+    for (const QJsonValue &v : view.value("passi").toArray()) {
+        m_runStepAt.insert(v.toObject().value("id").toInt(), int(m_runSteps.size()));
+        m_runSteps << v.toObject().toVariantMap();
+    }
     stillRun();
     m_runOutcome = view.value("esito").toObject().toVariantMap();
     if (m_runState == "interrotto" && m_runOutcome.isEmpty())
@@ -2139,21 +2148,36 @@ void Workspace::stillRun()
     for (QVariantMap &call : m_runCalls)
         if (call.value("state") == "in_corso" || call.value("state") == "riprova")
             call["state"] = "interrotta";
+    for (QVariantMap &step : m_runSteps)
+        if (step.value("state") == "in_corso")
+            step["state"] = "interrotto";
+}
+
+int Workspace::lastRunId() const
+{
+    int last = 0;
+    for (const QVariantMap &call : m_runCalls)
+        last = qMax(last, call.value("id").toInt());
+    for (const QVariantMap &step : m_runSteps)
+        last = qMax(last, step.value("id").toInt());
+    return last;
 }
 
 void Workspace::saveRunView() const
 {
     if (m_runId.isEmpty() || !hasProject() || run::load(m_project, m_runId).isEmpty())
         return;
-    QJsonArray sites, calls;
+    QJsonArray sites, calls, steps;
     for (const QVariantMap &site : m_runSites)
         sites.append(QJsonObject::fromVariantMap(site));
     for (const QVariantMap &call : m_runCalls)
         calls.append(QJsonObject::fromVariantMap(call));
+    for (const QVariantMap &step : m_runSteps)
+        steps.append(QJsonObject::fromVariantMap(step));
     QDir().mkpath(run::folder(m_project, m_runId));
     files::write(run::folder(m_project, m_runId) + "/vista.json",
                  QString::fromUtf8(QJsonDocument(QJsonObject{{"lavorato", double(m_runWorked + (m_runStarted > 0 ? QDateTime::currentMSecsSinceEpoch() - m_runStarted : 0))}, {"cantieri", sites},
-                                                             {"chiamate", calls}, {"esito", QJsonObject::fromVariantMap(m_runOutcome)}})
+                                                             {"chiamate", calls}, {"passi", steps}, {"esito", QJsonObject::fromVariantMap(m_runOutcome)}})
                                        .toJson(QJsonDocument::Compact)));
 }
 
@@ -2241,6 +2265,8 @@ void Workspace::runEvent(const QJsonObject &e)
                     m["done"] = e.value("fatti").toInt();
                 if (e.contains("piu"))
                     m["done"] = m.value("done").toInt() + e.value("piu").toInt();
+                if (e.contains("nota"))
+                    m["note"] = e.value("nota").toString();
                 if (m.value("total").toInt() > 0 && m.value("done").toInt() >= m.value("total").toInt() && m.value("state") == "in_corso")
                     m["state"] = "fatta";                   // tutti i blocchi scritti
                 p = m;
@@ -2284,6 +2310,35 @@ void Workspace::runEvent(const QJsonObject &e)
         call["error"] = e.value("motivo").toString();
         if (e.value("stato").toString() != "in_corso" && e.value("stato").toString() != "riprova")
             m_runStreams.remove(id);                   // finita: il flusso intero sta nel suo registro
+    } else if (type == "passo") {
+        const int id = e.value("id").toInt();
+        QString key = e.value("cantiere").toString();
+        if (!key.isEmpty() && !m_runSiteAt.contains(key) && m_runSiteAt.contains(texsource::parseSpec(key).path))
+            key = texsource::parseSpec(key).path;
+        if (!m_runStepAt.contains(id)) {
+            const int STEPS_KEPT = 600;                // i più vecchi, finiti, se ne vanno: la vista resta leggera
+            if (m_runSteps.size() >= STEPS_KEPT) {
+                qsizetype i = 0;
+                while (i < m_runSteps.size() && m_runSteps.size() >= STEPS_KEPT) {
+                    if (m_runSteps[i].value("state") == "in_corso")
+                        ++i;
+                    else
+                        m_runSteps.removeAt(i);
+                }
+                m_runStepAt.clear();
+                for (qsizetype i = 0; i < m_runSteps.size(); ++i)
+                    m_runStepAt.insert(m_runSteps[i].value("id").toInt(), int(i));
+            }
+            m_runStepAt.insert(id, int(m_runSteps.size()));
+            m_runSteps << QVariantMap{{"id", id}};
+        }
+        QVariantMap &step = m_runSteps[m_runStepAt.value(id)];
+        step["site"] = key;
+        step["text"] = e.value("testo").toString();
+        step["state"] = e.value("stato").toString();
+        step["started"] = e.value("inizio").toDouble();
+        step["seconds"] = e.value("secondi").toDouble();
+        step["outcome"] = e.value("esito").toString();
     } else if (type == "flusso") {
         const int id = e.value("id").toInt();
         QVariantList &stream = m_runStreams[id];
@@ -2304,6 +2359,23 @@ QVariantMap Workspace::run() const
     QVariantList sites, calls;
     double progress = 0, cost = 0;
     int active = 0;
+    // che cosa fa ora ogni cantiere: i passi e le chiamate in corso, nell'ordine in cui sono partiti
+    QList<QVariantMap> running;
+    for (const QVariantMap &step : m_runSteps)
+        if (step.value("state") == "in_corso")
+            running << QVariantMap{{"site", step.value("site")}, {"started", step.value("started")}, {"text", step.value("text")}};
+    for (const QVariantMap &call : m_runCalls) {
+        if (call.value("state") != "in_corso" && call.value("state") != "riprova")
+            continue;
+        const QString what = call.value("role").toString() + (call.value("what").toString().isEmpty() ? QString() : " · " + call.value("what").toString());
+        const QString text = call.value("role") == "Agente" ? (call.value("last").toString().isEmpty() ? QStringLiteral("L'agente lavora") : "Agente: " + call.value("last").toString())
+                                                          : QStringLiteral("%1, al modello (%2)").arg(what, call.value("model").toString());
+        running << QVariantMap{{"site", call.value("site")}, {"started", call.value("started")}, {"text", text}};
+    }
+    std::stable_sort(running.begin(), running.end(), [](const QVariantMap &a, const QVariantMap &b) { return a.value("started").toDouble() < b.value("started").toDouble(); });
+    QHash<QString, QStringList> doing;
+    for (const QVariantMap &r : std::as_const(running))
+        doing[r.value("site").toString()] << r.value("text").toString();
     for (const QVariantMap &site : m_runSites) {
         QVariantMap s = site;
         double part = 0;
@@ -2328,6 +2400,7 @@ QVariantMap Workspace::run() const
         if (site.value("number").toInt() > 0 && site.value("kind") == "converti")
             title = QStringLiteral("Lezione %1 · %2").arg(site.value("number").toInt()).arg(title);
         s["title"] = title;
+        s["now"] = doing.value(site.value("key").toString());
         sites << s;
     }
     QHash<QString, QString> titles;
@@ -2347,6 +2420,34 @@ QVariantMap Workspace::run() const
         call["siteTitle"] = titles.value(call.value("site").toString());
         calls << call;
     }
+    // l'attività: chiamate e passi insieme, quelli in corso in cima, poi dal più recente
+    QList<QVariantMap> together;
+    for (QVariant c : std::as_const(calls)) {
+        QVariantMap m = c.toMap();
+        m["kind"] = "chiamata";
+        together << m;
+    }
+    for (QVariantMap step : m_runSteps) {
+        step["kind"] = "passo";
+        step["siteTitle"] = titles.value(step.value("site").toString());
+        together << step;
+    }
+    std::stable_sort(together.begin(), together.end(), [](const QVariantMap &a, const QVariantMap &b) {
+        const bool ra = a.value("state") == "in_corso" || a.value("state") == "riprova", rb = b.value("state") == "in_corso" || b.value("state") == "riprova";
+        if (ra != rb)
+            return ra;
+        return a.value("started").toDouble() > b.value("started").toDouble();
+    });
+    QVariantList activity;
+    for (const QVariantMap &m : std::as_const(together))
+        activity << m;
+    // in alto: che cosa si fa adesso, cantiere per cantiere (i passi senza cantiere sono del lavoro)
+    QVariantList now;
+    for (const QVariant &s : std::as_const(sites))
+        if (!s.toMap().value("now").toStringList().isEmpty())
+            now << QVariantMap{{"title", s.toMap().value("title")}, {"key", s.toMap().value("key")}, {"text", s.toMap().value("now").toStringList().join(QStringLiteral(" — "))}};
+    if (!doing.value(QString()).isEmpty())
+        now.prepend(QVariantMap{{"title", QStringLiteral("Lavoro")}, {"key", QString()}, {"text", doing.value(QString()).join(QStringLiteral(" — "))}});
     QString state = m_runState;
     if (state == "in_corso" && m_pausedUntil.isValid())
         state = QStringLiteral("in_pausa");
@@ -2355,7 +2456,7 @@ QVariantMap Workspace::run() const
                        {"until", until.isValid() ? Model::when(until) : QString()},
                        {"untilPassed", until.isValid() && until <= QDateTime::currentDateTime()},
                        {"sessionStart", double(m_runStarted)}, {"worked", double(m_runWorked)}, {"cost", cost}, {"estimate", m_runEstimate},
-                       {"progress", m_runSites.isEmpty() ? 0.0 : progress / m_runSites.size()}, {"active", active}, {"sites", sites}, {"calls", calls},
+                       {"progress", m_runSites.isEmpty() ? 0.0 : progress / m_runSites.size()}, {"active", active}, {"sites", sites}, {"calls", calls}, {"activity", activity}, {"now", now}, {"steps", int(m_runSteps.size())},
                        {"outcome", m_runOutcome}, {"canUndo", QFileInfo::exists(run::folder(m_project, m_runId) + "/prima/stato.json")}};
 }
 
