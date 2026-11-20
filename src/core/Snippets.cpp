@@ -11,6 +11,8 @@
 #include <QImage>
 #include <QRegularExpression>
 
+#include <functional>
+
 namespace tx::snippets {
 
 namespace {
@@ -18,16 +20,23 @@ using RE = QRegularExpression;
 
 QString dirOf(const Project &project) { return project.path("build/resa"); }
 
+// Gli stili del progetto (texfix.sty e lo stile che carica, con i loro compagni): cambiano loro, cambiano le rese.
+QByteArray stylesStamp(const Project &project)
+{
+    QByteArray out;
+    for (const QFileInfo &sty : QDir(project.root()).entryInfoList({"*.sty"}, QDir::Files, QDir::Name))
+        out += sty.fileName().toUtf8() + QByteArray::number(sty.lastModified().toMSecsSinceEpoch()) + QByteArray::number(sty.size()) + '\n';
+    return out;
+}
+
 QString keyOf(const Project &project, const QString &text, Kind kind, const QString &color)
 {
     QCryptographicHash hash(QCryptographicHash::Sha1);
     hash.addData(text.toUtf8());
     hash.addData(kind == Kind::Prose ? "p" : "l");
     hash.addData(color.toUtf8());
-    hash.addData("4");                         // le rese fallite prima che la prosa del modello si leggesse bene si riprovano
-    // il preambolo: cambia lo stile, cambiano le rese
-    const QFileInfo package(project.path(Project::PACKAGE));
-    hash.addData(QByteArray::number(package.lastModified().toSecsSinceEpoch()) + QByteArray::number(package.size()));
+    hash.addData("6");                         // le rese fallite prima che la prosa del modello si leggesse bene si riprovano
+    hash.addData(stylesStamp(project));        // il preambolo: cambia lo stile, cambiano le rese
     return QString::fromLatin1(hash.result().toHex().left(20));
 }
 
@@ -162,29 +171,68 @@ QString unicodeSymbols()
     return preamble;
 }
 
-QString document(const QStringList &bodies, const QString &color)
+QString preamble()
 {
-    QString tex = "\\documentclass[10pt]{article}\n\\usepackage{texfix}\n\\usepackage{varwidth}\n\\usepackage[active,tightpage]{preview}\n"
-                  "\\setlength\\PreviewBorder{1.5pt}\n\\pagestyle{empty}\n" + unicodeSymbols() + "\\begin{document}\n";
-    for (const QString &body : bodies)
+    return "\\documentclass[10pt]{article}\n\\usepackage{texfix}\n\\usepackage{varwidth}\n\\usepackage[active,tightpage]{preview}\n"
+           "\\setlength\\PreviewBorder{1.5pt}\n\\pagestyle{empty}\n" + unicodeSymbols();
+}
+
+// Il preambolo precompilato (mylatexformat): caricarlo costa un terzo che rileggerlo. Un nome per ogni versione degli
+// stili; se non si fa (manca mylatexformat, uno stile non si lascia salvare) resta un «.no» e si compila come prima.
+QString format(const Project &project)
+{
+    const QString dir = dirOf(project);
+    QCryptographicHash hash(QCryptographicHash::Sha1);
+    hash.addData(preamble().toUtf8());
+    hash.addData(stylesStamp(project));
+    const QString name = "preambolo-" + QString::fromLatin1(hash.result().toHex().left(12));
+    const QString base = dir + '/' + name;
+    if (QFileInfo::exists(base + ".fmt"))
+        return base;
+    if (QFileInfo::exists(base + ".no"))
+        return {};
+    QDir().mkpath(dir);
+    for (const QFileInfo &old : QDir(dir).entryInfoList({"preambolo-*"}, QDir::Files))
+        QFile::remove(old.absoluteFilePath());         // quelli degli stili di prima
+    files::write(base + ".tex", preamble() + "\\begin{document}\n\\end{document}\n");
+    const QDir root(project.root());
+    const tools::Output out = tools::run("pdftex", {"-ini", "-interaction=nonstopmode", "-halt-on-error", "-jobname=" + name,
+                                                    "-output-directory=" + root.relativeFilePath(dir), "&pdflatex", "mylatexformat.ltx",
+                                                    root.relativeFilePath(base + ".tex")},
+                                         project.root(), 90000);
+    for (const char *ext : {".tex", ".log"})
+        QFile::remove(base + ext);
+    if (out.ok && QFileInfo::exists(base + ".fmt"))
+        return base;
+    files::write(base + ".no", QString());
+    return {};
+}
+
+QString document(const QList<std::pair<QString, QString>> &bodies, bool precompiled)
+{
+    QString tex = precompiled ? QString() : preamble();
+    tex += "\\begin{document}\n";
+    for (const auto &[body, color] : bodies)
         tex += "\\begin{preview}\\begin{varwidth}{13cm}\\raggedright\\color[HTML]{" + color + "}%\n" + body + "%\n\\end{varwidth}\\end{preview}\n";
     return tex + "\\end{document}\n";
 }
 
-// Compila i corpi in un documento, una pagina ciascuno, e ne fa immagini trasparenti. Vero se sono venute tutte.
-bool compile(const Project &project, const QStringList &bodies, const QStringList &keys, const QString &color, const QString &job)
+// Compila i corpi (con il loro colore) in un documento, una pagina ciascuno, e ne fa immagini trasparenti. Vero se sono
+// venute tutte.
+bool compile(const Project &project, const QList<std::pair<QString, QString>> &bodies, const QStringList &keys, const QString &fmt, const QString &job)
 {
     const QString dir = dirOf(project);
     QDir().mkpath(dir);
     const QString base = dir + '/' + job;
-    files::write(base + ".tex", document(bodies, color));
+    files::write(base + ".tex", document(bodies, !fmt.isEmpty()));
     QFile::remove(base + ".pdf");
     // percorsi relativi alla cartella del progetto, da cui pdflatex parte: TeX non legge un percorso con «~» (iCloud:
     // «com~apple~CloudDocs»)
     const QDir root(project.root());
-    const tools::Output out = tools::run("pdflatex", {"-interaction=nonstopmode", "-halt-on-error", "-output-directory=" + root.relativeFilePath(dir),
-                                                      root.relativeFilePath(base + ".tex")},
-                                         project.root(), 90000);
+    QStringList args{"-interaction=nonstopmode", "-halt-on-error", "-output-directory=" + root.relativeFilePath(dir)};
+    if (!fmt.isEmpty())
+        args << "-fmt=" + root.relativeFilePath(fmt);
+    const tools::Output out = tools::run("pdflatex", args << root.relativeFilePath(base + ".tex"), project.root(), 90000);
     bool good = out.ok && QFileInfo::exists(base + ".pdf");
     if (good) {
         tools::run("pdftocairo", {"-png", "-transp", "-r", "200", base + ".pdf", base}, dir, 60000);
@@ -227,7 +275,10 @@ QStringList bodiesOf(const QString &text, Kind kind)
     static const RE mathy(R"(\\[a-zA-Z]+|[_^=<>+])");
     const bool hasMode = text.contains('$') || text.contains("\\[") || text.contains("\\begin{") || text.contains("\\(");
     const QString formula = "$\\displaystyle " + text + "$";
-    return !hasMode && mathy.match(text).hasMatch() ? QStringList{formula, text} : QStringList{text, formula};
+    // tre parole di fila, tolti i comandi, sono prosa («Questi dati si collegano a \\emph{…}»), non una formula
+    static const RE command(R"(\\[a-zA-Z]+)"), words(R"((?:\p{L}{3,}\s+){2}\p{L}{3,})");
+    const bool prose = words.match(QString(text).remove(command)).hasMatch();
+    return !hasMode && !prose && mathy.match(text).hasMatch() ? QStringList{formula, text} : QStringList{text, formula};
 }
 }
 
@@ -248,38 +299,61 @@ QString pathOf(const Project &project, const QString &text, Kind kind, const QSt
     return dirOf(project) + '/' + keyOf(project, text, kind, color) + ".png";
 }
 
-QStringList render(const Project &project, const QStringList &texts, Kind kind, const QString &color)
+QStringList render(const Project &project, const QList<Piece> &pieces)
 {
-    QStringList todo, keys, done;
-    for (const QString &text : texts) {
-        const QString key = keyOf(project, text, kind, color);
+    QList<Piece> todo;
+    QStringList keys, done;
+    for (const Piece &piece : pieces) {
+        const QString key = keyOf(project, piece.text, piece.kind, piece.color);
         const QString base = dirOf(project) + '/' + key;
-        if (text.trimmed().isEmpty() || keys.contains(key) || QFileInfo::exists(base + ".png") || QFileInfo::exists(base + ".no"))
+        if (piece.text.trimmed().isEmpty() || keys.contains(key) || QFileInfo::exists(base + ".png") || QFileInfo::exists(base + ".no"))
             continue;
-        todo << text;
+        todo << piece;
         keys << key;
     }
     if (todo.isEmpty())
         return done;
-    const QString job = "lavoro-" + keys.first();
-    QStringList first;
-    for (const QString &text : todo)
-        first << bodiesOf(text, kind).first();
-    if (!compile(project, first, keys, color, job)) {
-        // qualcosa non compila: uno alla volta, ognuno con le sue forme
-        for (qsizetype i = 0; i < todo.size(); ++i) {
-            bool good = false;
-            for (const QString &body : bodiesOf(todo[i], kind))
-                if (!good)
-                    good = compile(project, {body}, {keys[i]}, color, job);
-            if (!good)
-                files::write(dirOf(project) + '/' + keys[i] + ".no", QString());
+    QString fmt = format(project);
+    // un gruppo di pezzi, nella prima forma di ognuno: se non compila si divide a metà; un pezzo solo prova le sue
+    // altre forme, e se nessuna compila resta senza resa
+    std::function<void(qsizetype, qsizetype)> attempt = [&](qsizetype from, qsizetype to) {
+        QList<std::pair<QString, QString>> bodies;
+        for (qsizetype i = from; i < to; ++i)
+            bodies << std::pair{bodiesOf(todo[i].text, todo[i].kind).first(), todo[i].color};
+        const QString job = "lavoro-" + keys[from];
+        if (compile(project, bodies, keys.mid(from, to - from), fmt, job))
+            return;
+        if (from == 0 && to == todo.size() && !fmt.isEmpty() && compile(project, bodies, keys, QString(), job)) {
+            files::write(fmt + ".no", QString());     // il preambolo precompilato non va (TeX aggiornato?): senza
+            QFile::remove(fmt + ".fmt");
+            fmt.clear();
+            return;
         }
-    }
+        if (to - from > 1) {
+            const qsizetype middle = from + (to - from) / 2;
+            attempt(from, middle);
+            attempt(middle, to);
+            return;
+        }
+        const QStringList forms = bodiesOf(todo[from].text, todo[from].kind);
+        for (qsizetype f = 1; f < forms.size(); ++f)
+            if (compile(project, {std::pair{forms[f], todo[from].color}}, {keys[from]}, fmt, job))
+                return;
+        files::write(dirOf(project) + '/' + keys[from] + ".no", QString());
+    };
+    attempt(0, todo.size());
     for (const QString &key : keys)
         if (QFileInfo::exists(dirOf(project) + '/' + key + ".png"))
             done << dirOf(project) + '/' + key + ".png";
     return done;
+}
+
+QStringList render(const Project &project, const QStringList &texts, Kind kind, const QString &color)
+{
+    QList<Piece> pieces;
+    for (const QString &text : texts)
+        pieces << Piece{text, kind, color};
+    return render(project, pieces);
 }
 
 }

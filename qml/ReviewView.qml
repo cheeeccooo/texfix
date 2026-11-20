@@ -3,9 +3,8 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Texfix
 
-// Rivedi dubbi e Rivedi correzioni, nella forma di Rivedi impaginazione (`ReviewDeck`): la panoramica lezione per
-// lezione, con tutto (ciò che è deciso è oscurato, e si riapre), e la scheda con le scelte. Il riepilogo è la
-// panoramica stessa.
+// Rivedi dubbi e Rivedi correzioni (`ReviewDeck`): l'elenco delle lezioni, e in una lezione tutti i suoi elementi con
+// le scelte (ciò che è deciso è oscurato, e si riapre). I tasti valgono per l'elemento evidenziato.
 Rectangle {
     id: root
     required property string section                   // dubbi | correzioni
@@ -26,9 +25,9 @@ Rectangle {
     Connections { target: Workspace; function onFilesChanged() { if (root.visible) root.reload() } }
     Connections { target: Workspace; function onTreeChanged() { if (root.visible) root.reload() } }
 
-    // Dall'albero: la panoramica (la lezione è lì).
-    function showLesson(lesson) { deck.current = -1 }
-    function showShots() { if (deck.cards.length > 0) deck.current = 0 }   // per le prove: la prima scheda
+    // Dall'albero: la lezione, se ha qualcosa da mostrare.
+    function showLesson(lesson) { deck.open(lesson) }
+    function showShots() { if (deck.groups.length > 0) deck.open(deck.groups[0].row.lesson) }   // per le prove: la prima lezione
 
     readonly property bool doubts: section === "dubbi"
     function isOpen(row) {
@@ -70,7 +69,6 @@ Rectangle {
         nameOf: root.nameOf
         hintOf: row => row.type === "doubt" ? (row.source || "") + (row.page > 0 ? ", pagina " + row.page : "") : (row.text || "")
         onGoAsked: row => root.lineAsked(row.lesson, Math.max(1, row.line))
-        tilePreview: preview
         stage: root.doubts ? doubtStage : correctionStage
         choices: root.doubts ? doubtChoices : correctionChoices
         lessonActions: lessonButtons
@@ -82,7 +80,7 @@ Rectangle {
         if (!c || c.type !== "doubt" || c.pending || index >= (c.readings || []).length)
             return
         Workspace.chooseReading(c.lesson, c.id, index)
-        deck.next()
+        deck.next(c)
     }
     Repeater {
         model: 9
@@ -102,13 +100,13 @@ Rectangle {
                 c.state === "tolta" ? Workspace.restoreDeclared(c.lesson, c.hash) : Workspace.keepDeclared(c.lesson, c.hash, true)
             else
                 return
-            deck.next()
+            deck.next(c)
         }
     }
     Shortcut {                                         // L: toglie un'aggiunta
         sequence: "L"
         enabled: root.visible && deck.card !== null && deck.card.type === "declared" && deck.card.state !== "tolta"
-        onActivated: { Workspace.dropDeclared(deck.card.lesson, deck.card.hash); deck.next() }
+        onActivated: { const c = deck.card; Workspace.dropDeclared(c.lesson, c.hash); deck.next(c) }
     }
     Shortcut {                                         // M: correggo io
         sequence: "M"
@@ -140,27 +138,13 @@ Rectangle {
 
     // ── i pezzi
     Component {
-        id: preview
-        TxLabel {                                      // nella scheda piccola il testo: la resa si legge nella scheda aperta
-            property var row: ({})
-            text: row.type === "doubt" ? (row.what || "") + "\n\n" + (row.latex || "") : (row.text || row.detail || "")
-            color: Theme.textMuted
-            font.pixelSize: Theme.smallSize
-            wrapMode: Text.WordWrap
-            elide: Text.ElideRight
-            maximumLineCount: 9
-            verticalAlignment: Text.AlignTop
-        }
-    }
-
-    Component {
         id: lessonButtons
         RowLayout {
             property var row: ({})
             property var group: ({ cards: [] })
             spacing: Theme.gap
-            readonly property int openDeclared: group.cards.filter(c => c.row.type === "declared" && c.row.state === "aperta").length
-            readonly property bool anyDecided: group.cards.some(c => c.row.type !== "issue" && !root.isOpen(c.row))
+            readonly property int openDeclared: group.cards.filter(c => c.type === "declared" && c.state === "aperta").length
+            readonly property bool anyDecided: group.cards.some(c => c.type !== "issue" && !root.isOpen(c))
             TxButton {
                 visible: anyDecided
                 text: "Riapri tutta"
@@ -180,7 +164,7 @@ Rectangle {
                 onClicked: Workspace.keepAllDeclared(row.lesson)
             }
             TxButton {
-                visible: !root.doubts && group.cards.some(c => c.row.type === "issue")
+                visible: !root.doubts && group.cards.some(c => c.type === "issue")
                 text: "Sistema errori e righe"
                 enabled: !Workspace.busy
                 onClicked: Workspace.fixAll(row.lesson)
@@ -234,7 +218,12 @@ Rectangle {
             }
             RowLayout {
                 Layout.fillWidth: true
-                TxLabel { Layout.fillWidth: true; text: (row.source || "") + (row.page > 0 ? ", pagina " + row.page : ""); color: Theme.textFaint; font.pixelSize: Theme.smallSize }
+                TxLabel {
+                    Layout.fillWidth: true
+                    text: (row.source || "") + (row.page > 0 ? ", pagina " + row.page : "") + (row.sourcePath && !deck.isFocused(row) ? " · un clic qui per vederla" : "")
+                    color: Theme.textFaint
+                    font.pixelSize: Theme.smallSize
+                }
                 TxButton { text: stageBox.showSource ? "Nascondi il sorgente" : "Sorgente"; flat: true; onClicked: stageBox.showSource = !stageBox.showSource }
             }
             TxLabel {
@@ -246,14 +235,15 @@ Rectangle {
                 wrapMode: Text.WrapAnywhere
                 elide: Text.ElideNone
             }
-            Image {                                    // la pagina della fonte
+            Image {                                    // la pagina della fonte, per il dubbio evidenziato
                 Layout.fillWidth: true
+                Layout.maximumWidth: 900
                 Layout.preferredHeight: status === Image.Ready ? width * sourceSize.height / Math.max(1, sourceSize.width) : 0
                 visible: source != ""
                 fillMode: Image.PreserveAspectFit
                 horizontalAlignment: Image.AlignLeft
                 asynchronous: true
-                source: row.sourcePath ? "image://pdf/0/" + (Math.max(1, row.page) - 1) + "/1400/" + encodeURIComponent(row.sourcePath) : ""
+                source: row.sourcePath && deck.isFocused(row) ? "image://pdf/0/" + (Math.max(1, row.page) - 1) + "/1400/" + encodeURIComponent(row.sourcePath) : ""
             }
         }
     }
@@ -264,7 +254,7 @@ Rectangle {
             property var row: ({ readings: [] })
             spacing: Theme.gap
             // da confermare: corretto a mano o deciso dal modello
-            TxChoice { visible: row.pending === true; text: "Conferma  (A)"; tone: Theme.good; onClicked: { Workspace.confirmDoubt(row.lesson, row.id); deck.next() } }
+            TxChoice { visible: row.pending === true; text: "Conferma  (A)"; tone: Theme.good; onClicked: { const r = row; Workspace.confirmDoubt(r.lesson, r.id); deck.next(r) } }
             TxChoice { visible: row.pending === true && row.how === "corretta"; text: "Modifica ancora"; tone: Theme.warn; onClicked: root.lineAsked(row.lesson, Math.max(1, row.line)) }
             TxChoice { visible: row.pending === true; text: "Riapri"; tone: Theme.idle; onClicked: Workspace.reopenDoubt(row.lesson, row.id, row.how === "modello") }
             // le letture, com'è nel PDF: la prima è com'è scritto
@@ -277,12 +267,12 @@ Rectangle {
                     required property int index
                     tone: index === 0 ? Theme.idle : Theme.accent
                     chosen: !row.open && row.chosen === index
-                    onClicked: root.choose(index)
+                    onClicked: { const r = row; Workspace.chooseReading(r.lesson, r.id, index); deck.next(r) }
                     RowLayout {
                         width: parent.width
                         spacing: 6
                         TxLabel { text: (reading.chosen ? "✓ " : "") + (reading.index + 1); color: Theme.textMuted; font.weight: Font.DemiBold }
-                        TxRendered { Layout.fillWidth: true; text: reading.modelData.latex || ""; kind: "latex"; shown: reading.modelData.text }
+                        TxRendered { Layout.fillWidth: true; text: reading.modelData.latex || ""; kind: "latex" }
                         TxLabel { visible: reading.index === 0; text: "com'è scritto"; color: Theme.textFaint; font.pixelSize: Theme.smallSize }
                     }
                 }
@@ -371,8 +361,9 @@ Rectangle {
                 tone: Theme.good
                 chosen: row.state === "tenuta"
                 onClicked: {
-                    row.state === "tolta" ? Workspace.restoreDeclared(row.lesson, row.hash) : Workspace.keepDeclared(row.lesson, row.hash, true)
-                    deck.next()
+                    const r = row
+                    r.state === "tolta" ? Workspace.restoreDeclared(r.lesson, r.hash) : Workspace.keepDeclared(r.lesson, r.hash, true)
+                    deck.next(r)
                 }
             }
             TxChoice {
@@ -381,7 +372,7 @@ Rectangle {
                 text: "Togli  (L)"
                 tone: Theme.bad
                 chosen: row.state === "tolta"
-                onClicked: { Workspace.dropDeclared(row.lesson, row.hash); deck.next() }
+                onClicked: { const r = row; Workspace.dropDeclared(r.lesson, r.hash); deck.next(r) }
             }
             TxChoice { visible: row.type === "declared" && row.state === "tenuta"; text: "Riapri  (R)"; tone: Theme.idle; onClicked: Workspace.keepDeclared(row.lesson, row.hash, false) }
             TxChoice {

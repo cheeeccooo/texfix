@@ -2,13 +2,14 @@ import QtQuick
 import QtQuick.Layouts
 import Texfix
 
-// Un pezzo come nel PDF (`Workspace.snippet`): intanto il testo; se non compila resta il testo.
+// Un pezzo come nel PDF (`Workspace.snippet`). Intanto, e se non compila, lo stesso pezzo già formattato
+// (`Workspace.snippetText`: simboli, pedici, grassetto, elenchi), non il sorgente.
 Item {
     id: piece
     property string text
     property string kind: "prosa"                      // prosa | latex
-    property string shown: text                        // il testo da mostrare intanto
-    property bool mono: false
+    property string shown                              // un testo da mostrare intanto al posto dell'anteprima
+    property bool mono: false                          // intanto il sorgente, in caratteri fissi
     property color textColor: Theme.text
     property int weight: Font.Normal
     property bool fit: true                            // sta nella larghezza che ha; altrimenti prende la sua
@@ -18,6 +19,7 @@ Item {
     readonly property string ink: ("" + textColor).slice(-6)
     readonly property string path: text !== "" && tick >= 0 ? Workspace.snippet(text, kind, ink) : ""
     readonly property bool ready: picture.status === Image.Ready
+    readonly property bool plain: mono || shown !== ""
     Layout.fillWidth: true
     implicitWidth: ready ? picture.width : label.implicitWidth
     implicitHeight: ready ? picture.height : label.implicitHeight
@@ -25,7 +27,8 @@ Item {
         id: label
         visible: !piece.ready
         width: parent.width
-        text: piece.shown
+        text: piece.plain ? (piece.shown !== "" ? piece.shown : piece.text) : Workspace.snippetText(piece.text, piece.kind)
+        textFormat: piece.plain ? Text.PlainText : Text.RichText
         color: piece.textColor
         font.weight: piece.weight
         font.family: piece.mono ? Theme.monoFamily : Qt.application.font.family

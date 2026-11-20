@@ -406,6 +406,8 @@ public:
     // La resa compilata di un pezzo, per i pannelli Rivedi (kind: prosa | latex; color: il colore del testo, «rrggbb»).
     // Il file dell'immagine se c'è; vuoto se non compila o se la si sta facendo: allora snippetsReady quando è pronta.
     Q_INVOKABLE QString snippet(const QString &text, const QString &kind, const QString &color);
+    // Lo stesso pezzo da leggere subito, in testo ricco: la matematica in simboli, il grassetto, gli elenchi.
+    Q_INVOKABLE QString snippetText(const QString &text, const QString &kind) const;
     bool rendering() const { return m_snippetsRunning || !m_snippetQueue.isEmpty(); }
     Q_INVOKABLE void say(const QString &text);         // un messaggio breve nella barra di stato
 

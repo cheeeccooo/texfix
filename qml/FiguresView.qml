@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Texfix
 
-// Rivedi figure: tutte le figure delle lezioni, lezione per lezione. Di ognuna: com'è nella lezione e, se viene da
+// Rivedi figure: l'elenco delle lezioni, e in una lezione tutte le sue figure, una sotto l'altra. Di ognuna: com'è nella lezione e, se viene da
 // un'altra (una pagina di una fonte, il codice di un altro autore), l'originale accanto; la didascalia per dire che
 // cosa deve mostrare. Si accetta, si rigenera (con un commento facoltativo per il disegnatore) e, se viene da una fonte,
 // si passa fra l'ultimo disegno e il ritaglio dalla pagina, che si sistema a mano: riquadro e cancellino.
@@ -32,9 +32,9 @@ Rectangle {
     Connections { target: Workspace; function onTreeChanged() { if (root.visible) root.reload() } }
     Connections { target: Workspace; function onBusyChanged() { if (!Workspace.busy) { root.revision++; if (root.visible) root.reload() } } }
 
-    // Dall'albero: la panoramica (la lezione è lì).
-    function showLesson(lesson) { deck.current = -1 }
-    function showShots() { if (deck.cards.length > 0) deck.current = 0 }   // per le prove: la prima scheda
+    // Dall'albero: la lezione, se ha figure.
+    function showLesson(lesson) { deck.open(lesson) }
+    function showShots() { if (deck.groups.length > 0) deck.open(deck.groups[0].row.lesson) }   // per le prove: la prima lezione
 
     function file(path) { return path ? "file://" + encodeURI(path) + "?" + root.revision : "" }
     function stateText(row) {
@@ -56,7 +56,6 @@ Rectangle {
         nameOf: row => row.name + " · " + root.stateText(row)
         hintOf: row => row.description || ""
         onGoAsked: row => root.figureAsked(row.lesson, row.line)
-        tilePreview: preview
         stage: figureStage
         choices: figureChoices
         lessonActions: lessonButtons
@@ -82,7 +81,7 @@ Rectangle {
     Shortcut {
         sequence: "A"
         enabled: root.visible && root.cropping === null && deck.card !== null
-        onActivated: { Workspace.acceptFigure(deck.card.id, true); deck.next() }
+        onActivated: { const c = deck.card; Workspace.acceptFigure(c.id, true); deck.next(c) }
     }
     Shortcut {
         sequence: "R"
@@ -135,21 +134,11 @@ Rectangle {
     }
 
     Component {
-        id: preview
-        Picture {
-            property var row: ({})
-            path: row.render || ""
-            missing: Workspace.jobRunning ? "La preparo…" : "Non si compila da sola."
-            maxHeight: 168
-        }
-    }
-
-    Component {
         id: lessonButtons
         TxButton {
             property var row: ({})
             property var group: ({ cards: [] })
-            visible: group.cards.some(c => !root.accepted(c.row))
+            visible: group.cards.some(c => !root.accepted(c))
             text: "Accetta tutte"
             hint: "Accetta tutte le figure di questa lezione"
             onClicked: Workspace.acceptAllFigures(row.lesson, true)
@@ -175,7 +164,7 @@ Rectangle {
                     Layout.alignment: Qt.AlignTop
                     title: "Nella lezione"
                     path: row.render || ""
-                    maxHeight: 640
+                    maxHeight: 420
                     missing: Workspace.jobRunning ? "La preparo…" : "Non si compila da sola."
                 }
                 Picture {
@@ -185,7 +174,7 @@ Rectangle {
                     Layout.alignment: Qt.AlignTop
                     title: row.origin === "fonte" ? "L'originale: " + row.source + ", pagina " + row.page : "L'originale: il codice dell'autore"
                     path: row.original || ""
-                    maxHeight: 640
+                    maxHeight: 420
                     missing: Workspace.jobRunning ? "Lo preparo…" : "La fonte non si trova più."
                 }
             }
@@ -210,7 +199,7 @@ Rectangle {
                 text: "Accetta  (A)"
                 tone: Theme.good
                 chosen: root.accepted(row)
-                onClicked: { Workspace.acceptFigure(row.id, true); deck.next() }
+                onClicked: { const r = row; Workspace.acceptFigure(r.id, true); deck.next(r) }
             }
             TxChoice { visible: root.accepted(row); text: "Riapri  (R)"; tone: Theme.idle; onClicked: Workspace.acceptFigure(row.id, false) }
             // disegno o ritaglio, per una figura che viene da una pagina

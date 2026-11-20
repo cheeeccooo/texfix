@@ -18,6 +18,7 @@ qt_add_library(texfix_core STATIC
     src/core/Files.cpp
     src/core/Tools.cpp
     src/core/Snippets.cpp
+    src/core/SnippetPreview.cpp
     src/core/Project.cpp
     src/core/TexLog.cpp
     src/core/Compiler.cpp

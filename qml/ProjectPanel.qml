@@ -35,6 +35,8 @@ Rectangle {
         property string arrow                          // «▸» o «▾» se la riga ha qualcosa dentro; un clic lì apre solo il ramo
         property string panel                          // la riga apre un pannello Rivedi su questa lezione
         property string why                            // perché non si è riconosciuta (in arrivo)
+        property string status                         // lo stato a parole (una lezione), nel suggerimento
+        property var reviews: []                       // ciò che si rivede di una lezione: nel menu, «Rivedi»
         signal arrowClicked()
         width: parent ? parent.width : 0
         height: Theme.rowHeight
@@ -72,6 +74,8 @@ Rectangle {
                 fileMenu.file = row.file
                 fileMenu.lesson = row.lesson
                 fileMenu.done = row.done
+                fileMenu.reviews = row.reviews
+                fileMenu.prepare()
                 fileMenu.popup()
             }
             // il doppio clic apre anche ciò che prende un'altra app
@@ -79,7 +83,8 @@ Rectangle {
         }
         ToolTip.visible: area.containsMouse
         ToolTip.delay: 800
-        ToolTip.text: (row.number !== "" ? row.number + " · " : "") + row.name + (row.detail !== "" ? " · " + row.detail : "") + (row.why !== "" ? ": " + row.why : "")
+        ToolTip.text: row.status !== "" ? (row.number !== "" ? row.number + " · " : "") + row.name + "\n" + row.status
+                      : (row.number !== "" ? row.number + " · " : "") + row.name + (row.detail !== "" ? " · " + row.detail : "") + (row.why !== "" ? ": " + row.why : "")
     }
 
     // Un gruppo di file con il suo titolo: un clic sul titolo lo apre o lo chiude, e resta così.
@@ -132,7 +137,17 @@ Rectangle {
         property string file
         property bool lesson
         property bool done
+        property var reviews: []
         readonly property bool text: file.endsWith(".tex") || file.endsWith(".sty")
+        // «Rivedi» c'è solo per una lezione: il sottomenu si mette e si toglie prima di aprire
+        property bool reviewIn: false
+        function prepare() {
+            if (lesson && !reviewIn)
+                insertMenu(2, reviewMenu)
+            else if (!lesson && reviewIn)
+                removeMenu(reviewMenu)
+            reviewIn = lesson
+        }
         MenuItem { text: "Apri"; onTriggered: root.fileChosen(fileMenu.file) }
         MenuItem { text: "Apri e compila"; visible: fileMenu.text; height: visible ? implicitHeight : 0; onTriggered: root.compileAsked(fileMenu.file) }
         MenuItem { text: "Apri con l'app predefinita"; onTriggered: Workspace.openExternally(fileMenu.file) }
@@ -150,6 +165,24 @@ Rectangle {
         MenuItem { text: "Riconosci di nuovo"; visible: fileMenu.file.startsWith("fonti/coda/"); height: visible ? implicitHeight : 0; onTriggered: Workspace.sortMaterial([fileMenu.file]) }
         MenuItem { text: "Fai decidere al modello tutti i dubbi"; visible: fileMenu.lesson; height: visible ? implicitHeight : 0; onTriggered: Workspace.decideDoubts(fileMenu.file, []) }
         MenuItem { text: fileMenu.done ? "Non è più fatta" : "Segna come fatta"; visible: fileMenu.lesson; height: visible ? implicitHeight : 0; onTriggered: Workspace.setDone(fileMenu.file, !fileMenu.done) }
+    }
+
+    // Rivedi, di una lezione: dubbi, correzioni, impaginazione, figure, con quanto resta (✓: tutto deciso)
+    component ReviewItem: MenuItem {
+        property string name
+        property string panel
+        readonly property var found: Array.from(fileMenu.reviews || []).find(r => r.panel === panel)
+        text: name + (found ? "   " + found.detail : "")
+        enabled: found !== undefined
+        onTriggered: root.panelAsked(panel, fileMenu.file)
+    }
+    Menu {
+        id: reviewMenu
+        title: "Rivedi"
+        ReviewItem { name: "Dubbi"; panel: "rivedi:dubbi" }
+        ReviewItem { name: "Correzioni"; panel: "rivedi:correzioni" }
+        ReviewItem { name: "Impaginazione"; panel: "rivedi:impaginazione" }
+        ReviewItem { name: "Figure"; panel: "rivedi:figure" }
     }
 
     function dotColor(state) {
@@ -212,7 +245,7 @@ Rectangle {
                 Column {
                     id: lessonBlock
                     required property var modelData
-                    readonly property bool hasInside: modelData.rows.length + modelData.sources.length > 0
+                    readonly property bool hasInside: modelData.sources.length > 0
                     readonly property bool open: root.openLessons[modelData.file] === true
                     width: column.width
                     TreeRow {
@@ -223,6 +256,8 @@ Rectangle {
                     detail: modelData.detail !== "" ? modelData.detail : Workspace.byTopic ? "" : modelData.date
                     dot: modelData.done ? Theme.good : root.dotColor(modelData.state)
                     done: modelData.done
+                    status: modelData.status || ""
+                    reviews: modelData.rows
                         lesson: true
                         arrow: !lessonBlock.hasInside ? " " : lessonBlock.open ? "▾" : "▸"
                         onArrowClicked: {
@@ -231,19 +266,7 @@ Rectangle {
                             root.openLessons = all
                         }
                     }
-                    // dentro: ciò che c'è da rivedere, con il conto, e le fonti
-                    Repeater {
-                        model: lessonBlock.open ? lessonBlock.modelData.rows : []
-                        TreeRow {
-                            required property var modelData
-                            indent: 22
-                            file: lessonBlock.modelData.file
-                            panel: modelData.panel
-                            name: modelData.name
-                            detail: modelData.detail
-                            color: "transparent"
-                        }
-                    }
+                    // dentro: le sue fonti (ciò che si rivede sta nel menu, «Rivedi»)
                     Repeater {
                         model: lessonBlock.open ? lessonBlock.modelData.sources : []
                         TreeRow {

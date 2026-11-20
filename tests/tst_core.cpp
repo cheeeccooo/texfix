@@ -551,6 +551,14 @@ private slots:
     {
         QCOMPARE(snippets::prose("Vale ω0 o V_CB al 50%? Con $x_1$."), "Vale $\\omega_{0}$ o $V_{CB}$ al 50\\%? Con $x_1$.");
         QCOMPARE(snippets::prose("un $ solo"), "un  solo");
+        // il pezzo da leggere subito: simboli, pedici, frazioni, grassetto, riquadri ed elenchi, niente sorgente
+        QCOMPARE(snippets::preview("Vale $\\alpha_0 \\leq \\frac{1}{2}$ e \\textbf{sempre}.", snippets::Kind::Latex),
+                 "Vale α<sub>0</sub> ≤ 1/2 e <b>sempre</b>.");
+        QCOMPARE(snippets::preview("Vale ω0 o V_CB al 50%?", snippets::Kind::Prose), "Vale ω<sub>0</sub> o <i>V</i><sub><i>C</i><i>B</i></sub> al 50%?");
+        QCOMPARE(snippets::preview("\\begin{theorem}[Rolle]\\label{t:r}Se $f'(c)=0$.\\end{theorem} % nota", snippets::Kind::Latex),
+                 "<b>Theorem (Rolle).</b> Se <i>f</i>′(<i>c</i>) = 0.");
+        QCOMPARE(snippets::preview("\\begin{itemize}\\item uno\\item due\\end{itemize}", snippets::Kind::Latex), "• uno<br>• due");
+        QCOMPARE(snippets::preview("\\[ \\sqrt{x+1} \\]", snippets::Kind::Latex), "<div align=\"center\">√(<i>x</i>+1)</div>");
         if (!hasLatexmk())
             QSKIP("latexmk non c'è");
         QTemporaryDir dir;
@@ -573,6 +581,11 @@ private slots:
         QCOMPARE(snippets::prose("k_BTr_e, I_EΔf, v_π, (1+h_fe)R_E, R_o^(1)~R_C·I_b"), "$k_{BTr}{}_{e}$, $I_{E}\\Delta $f, $v_{π}$, $(1+h_{fe})R_{E}$, $R_{o}^{(1)}\\sim R_{C}\\cdot I_{b}$");
         const QString model = "Vale −I_C R_C/V_T ≃ −100 con 1/h_oe ≫ R_C, i_C^Q, \\beta_F, $A ≈ 2$ e 5 kΩ ☃.";
         QCOMPARE(snippets::render(p, {model}, snippets::Kind::Prose, "202020").size(), 1);
+        // tipi e colori diversi in un giro, con un pezzo che non compila in mezzo: gli altri hanno la resa
+        const QList<snippets::Piece> mixed{{"Uno $x$", snippets::Kind::Prose, "202020"}, {"\\rotto{", snippets::Kind::Latex, "202020"},
+                                           {"y^2", snippets::Kind::Latex, "C02020"}, {"Tre", snippets::Kind::Prose, "20C020"}};
+        QCOMPARE(snippets::render(p, mixed).size(), 3);
+        QVERIFY(QFileInfo::exists(snippets::pathOf(p, "y^2", snippets::Kind::Latex, "C02020")));
     }
 
     // Le versioni delle fonti: un file identico a una fonte usata non si aggiunge; uno diverso con lo stesso nome prende

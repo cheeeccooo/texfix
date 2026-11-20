@@ -514,12 +514,40 @@ void Workspace::refreshTree()
             state = "warn";
             detail = QStringLiteral("%1 da rivedere").arg(toReview);
         }
+        // lo stato a parole, per il suggerimento sulla lezione: la compilazione, poi ciò che resta da rivedere
+        QString status;
+        const QString compiled = m_states.value(lesson.file, "idle"), said = m_details.value(lesson.file);
+        if (done)
+            status = QStringLiteral("Fatta.");
+        else if (compiled == "bad")
+            status = QStringLiteral("Non compila") + (said.isEmpty() ? QString() : ": " + said) + '.';
+        else if (compiled == "warn")
+            status = QStringLiteral("Compila") + (said.isEmpty() ? QString() : ", con " + said) + '.';
+        else if (compiled == "good")
+            status = QStringLiteral("Compila senza problemi.");
+        else
+            status = QStringLiteral("Non ancora compilata.");
+        if (!done) {
+            QStringList left;
+            if (open.doubts)
+                left << plural(open.doubts, "dubbio", "dubbi");
+            if (open.declared)
+                left << plural(open.declared, "aggiunta o correzione", "aggiunte o correzioni");
+            if (figuresLeft)
+                left << plural(figuresLeft, "figura", "figure");
+            if (movesLeft)
+                left << plural(movesLeft, "mossa di impaginazione", "mosse di impaginazione");
+            if (!left.isEmpty())
+                status += QStringLiteral(" Da rivedere: ") + left.join(", ") + '.';
+            else if (compiled == "good")
+                status += QStringLiteral(" Niente da rivedere.");
+        }
         row(QStringLiteral("Dubbi"), "rivedi:dubbi", allDoubts, done ? 0 : open.doubts);
         row(QStringLiteral("Correzioni"), "rivedi:correzioni", allDeclared, done ? 0 : open.declared);
         row(QStringLiteral("Impaginazione"), "rivedi:impaginazione", allMoves, done ? 0 : movesLeft);
         row(QStringLiteral("Figure"), "rivedi:figure", allFigures, done ? 0 : figuresLeft);
         lessons << QVariantMap{{"file", lesson.file},
-                               {"rows", rows}, {"sources", sources},
+                               {"rows", rows}, {"sources", sources}, {"status", status},
                                {"number", lesson.number},
                                {"date", lesson.date},
                                {"title", lesson.title.isEmpty() ? QFileInfo(lesson.file).completeBaseName() : lesson.title},
@@ -3093,6 +3121,11 @@ QString Workspace::snippet(const QString &text, const QString &kind, const QStri
     return {};
 }
 
+QString Workspace::snippetText(const QString &text, const QString &kind) const
+{
+    return snippets::preview(text, kind == "latex" ? snippets::Kind::Latex : snippets::Kind::Prose);
+}
+
 void Workspace::renderSnippets()
 {
     if (m_snippetsRunning || m_snippetQueue.isEmpty() || !hasProject())
@@ -3101,12 +3134,11 @@ void Workspace::renderSnippets()
     const QList<QStringList> queue = m_snippetQueue;
     m_snippetQueue.clear();
     QThreadPool::globalInstance()->start([this, queue, project = m_project] {
-        // un giro per ogni tipo e colore
-        QHash<QString, QStringList> groups;
+        // un giro solo, qualunque sia il tipo e il colore
+        QList<snippets::Piece> pieces;
         for (const QStringList &q : queue)
-            groups[q[1] + '\n' + q[2]] << q[0];
-        for (auto it = groups.constBegin(); it != groups.constEnd(); ++it)
-            snippets::render(project, it.value(), it.key().startsWith("latex") ? snippets::Kind::Latex : snippets::Kind::Prose, it.key().section('\n', 1));
+            pieces << snippets::Piece{q[0], q[1] == "latex" ? snippets::Kind::Latex : snippets::Kind::Prose, q[2]};
+        snippets::render(project, pieces);
         QMetaObject::invokeMethod(this, [this] {
             m_snippetsRunning = false;
             emit snippetsReady();
