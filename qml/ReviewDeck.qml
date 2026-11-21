@@ -5,10 +5,14 @@ import Texfix
 
 // La forma comune di Rivedi dubbi, correzioni e figure. All'inizio l'elenco delle lezioni, ognuna con quanto resta da
 // rivedere; un clic apre la lezione, con tutti i suoi elementi uno sotto l'altro, interi: a sinistra ciò che c'è da
-// guardare, a destra le scelte (ciò che è deciso è oscurato). Ciò che si vede si ricorda per nome (la lezione) e per
-// chiave (l'elemento evidenziato), mai per posizione: quando le righe si rileggono (una decisione, una compilazione
-// che finisce) si resta dove si era. Chi la usa dà le righe (`items`: type «lesson» e le altre) e i pezzi: la scena e
-// le scelte di un elemento, i tasti di una lezione e quelli in alto.
+// guardare, a destra le scelte (ciò che è deciso è oscurato). Chi la usa dà le righe (`items`: type «lesson» e le
+// altre) e i pezzi: la scena e le scelte di un elemento, i tasti di una lezione e quelli in alto.
+//
+// Niente si sposta da sé. La lezione aperta si ricorda per nome e resta aperta anche se per un momento non ha più
+// niente (una compilazione che cambia gli errori); gli elementi si tengono per chiave (`entries`, aggiornato con il
+// minimo: un elemento che c'era resta lo stesso, non si rifà); quando l'altezza di qualcosa sopra cambia (una resa
+// che arriva, un elemento che si apre) lo scorrimento si corregge, così l'elemento in cima allo schermo resta dov'è.
+// La vista scorre solo con i tasti ↑ ↓, per portare in vista l'elemento scelto.
 Rectangle {
     id: deck
     color: Theme.window
@@ -40,61 +44,153 @@ Rectangle {
         return out
     }
     property string lesson: ""                         // la lezione aperta; vuoto: l'elenco
+    property string lessonTitle: ""                    // il suo titolo, anche se per un momento non è fra le righe
     readonly property var group: lesson !== "" ? groups.find(g => g.row.lesson === lesson) || null : null
     readonly property var cards: group ? group.cards : []
+    readonly property var rowOf: {
+        const out = {}
+        for (const c of cards)
+            out[keyOf(c)] = c
+        return out
+    }
     property string focusKey: ""                       // l'elemento evidenziato: i tasti valgono per lui
-    readonly property var card: cards.find(c => keyOf(c) === focusKey) || null
+    readonly property var card: focusKey !== "" ? rowOf[focusKey] || null : null
     function isFocused(row) { return focusKey !== "" && keyOf(row) === focusKey }
     function pendingOf(g) { return g.cards.filter(c => isOpen(c)).length }
+    onGroupChanged: if (group) lessonTitle = group.row.title || ""
 
-    // una lezione che non ha più niente da mostrare riporta all'elenco
-    onGroupChanged: if (lesson !== "" && group === null) Qt.callLater(() => { if (deck.group === null) deck.back() })
+    // gli elementi della lezione, per chiave: si tolgono quelli che non ci sono più, si aggiungono i nuovi al loro posto
+    ListModel { id: entryModel }
+    onCardsChanged: syncEntries()
+    function syncEntries() {
+        const keys = cards.map(c => keyOf(c))
+        const wanted = {}
+        for (const k of keys)
+            wanted[k] = true
+        for (let i = entryModel.count - 1; i >= 0; --i)
+            if (!wanted[entryModel.get(i).key])
+                entryModel.remove(i)
+        for (let i = 0; i < keys.length; ++i) {
+            if (i < entryModel.count && entryModel.get(i).key === keys[i])
+                continue
+            let at = -1
+            for (let j = i + 1; j < entryModel.count; ++j)
+                if (entryModel.get(j).key === keys[i]) {
+                    at = j
+                    break
+                }
+            if (at >= 0)
+                entryModel.move(at, i, 1)
+            else
+                entryModel.insert(i, { key: keys[i] })
+        }
+    }
 
-    property bool listShown: true                      // gli elementi si rifanno passando a un'altra lezione
     function open(name) {
         const g = groups.find(x => x.row.lesson === name)
         if (!g)
-            return lesson = ""
-        listShown = false
+            return back()
+        entryModel.clear()                             // un'altra lezione: si parte dall'inizio
         lesson = name
+        lessonTitle = g.row.title || ""
         const first = g.cards.find(c => isOpen(c)) || g.cards[0]
         focusKey = first ? keyOf(first) : ""
         list.contentY = 0
-        Qt.callLater(() => deck.listShown = true)
+        anchor = { key: "", offset: 0 }
     }
-    function back() { lesson = ""; focusKey = "" }
+    function back() { lesson = ""; focusKey = ""; entryModel.clear() }
     function stepLesson(by) {
         const at = groups.findIndex(g => g.row.lesson === lesson)
         if (at >= 0 && at + by >= 0 && at + by < groups.length)
             open(groups[at + by].row.lesson)
     }
-    // un elemento prima o dopo, e lo si porta in vista
+    // con i tasti: un elemento prima o dopo, e lo si porta in vista
     function step(by) {
         if (cards.length === 0)
             return
         const at = cards.findIndex(c => keyOf(c) === focusKey)
         const to = at < 0 ? 0 : Math.max(0, Math.min(cards.length - 1, at + by))
         focusKey = keyOf(cards[to])
-        Qt.callLater(() => deck.reveal(to))
+        reveal(focusKey)
     }
-    // dopo una decisione su `row`: al prossimo elemento ancora da rivedere della lezione, se c'è
-    function next(row) {
+    // dopo una decisione su `row`: si evidenzia il prossimo elemento ancora da rivedere, senza scorrere (`show`: con i
+    // tasti, lo si porta in vista)
+    function next(row, show) {
+        hold(row || card)
         const from = cards.findIndex(c => keyOf(c) === keyOf(row || card || {}))
         for (let i = from + 1; i < cards.length; ++i)
             if (isOpen(cards[i])) {
                 focusKey = keyOf(cards[i])
-                return Qt.callLater(() => deck.reveal(i))
+                if (show)
+                    reveal(focusKey)
+                return
             }
     }
-    function reveal(index) {
-        const entry = entries.itemAt(index)
+    function entryOf(key) {
+        for (let i = 0; i < entries.count; ++i) {
+            const e = entries.itemAt(i)
+            if (e && e.key === key)
+                return e
+        }
+        return null
+    }
+    function reveal(key) {
+        const entry = entryOf(key)
         if (!entry)
             return
         const top = entryColumn.y + entry.y, bottom = top + entry.height
         if (top < list.contentY)
-            list.contentY = Math.max(0, top - Theme.gap)
+            scrollTo(top - Theme.gap)
         else if (bottom > list.contentY + list.height)
-            list.contentY = Math.max(0, Math.min(top - Theme.gap, list.contentHeight - list.height))
+            scrollTo(Math.min(top - Theme.gap, bottom - list.height + Theme.gap))
+    }
+
+    // lo scorrimento ancorato: l'elemento in cima allo schermo e quanto ne è già passato
+    property var anchor: ({ key: "", offset: 0 })
+    property bool restoring: false
+    function scrollTo(y) {
+        // l'altezza del contenuto dalla colonna: `contentHeight` si aggiorna un attimo dopo
+        const total = entryColumn.implicitHeight + 3 * Theme.gap
+        list.contentY = Math.max(0, Math.min(y, Math.max(0, total - list.height)))
+    }
+    // l'ancora: il primo elemento che comincia dentro lo schermo (se nessuno, quello che lo riempie)
+    function takeAnchor() {
+        if (restoring)
+            return
+        let covering = null
+        for (let i = 0; i < entries.count; ++i) {
+            const e = entries.itemAt(i)
+            if (!e)
+                continue
+            const top = entryColumn.y + e.y
+            if (top >= list.contentY - 1)
+                return anchorOn(e)
+            if (top + e.height > list.contentY && !covering)
+                covering = e
+        }
+        if (covering)
+            return anchorOn(covering)
+        anchor = { key: "", offset: 0 }
+    }
+    function anchorOn(e) { anchor = { key: e.key, offset: list.contentY - (entryColumn.y + e.y) } }
+    // prima di cambiare `row` (una decisione): resta ferma lei, se si vede; ciò che cambia in lei cresce in giù
+    function hold(row) {
+        const e = row ? entryOf(keyOf(row)) : null
+        if (!e)
+            return
+        const top = entryColumn.y + e.y
+        if (top < list.contentY + list.height && top + e.height > list.contentY)
+            anchorOn(e)
+    }
+    function keepAnchor() {
+        if (anchor.key === "" || list.contentY <= 0 && anchor.offset <= 0)
+            return
+        const e = entryOf(anchor.key)
+        if (!e)
+            return
+        restoring = true
+        scrollTo(entryColumn.y + e.y + anchor.offset)
+        restoring = false
     }
 
     Shortcut { sequence: "Escape"; enabled: deck.visible && deck.lesson !== ""; onActivated: deck.back() }
@@ -130,23 +226,26 @@ Rectangle {
             Layout.margins: Theme.gap + 4
             Layout.leftMargin: 2 * Theme.gap + 4
             spacing: Theme.gap
-            TxButton { visible: deck.group !== null; text: "←  Lezioni"; hint: "Tutte le lezioni (Esc)"; onClicked: deck.back() }
+            readonly property bool inside: deck.lesson !== ""
+            readonly property int at: deck.groups.findIndex(g => g.row.lesson === deck.lesson)
+            TxButton { visible: parent.inside; text: "←  Lezioni"; hint: "Tutte le lezioni (Esc)"; onClicked: deck.back() }
             TxLabel {
                 Layout.fillWidth: true
-                text: deck.group ? deck.group.row.title || "" : deck.title
+                text: parent.inside ? deck.lessonTitle : deck.title
                 font.pixelSize: Theme.textSize + 3
                 font.weight: Font.DemiBold
             }
             TxLabel {
-                visible: deck.group !== null
-                text: deck.group ? (deck.pendingOf(deck.group) > 0 ? deck.pendingOf(deck.group) + " da rivedere su " + deck.cards.length : "tutto deciso") : ""
+                visible: parent.inside
+                text: deck.group && deck.pendingOf(deck.group) > 0 ? deck.pendingOf(deck.group) + " da rivedere su " + deck.cards.length
+                      : deck.cards.length > 0 ? "tutto deciso" : ""
                 color: deck.group && deck.pendingOf(deck.group) > 0 ? Theme.warn : Theme.textFaint
                 font.pixelSize: Theme.smallSize
             }
             Slot { visible: deck.group !== null; sourceComponent: deck.group ? deck.lessonActions : null; row: deck.group ? deck.group.row : ({}); group: deck.group || ({ row: {}, cards: [] }) }
-            TxButton { visible: deck.group !== null; text: "‹"; hint: "La lezione prima (←)"; enabled: deck.group !== null && deck.groups.indexOf(deck.group) > 0; onClicked: deck.stepLesson(-1) }
-            TxButton { visible: deck.group !== null; text: "›"; hint: "La lezione dopo (→)"; enabled: deck.group !== null && deck.groups.indexOf(deck.group) < deck.groups.length - 1; onClicked: deck.stepLesson(1) }
-            RowLayout { id: actionRow; visible: deck.group === null; spacing: Theme.gap }
+            TxButton { visible: parent.inside; text: "‹"; hint: "La lezione prima (←)"; enabled: parent.at > 0; onClicked: deck.stepLesson(-1) }
+            TxButton { visible: parent.inside; text: "›"; hint: "La lezione dopo (→)"; enabled: parent.at >= 0 && parent.at < deck.groups.length - 1; onClicked: deck.stepLesson(1) }
+            RowLayout { id: actionRow; visible: !parent.inside; spacing: Theme.gap }
         }
         Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.border }
 
@@ -155,7 +254,7 @@ Rectangle {
             id: lessonList
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: deck.group === null && deck.groups.length > 0
+            visible: deck.lesson === "" && deck.groups.length > 0
             contentHeight: lessonColumn.implicitHeight + 2 * Theme.gap
             Column {
                 id: lessonColumn
@@ -207,10 +306,10 @@ Rectangle {
         TxLabel {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: deck.group === null && deck.groups.length === 0
+            visible: deck.lesson === "" && deck.groups.length === 0 || deck.lesson !== "" && deck.cards.length === 0
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
-            text: deck.emptyText
+            text: deck.lesson === "" ? deck.emptyText : "In questa lezione non c'è niente da rivedere."
             color: Theme.textFaint
         }
 
@@ -219,24 +318,26 @@ Rectangle {
             id: list
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: deck.group !== null
+            visible: deck.lesson !== "" && deck.cards.length > 0
             contentHeight: entryColumn.implicitHeight + 3 * Theme.gap
+            onContentYChanged: deck.takeAnchor()
+            onHeightChanged: deck.keepAnchor()
             Column {
                 id: entryColumn
                 x: 2 * Theme.gap + 4
                 y: Theme.gap
                 width: list.width - 4 * Theme.gap - 8
                 spacing: Theme.gap
+                onImplicitHeightChanged: deck.keepAnchor()
                 Repeater {
                     id: entries
-                    // per numero: le righe che si rileggono aggiornano gli elementi che ci sono, non li rifanno
-                    model: deck.listShown ? deck.cards.length : 0
+                    model: entryModel
                     Rectangle {
                         id: entry
-                        required property int index
-                        readonly property var row: deck.cards[index] || ({})
+                        required property string key
+                        readonly property var row: deck.rowOf[key] || ({})
                         readonly property bool open: deck.isOpen(row)
-                        readonly property bool focused: deck.isFocused(row)
+                        readonly property bool focused: deck.focusKey === key
                         readonly property var badge: deck.badgeOf(row)
                         readonly property bool wide: width > 860
                         width: entryColumn.width
@@ -246,7 +347,7 @@ Rectangle {
                         border.width: focused ? 2 : 1
                         border.color: focused ? Theme.accent : open ? Qt.rgba(badge.color.r, badge.color.g, badge.color.b, 0.7) : Theme.border
                         // un clic dove non c'è un tasto evidenzia l'elemento
-                        MouseArea { anchors.fill: parent; onPressed: mouse => { deck.focusKey = deck.keyOf(entry.row); mouse.accepted = false } }
+                        MouseArea { anchors.fill: parent; onPressed: mouse => { deck.focusKey = entry.key; mouse.accepted = false } }
                         GridLayout {
                             id: body
                             x: Theme.gap + 4

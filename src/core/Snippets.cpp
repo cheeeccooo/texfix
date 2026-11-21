@@ -1,44 +1,13 @@
 #include "core/Snippets.h"
 
-#include "core/Files.h"
-#include "core/Tools.h"
-
-#include <QCryptographicHash>
-#include <QDir>
-#include <QFile>
-#include <QFileInfo>
 #include <QHash>
-#include <QImage>
 #include <QRegularExpression>
-
-#include <functional>
+#include <QSet>
 
 namespace tx::snippets {
 
 namespace {
 using RE = QRegularExpression;
-
-QString dirOf(const Project &project) { return project.path("build/resa"); }
-
-// Gli stili del progetto (texfix.sty e lo stile che carica, con i loro compagni): cambiano loro, cambiano le rese.
-QByteArray stylesStamp(const Project &project)
-{
-    QByteArray out;
-    for (const QFileInfo &sty : QDir(project.root()).entryInfoList({"*.sty"}, QDir::Files, QDir::Name))
-        out += sty.fileName().toUtf8() + QByteArray::number(sty.lastModified().toMSecsSinceEpoch()) + QByteArray::number(sty.size()) + '\n';
-    return out;
-}
-
-QString keyOf(const Project &project, const QString &text, Kind kind, const QString &color)
-{
-    QCryptographicHash hash(QCryptographicHash::Sha1);
-    hash.addData(text.toUtf8());
-    hash.addData(kind == Kind::Prose ? "p" : "l");
-    hash.addData(color.toUtf8());
-    hash.addData("6");                         // le rese fallite prima che la prosa del modello si leggesse bene si riprovano
-    hash.addData(stylesStamp(project));        // il preambolo: cambia lo stile, cambiano le rese
-    return QString::fromLatin1(hash.result().toHex().left(20));
-}
 
 const QHash<QChar, QString> &greek()
 {
@@ -147,139 +116,468 @@ QString plain(const QString &text)
     return merged;
 }
 
-// I simboli che il modello scrive in Unicode (−, ≃, ≫, le lettere greche, anche dentro $…$) e che pdflatex non conosce:
-// ognuno con il suo comando; un carattere che resta sconosciuto è un «?», non un pezzo che non compila.
-QString unicodeSymbols()
+const QSet<QString> &mathEnvironments()
 {
-    static const QString preamble = [] {
-        QHash<QChar, QString> symbols = greek();
-        const QList<std::pair<char16_t, const char *>> more{
-            {u'−', "-"}, {u'≃', "\\simeq"}, {u'≅', "\\cong"}, {u'≈', "\\approx"}, {u'∼', "\\sim"}, {u'≫', "\\gg"}, {u'≪', "\\ll"},
-            {u'′', "'"}, {u'″', "''"}, {u'∥', "\\parallel"}, {u'∝', "\\propto"}, {u'≡', "\\equiv"}, {u'←', "\\leftarrow"},
-            {u'⇒', "\\Rightarrow"}, {u'⇔', "\\Leftrightarrow"}, {u'↔', "\\leftrightarrow"}, {u'↑', "\\uparrow"}, {u'↓', "\\downarrow"},
-            {u'∘', "\\circ"}, {u'∠', "\\angle"}, {u'∆', "\\Delta"}, {u'Ω', "\\Omega"}, {u'µ', "\\mu"}, {u'⋅', "\\cdot"},
-            {u'∀', "\\forall"}, {u'∃', "\\exists"}, {u'∉', "\\notin"}, {u'⊂', "\\subset"}, {u'∩', "\\cap"}, {u'∪', "\\cup"},
-            {u'∇', "\\nabla"}, {u'ℏ', "\\hbar"}, {u'ℓ', "\\ell"}, {u'∗', "\\ast"}, {u'⟨', "\\langle"}, {u'⟩', "\\rangle"}, {u'²', "^{2}"}, {u'³', "^{3}"}, {u'√', "\\surd"}, {u'∓', "\\mp"}, {u'≲', "\\lesssim"}, {u'≳', "\\gtrsim"}};
-        const auto hex = [](int c) { return QString::number(c, 16).toUpper().rightJustified(4, u'0'); };
-        QString out = "\\makeatletter\\def\\UTFviii@undefined@err#1{?}\\makeatother\n";
-        for (auto it = symbols.cbegin(); it != symbols.cend(); ++it)
-            out += QStringLiteral("\\DeclareUnicodeCharacter{%1}{\\ensuremath{\\%2}}\n").arg(hex(it.key().unicode()), it.value());
-        for (const auto &[c, command] : more)
-            out += QStringLiteral("\\DeclareUnicodeCharacter{%1}{\\ensuremath{%2}}\n").arg(hex(c), QString::fromLatin1(command));
-        return out;
-    }();
-    return preamble;
+    static const QSet<QString> names{"equation", "equation*", "align", "align*", "gather", "gather*", "multline", "multline*",
+                                     "eqnarray", "eqnarray*", "displaymath", "flalign", "flalign*", "alignat", "alignat*", "math"};
+    return names;
 }
 
-QString preamble()
+// le unità di siunitx in una formula: \kilo\ohm → k\Omega
+QString unitLatex(const QString &unit)
 {
-    return "\\documentclass[10pt]{article}\n\\usepackage{texfix}\n\\usepackage{varwidth}\n\\usepackage[active,tightpage]{preview}\n"
-           "\\setlength\\PreviewBorder{1.5pt}\n\\pagestyle{empty}\n" + unicodeSymbols();
-}
-
-// Il preambolo precompilato (mylatexformat): caricarlo costa un terzo che rileggerlo. Un nome per ogni versione degli
-// stili; se non si fa (manca mylatexformat, uno stile non si lascia salvare) resta un «.no» e si compila come prima.
-QString format(const Project &project)
-{
-    const QString dir = dirOf(project);
-    QCryptographicHash hash(QCryptographicHash::Sha1);
-    hash.addData(preamble().toUtf8());
-    hash.addData(stylesStamp(project));
-    const QString name = "preambolo-" + QString::fromLatin1(hash.result().toHex().left(12));
-    const QString base = dir + '/' + name;
-    if (QFileInfo::exists(base + ".fmt"))
-        return base;
-    if (QFileInfo::exists(base + ".no"))
-        return {};
-    QDir().mkpath(dir);
-    for (const QFileInfo &old : QDir(dir).entryInfoList({"preambolo-*"}, QDir::Files))
-        QFile::remove(old.absoluteFilePath());         // quelli degli stili di prima
-    files::write(base + ".tex", preamble() + "\\begin{document}\n\\end{document}\n");
-    const QDir root(project.root());
-    const tools::Output out = tools::run("pdftex", {"-ini", "-interaction=nonstopmode", "-halt-on-error", "-jobname=" + name,
-                                                    "-output-directory=" + root.relativeFilePath(dir), "&pdflatex", "mylatexformat.ltx",
-                                                    root.relativeFilePath(base + ".tex")},
-                                         project.root(), 90000);
-    for (const char *ext : {".tex", ".log"})
-        QFile::remove(base + ext);
-    if (out.ok && QFileInfo::exists(base + ".fmt"))
-        return base;
-    files::write(base + ".no", QString());
-    return {};
-}
-
-QString document(const QList<std::pair<QString, QString>> &bodies, bool precompiled)
-{
-    QString tex = precompiled ? QString() : preamble();
-    tex += "\\begin{document}\n";
-    for (const auto &[body, color] : bodies)
-        tex += "\\begin{preview}\\begin{varwidth}{13cm}\\raggedright\\color[HTML]{" + color + "}%\n" + body + "%\n\\end{varwidth}\\end{preview}\n";
-    return tex + "\\end{document}\n";
-}
-
-// Compila i corpi (con il loro colore) in un documento, una pagina ciascuno, e ne fa immagini trasparenti. Vero se sono
-// venute tutte.
-bool compile(const Project &project, const QList<std::pair<QString, QString>> &bodies, const QStringList &keys, const QString &fmt, const QString &job)
-{
-    const QString dir = dirOf(project);
-    QDir().mkpath(dir);
-    const QString base = dir + '/' + job;
-    files::write(base + ".tex", document(bodies, !fmt.isEmpty()));
-    QFile::remove(base + ".pdf");
-    // percorsi relativi alla cartella del progetto, da cui pdflatex parte: TeX non legge un percorso con «~» (iCloud:
-    // «com~apple~CloudDocs»)
-    const QDir root(project.root());
-    QStringList args{"-interaction=nonstopmode", "-halt-on-error", "-output-directory=" + root.relativeFilePath(dir)};
-    if (!fmt.isEmpty())
-        args << "-fmt=" + root.relativeFilePath(fmt);
-    const tools::Output out = tools::run("pdflatex", args << root.relativeFilePath(base + ".tex"), project.root(), 90000);
-    bool good = out.ok && QFileInfo::exists(base + ".pdf");
-    if (good) {
-        tools::run("pdftocairo", {"-png", "-transp", "-r", "200", base + ".pdf", base}, dir, 60000);
-        // «base-1.png», o «base-01.png» se le pagine sono tante
-        const int digits = int(QString::number(bodies.size()).size());
-        for (qsizetype i = 0; i < keys.size(); ++i) {
-            const QString page = QStringLiteral("%1-%2.png").arg(base).arg(i + 1, digits, 10, QChar('0'));
-            const QString to = dir + '/' + keys[i] + ".png";
-            QFile::remove(to);
-            // la resa è larga quanto la riga: se ne tiene solo ciò che è scritto
-            QImage image(page);
-            QFile::remove(page);
-            if (image.isNull()) {
-                good = false;
-                continue;
-            }
-            image = image.convertToFormat(QImage::Format_ARGB32);
-            int right = 0;
-            for (int y = 0; y < image.height(); ++y) {
-                const QRgb *row = reinterpret_cast<const QRgb *>(image.constScanLine(y));
-                for (int x = image.width() - 1; x > right; --x)
-                    if (qAlpha(row[x]) > 8) {
-                        right = x;
-                        break;
-                    }
-            }
-            good = image.copy(0, 0, qMin(image.width(), right + 5), image.height()).save(to) && good;
+    static const QHash<QString, QString> map{
+        {"kilo", "k"}, {"mega", "M"}, {"giga", "G"}, {"milli", "m"}, {"micro", "\\mu "}, {"nano", "n"}, {"pico", "p"}, {"centi", "c"},
+        {"ohm", "\\Omega"}, {"volt", "V"}, {"ampere", "A"}, {"watt", "W"}, {"hertz", "Hz"}, {"farad", "F"}, {"henry", "H"},
+        {"second", "s"}, {"metre", "m"}, {"meter", "m"}, {"gram", "g"}, {"kilogram", "kg"}, {"newton", "N"}, {"joule", "J"},
+        {"pascal", "Pa"}, {"kelvin", "K"}, {"celsius", "{}^\\circ C"}, {"degreeCelsius", "{}^\\circ C"}, {"mole", "mol"},
+        {"coulomb", "C"}, {"siemens", "S"}, {"tesla", "T"}, {"weber", "Wb"}, {"decibel", "dB"}, {"bel", "B"}, {"litre", "L"},
+        {"liter", "L"}, {"minute", "min"}, {"hour", "h"}, {"day", "d"}, {"degree", "^\\circ"}, {"radian", "rad"}, {"percent", "\\%"},
+        {"per", "/"}, {"squared", "^2"}, {"cubed", "^3"}};
+    QString out;
+    for (qsizetype i = 0; i < unit.size();) {
+        if (unit[i] == u'\\') {
+            qsizetype j = i + 1;
+            while (j < unit.size() && unit[j].isLetter())
+                ++j;
+            const QString name = unit.mid(i + 1, j - i - 1);
+            out += map.value(name, name);
+            i = j;
+        } else if (unit[i] == u'.' || unit[i] == u'~') {
+            out += "\\,";
+            ++i;
+        } else {
+            out += unit[i++];
         }
     }
-    for (const char *ext : {".tex", ".pdf", ".log", ".aux", ".out"})
-        QFile::remove(base + ext);
-    return good;
+    return "\\mathrm{" + out + "}";
 }
 
-QStringList bodiesOf(const QString &text, Kind kind)
+struct Tokenizer {
+    const QString &s;
+    QList<Token> &out;
+    bool bold = false, italic = false;
+    QList<int> &lists;                                 // gli elenchi aperti: -1 puntato, se no il contatore
+    bool table = false;                                // dentro una tabella: & separa le celle
+    QString word;                                      // la parola in corso
+    qsizetype i = 0;
+
+    void flush()
+    {
+        if (!word.isEmpty())
+            out << Token{Token::Word, word, bold, italic};
+        word.clear();
+    }
+    void push(Token::Type type, const QString &text = {}, float amount = 0)
+    {
+        flush();
+        out << Token{type, text, bold, italic, amount};
+    }
+    void put(const QString &text, bool b, bool it)    // una parola fatta, con il suo stile
+    {
+        flush();
+        out << Token{Token::Word, text, b, it};
+    }
+    void space(float em = 0)
+    {
+        flush();
+        if (!out.isEmpty() && out.back().type == Token::Space && em == 0)
+            return;
+        out << Token{Token::Space, {}, false, false, em};
+    }
+    bool starts(QLatin1StringView w) const { return QStringView(s).mid(i).startsWith(w); }
+    void mathUntil(const QString &close, Token::Type type)
+    {
+        qsizetype end = s.indexOf(close, i);
+        if (end < 0)
+            end = s.size();
+        push(type, s.mid(i, end - i));
+        i = qMin(s.size(), end + close.size());
+    }
+    // {…} in s[i], con le graffe annidate; vuoto se non comincia lì
+    QString group()
+    {
+        if (i >= s.size() || s[i] != u'{')
+            return {};
+        int depth = 0;
+        const qsizetype from = i + 1;
+        for (; i < s.size(); ++i) {
+            if (s[i] == u'\\') {
+                ++i;
+                continue;
+            }
+            if (s[i] == u'{')
+                ++depth;
+            else if (s[i] == u'}' && --depth == 0)
+                return s.mid(from, i++ - from);
+        }
+        return s.mid(from);
+    }
+    // un argomento: un gruppo, un comando, un carattere
+    QString arg()
+    {
+        while (i < s.size() && s[i] == u' ')
+            ++i;
+        if (i >= s.size())
+            return {};
+        if (s[i] == u'{')
+            return group();
+        if (s[i] == u'\\') {
+            const qsizetype from = i++;
+            while (i < s.size() && s[i].isLetter())
+                ++i;
+            if (i == from + 1 && i < s.size())
+                ++i;
+            return s.mid(from, i - from);
+        }
+        return s.mid(i++, 1);
+    }
+    // un argomento facoltativo […], se c'è
+    QString bracket()
+    {
+        qsizetype j = i;
+        while (j < s.size() && s[j] == u' ')
+            ++j;
+        if (j >= s.size() || s[j] != u'[')
+            return {};
+        int depth = 0;
+        const qsizetype from = j + 1;
+        for (; j < s.size(); ++j) {
+            if (s[j] == u'{')
+                ++depth;
+            else if (s[j] == u'}')
+                --depth;
+            else if (s[j] == u']' && depth == 0)
+                break;
+        }
+        i = qMin(s.size(), j + 1);
+        return s.mid(from, j - from);
+    }
+    void inner(const QString &text, bool b, bool it)
+    {
+        flush();
+        Tokenizer t{text, out, b, it, lists};
+        t.table = table;
+        t.run();
+    }
+    // \begin{…} e \end{…}
+    void environment(const QString &cmd)
+    {
+        const QString env = group();
+        const QString base = QString(env).remove(u'*');
+        const bool begin = cmd == "begin";
+        if (begin && mathEnvironments().contains(env)) {
+            const QString close = "\\end{" + env + "}";
+            qsizetype end = s.indexOf(close, i);
+            if (end < 0)
+                end = s.size();
+            const QString body = s.mid(i, end - i);
+            // gli ambienti a sé diventano quelli dentro una formula: align aligned, gather e multline gathered
+            const bool aligned = base.startsWith("align") || base.startsWith("flalign") || base.startsWith("eqnarray");
+            const bool gathered = base.startsWith("gather") || base.startsWith("multline");
+            push(Token::Display, aligned ? "\\begin{aligned}" + body + "\\end{aligned}" : gathered ? "\\begin{gathered}" + body + "\\end{gathered}" : body);
+            i = qMin(s.size(), end + close.size());
+            return;
+        }
+        if (base == "itemize" || base == "enumerate" || base == "description") {
+            if (begin) {
+                lists << (base == "enumerate" ? 0 : -1);
+                push(Token::ListBegin);
+                bracket();                             // enumitem: [label=…]
+            } else {
+                if (!lists.isEmpty())
+                    lists.removeLast();
+                push(Token::ListEnd);
+            }
+            return;
+        }
+        static const QSet<QString> drawings{"tikzpicture", "circuitikz", "pgfpicture", "axis", "picture", "forest", "tikzcd"};
+        if (begin && drawings.contains(base)) {        // un disegno: il nome al posto suo
+            const QString close = "\\end{" + env + "}";
+            const qsizetype end = s.indexOf(close, i);
+            i = end < 0 ? s.size() : end + close.size();
+            put(QStringLiteral("[disegno]"), false, true);
+            return;
+        }
+        if (base == "tabular" || base == "tabularx" || base == "longtable" || base == "tabulary") {
+            if (begin) {
+                if (base != "tabular" && base != "longtable")
+                    arg();                             // la larghezza
+                bracket();
+                arg();                                 // le colonne
+            }
+            table = begin;
+            push(Token::Break);
+            return;
+        }
+        static const QSet<QString> plainBlocks{"center", "flushleft", "flushright", "quote", "quotation", "verse", "document",
+                                               "figure", "table", "wrapfigure", "minipage", "varwidth", "multicols", "small", "footnotesize"};
+        if (plainBlocks.contains(base)) {
+            if (begin) {
+                bracket();
+                if (base == "minipage" || base == "varwidth" || base == "multicols" || base == "wrapfigure")
+                    arg();
+                if (base == "wrapfigure")
+                    arg();
+            }
+            push(Token::Para);
+            return;
+        }
+        if (!begin) {
+            push(Token::Para);
+            return;
+        }
+        push(Token::Para);
+        if (base == "proof") {
+            put(QStringLiteral("Dimostrazione."), false, true);
+            space();
+            return;
+        }
+        // un riquadro: il suo nome e il titolo, in grassetto
+        QString label = base;
+        if (label.endsWith("box") && label.size() > 3)
+            label.chop(3);
+        label[0] = label[0].toUpper();
+        const QString title = bracket();
+        inner(label + (title.isEmpty() ? QString() : " (" + title + ")") + ".", true, italic);
+        space();
+    }
+    void item()
+    {
+        const QString raw = bracket();
+        QString label;
+        if (!raw.isEmpty() || (i > 0 && s[i - 1] == u']')) {
+            // l'etichetta com'è: via comandi di stile, graffe e dollari («\textbf{i)}» → «i)»)
+            for (qsizetype k = 0; k < raw.size(); ++k) {
+                if (raw[k] == u'\\') {
+                    while (k + 1 < raw.size() && raw[k + 1].isLetter())
+                        ++k;
+                } else if (raw[k] != u'{' && raw[k] != u'}' && raw[k] != u'$') {
+                    label += raw[k];
+                }
+            }
+        } else if (!lists.isEmpty() && lists.last() >= 0) {
+            label = QString::number(++lists.last()) + ".";
+        } else {
+            label = QStringLiteral("•");
+        }
+        push(Token::Item, label.trimmed());
+        while (i < s.size() && s[i].isSpace())
+            ++i;
+    }
+    // un comando (s[i] è la barra)
+    void command()
+    {
+        qsizetype j = i + 1;
+        while (j < s.size() && s[j].isLetter())
+            ++j;
+        const QString cmd = s.mid(i + 1, j - i - 1);
+        if (cmd.isEmpty()) {                           // \\, \%, \&, \,, …
+            const QChar c = j < s.size() ? s[j] : u' ';
+            i = j + 1;
+            if (c == u'\\') {
+                push(Token::Break);
+                bracket();                             // \\[2mm]
+            } else if (c == u',' || c == u';' || c == u':' || c == u' ') {
+                space(c == u' ' ? 0 : 0.2f);
+            } else if (c != u'!' && c != u'-' && c != u'/') {
+                word += c;
+            }
+            return;
+        }
+        i = j;
+        if (i < s.size() && s[i] == u'*' && (cmd.startsWith("section") || cmd.startsWith("sub") || cmd == "chapter" || cmd == "paragraph"))
+            ++i;
+        if (cmd == "begin" || cmd == "end")
+            return environment(cmd);
+        if (cmd == "item")
+            return item();
+        static const QSet<QString> styled{"textbf", "textit", "emph", "textsl", "text", "textrm", "textsf", "textnormal", "textup",
+                                          "mbox", "hbox", "underline", "uline", "textsc", "texttt", "intertext"};
+        if (styled.contains(cmd)) {
+            const QString text = arg();
+            inner(text, bold || cmd == "textbf", (italic && cmd != "textup" && cmd != "textnormal") || cmd == "textit" || cmd == "emph" || cmd == "textsl");
+            return;
+        }
+        static const QSet<QString> headings{"section", "subsection", "subsubsection", "paragraph", "subparagraph", "chapter", "part"};
+        if (headings.contains(cmd)) {
+            bracket();
+            push(Token::Para);
+            inner(arg(), true, italic);
+            push(Token::Break);
+            return;
+        }
+        if (cmd == "caption") {
+            bracket();
+            push(Token::Break);
+            inner(arg(), bold, true);
+            push(Token::Break);
+            return;
+        }
+        static const QSet<QString> refs{"cref", "Cref", "ref", "autoref", "pageref", "nameref", "vref", "Vref"};
+        if (refs.contains(cmd)) {
+            bracket();
+            put(arg(), bold, true);
+            return;
+        }
+        if (cmd == "eqref") {
+            put("(" + arg() + ")", bold, italic);
+            return;
+        }
+        if (cmd == "cite" || cmd == "citep" || cmd == "citet") {
+            bracket();
+            put("[" + arg() + "]", bold, italic);
+            return;
+        }
+        if (cmd == "footnote") {
+            space();
+            word += u'(';
+            inner(arg(), bold, italic);
+            word += u')';
+            return;
+        }
+        if (cmd == "includegraphics") {
+            bracket();
+            arg();
+            put(QStringLiteral("[immagine]"), false, true);
+            return;
+        }
+        if (cmd == "SI" || cmd == "qty") {
+            bracket();
+            const QString number = arg(), unit = arg();
+            push(Token::Math, number + "\\," + unitLatex(unit));
+            return;
+        }
+        if (cmd == "si" || cmd == "unit") {
+            bracket();
+            push(Token::Math, unitLatex(arg()));
+            return;
+        }
+        if (cmd == "num") {
+            bracket();
+            push(Token::Math, arg());
+            return;
+        }
+        if (cmd == "textcolor" || cmd == "colorbox") {
+            bracket();
+            arg();
+            inner(arg(), bold, italic);
+            return;
+        }
+        static const QHash<QString, int> silent{{"label", 1}, {"index", 1}, {"vspace", 1}, {"hspace", 1}, {"setlength", 2},
+                                                {"addtolength", 2}, {"setcounter", 2}, {"addtocounter", 2}, {"enlargethispage", 1},
+                                                {"phantom", 1}, {"hphantom", 1}, {"vphantom", 1}, {"input", 1}, {"include", 1},
+                                                {"cline", 1}, {"color", 1}, {"lezione", 2}, {"scalebox", 1}, {"resizebox", 2},
+                                                {"rule", 2}, {"multicolumn", 2}, {"multirow", 2}};
+        if (const auto it = silent.constFind(cmd); it != silent.constEnd()) {
+            bracket();
+            if (i < s.size() && s[i] == u'*')
+                ++i;
+            for (int n = 0; n < it.value(); ++n)
+                arg();
+            return;
+        }
+        if (cmd == "par")
+            push(Token::Para);
+        else if (cmd == "newline" || cmd == "linebreak")
+            push(Token::Break);
+        else if (cmd == "smallskip")
+            push(Token::VSpace, {}, 0.25f);
+        else if (cmd == "medskip")
+            push(Token::VSpace, {}, 0.5f);
+        else if (cmd == "bigskip")
+            push(Token::VSpace, {}, 1.0f);
+        else if (cmd == "quad")
+            space(1);
+        else if (cmd == "qquad")
+            space(2);
+        else {
+            static const QHash<QString, QString> symbols{
+                {"ldots", "…"}, {"dots", "…"}, {"S", "§"}, {"textendash", "–"}, {"textemdash", "—"}, {"LaTeX", "LaTeX"},
+                {"TeX", "TeX"}, {"textbackslash", "\\"}, {"textasciitilde", "~"}, {"textasciicircum", "^"}, {"euro", "€"},
+                {"textdegree", "°"}, {"ss", "ß"}, {"copyright", "©"}, {"dag", "†"}, {"textbullet", "•"}, {"guillemotleft", "«"},
+                {"guillemotright", "»"}, {"textquoteright", "’"}, {"P", "¶"}};
+            if (const auto it = symbols.constFind(cmd); it != symbols.constEnd())
+                word += it.value();
+        }
+        if (i < s.size() && s[i] == u' ')
+            ++i;                                       // lo spazio dopo un comando non conta, come in LaTeX
+    }
+    // un a capo solo è uno spazio; una riga vuota un capoverso
+    void newline()
+    {
+        qsizetype j = i + 1;
+        while (j < s.size() && (s[j] == u' ' || s[j] == u'\t'))
+            ++j;
+        if (j < s.size() && s[j] == u'\n') {
+            push(Token::Para);
+            while (j < s.size() && s[j].isSpace())
+                ++j;
+        } else {
+            space();
+        }
+        i = j;
+    }
+    void run()
+    {
+        while (i < s.size()) {
+            const QChar c = s[i];
+            if (starts(QLatin1StringView("$$")))
+                i += 2, mathUntil("$$", Token::Display);
+            else if (c == u'$')
+                i += 1, mathUntil("$", Token::Math);
+            else if (starts(QLatin1StringView("\\[")))
+                i += 2, mathUntil("\\]", Token::Display);
+            else if (starts(QLatin1StringView("\\(")))
+                i += 2, mathUntil("\\)", Token::Math);
+            else if (c == u'\\')
+                command();
+            else if (c == u'{' || c == u'}')
+                ++i;
+            else if (c == u'\n')
+                newline();
+            else if (c == u' ' || c == u'\t')
+                space(), ++i;
+            else if (c == u'~')
+                word += QChar(0x00A0), ++i;
+            else if (c == u'&' && table) {
+                space();
+                put(QStringLiteral("|"), false, false);
+                space();
+                ++i;
+            } else if (starts(QLatin1StringView("---")))
+                word += u'—', i += 3;
+            else if (starts(QLatin1StringView("--")))
+                word += u'–', i += 2;
+            else if (starts(QLatin1StringView("``")))
+                word += u'“', i += 2;
+            else if (starts(QLatin1StringView("''")))
+                word += u'”', i += 2;
+            else if (c == u'%') {                      // un commento, fino alla fine della riga
+                while (i < s.size() && s[i] != u'\n')
+                    ++i;
+                if (i < s.size())
+                    ++i;                               // l'a capo dopo un commento non conta
+            } else
+                word += c, ++i;
+        }
+        flush();
+    }
+};
+
+// Da una formula: via \label, \nonumber, \notag (MicroTeX non li conosce); \tag{x} diventa «(x)» in fondo
+QString cleanFormula(QString f)
 {
-    if (kind == Kind::Prose)
-        return {prose(text)};
-    // un pezzo di una lezione: com'è; se da solo non compila (un tratto di formula), come formula
-    static const RE mathy(R"(\\[a-zA-Z]+|[_^=<>+])");
-    const bool hasMode = text.contains('$') || text.contains("\\[") || text.contains("\\begin{") || text.contains("\\(");
-    const QString formula = "$\\displaystyle " + text + "$";
-    // tre parole di fila, tolti i comandi, sono prosa («Questi dati si collegano a \\emph{…}»), non una formula
-    static const RE command(R"(\\[a-zA-Z]+)"), words(R"((?:\p{L}{3,}\s+){2}\p{L}{3,})");
-    const bool prose = words.match(QString(text).remove(command)).hasMatch();
-    return !hasMode && !prose && mathy.match(text).hasMatch() ? QStringList{formula, text} : QStringList{text, formula};
+    static const RE label(R"(\\label\s*\{[^{}]*\})"), skip(R"(\\(?:nonumber|notag)\b)"), tag(R"(\\tag\*?\s*\{([^{}]*)\})");
+    f.remove(label);
+    f.remove(skip);
+    QString tags;
+    for (auto it = tag.globalMatch(f); it.hasNext();)
+        tags += "\\qquad(" + it.next().captured(1) + ")";
+    f.remove(tag);
+    return tags.isEmpty() ? f : f + tags;
 }
+
 }
 
 QString prose(const QString &text)
@@ -294,66 +592,40 @@ QString prose(const QString &text)
     return out;
 }
 
-QString pathOf(const Project &project, const QString &text, Kind kind, const QString &color)
+QList<Token> tokens(const QString &text, Kind kind)
 {
-    return dirOf(project) + '/' + keyOf(project, text, kind, color) + ".png";
-}
-
-QStringList render(const Project &project, const QList<Piece> &pieces)
-{
-    QList<Piece> todo;
-    QStringList keys, done;
-    for (const Piece &piece : pieces) {
-        const QString key = keyOf(project, piece.text, piece.kind, piece.color);
-        const QString base = dirOf(project) + '/' + key;
-        if (piece.text.trimmed().isEmpty() || keys.contains(key) || QFileInfo::exists(base + ".png") || QFileInfo::exists(base + ".no"))
-            continue;
-        todo << piece;
-        keys << key;
-    }
-    if (todo.isEmpty())
-        return done;
-    QString fmt = format(project);
-    // un gruppo di pezzi, nella prima forma di ognuno: se non compila si divide a metà; un pezzo solo prova le sue
-    // altre forme, e se nessuna compila resta senza resa
-    std::function<void(qsizetype, qsizetype)> attempt = [&](qsizetype from, qsizetype to) {
-        QList<std::pair<QString, QString>> bodies;
-        for (qsizetype i = from; i < to; ++i)
-            bodies << std::pair{bodiesOf(todo[i].text, todo[i].kind).first(), todo[i].color};
-        const QString job = "lavoro-" + keys[from];
-        if (compile(project, bodies, keys.mid(from, to - from), fmt, job))
-            return;
-        if (from == 0 && to == todo.size() && !fmt.isEmpty() && compile(project, bodies, keys, QString(), job)) {
-            files::write(fmt + ".no", QString());     // il preambolo precompilato non va (TeX aggiornato?): senza
-            QFile::remove(fmt + ".fmt");
-            fmt.clear();
-            return;
-        }
-        if (to - from > 1) {
-            const qsizetype middle = from + (to - from) / 2;
-            attempt(from, middle);
-            attempt(middle, to);
-            return;
-        }
-        const QStringList forms = bodiesOf(todo[from].text, todo[from].kind);
-        for (qsizetype f = 1; f < forms.size(); ++f)
-            if (compile(project, {std::pair{forms[f], todo[from].color}}, {keys[from]}, fmt, job))
-                return;
-        files::write(dirOf(project) + '/' + keys[from] + ".no", QString());
+    QList<Token> out;
+    QList<int> lists;
+    const QString source = kind == Kind::Prose ? prose(text) : text;
+    Tokenizer{source, out, false, false, lists}.run();
+    for (Token &t : out)
+        if (t.type == Token::Math || t.type == Token::Display)
+            t.text = cleanFormula(t.text);
+    // la punteggiatura dopo una formula a sé va dentro la formula: da sola finirebbe su una riga vuota
+    auto punctuation = [](const Token &t) {
+        static const RE only(R"(^[.,;:]+$)");
+        return t.type == Token::Word && only.match(t.text).hasMatch();
     };
-    attempt(0, todo.size());
-    for (const QString &key : keys)
-        if (QFileInfo::exists(dirOf(project) + '/' + key + ".png"))
-            done << dirOf(project) + '/' + key + ".png";
-    return done;
-}
-
-QStringList render(const Project &project, const QStringList &texts, Kind kind, const QString &color)
-{
-    QList<Piece> pieces;
-    for (const QString &text : texts)
-        pieces << Piece{text, kind, color};
-    return render(project, pieces);
+    for (qsizetype i = 0; i < out.size(); ++i) {
+        if (out[i].type != Token::Display)
+            continue;
+        qsizetype j = i + 1;
+        while (j < out.size() && out[j].type == Token::Space)
+            ++j;
+        if (j >= out.size() || !punctuation(out[j]))
+            continue;
+        QString &f = out[i].text;
+        const QString mark = QString(out[j].text).replace(":", "{:}");
+        const qsizetype end = f.endsWith(u'}') && f.lastIndexOf("\\end{") >= 0 ? f.lastIndexOf("\\end{") : f.size();
+        f.insert(end, mark);
+        out.remove(i + 1, j - i);
+    }
+    // niente spazi in testa e in coda, né doppi capoversi
+    while (!out.isEmpty() && (out.first().type == Token::Space || out.first().type == Token::Para || out.first().type == Token::Break))
+        out.removeFirst();
+    while (!out.isEmpty() && (out.last().type == Token::Space || out.last().type == Token::Para || out.last().type == Token::Break))
+        out.removeLast();
+    return out;
 }
 
 }

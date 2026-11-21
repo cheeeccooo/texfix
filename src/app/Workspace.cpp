@@ -18,7 +18,6 @@
 #include "core/Review.h"
 #include "core/Run.h"
 #include "core/Rules.h"
-#include "core/Snippets.h"
 #include "core/Sort.h"
 #include "core/TexSource.h"
 #include "core/StyleSwitch.h"
@@ -738,13 +737,27 @@ void Workspace::onBuildFinished(const BuildResult &result)
     // gli avvisi, e per ogni lezione quanti errori e quante righe fuori misura
     struct Count { int errors = 0, rows = 0; };
     QHash<QString, Count> counts;
-    m_issues.clear();
+    // una lezione compilata da sola rifà solo i suoi avvisi: quelli delle altre restano (in Rivedi correzioni le
+    // lezioni non spariscono e ricompaiono a ogni compilazione)
+    QVariantList kept;
+    if (!result.lesson.isEmpty())
+        for (const QVariant &v : std::as_const(m_issues)) {
+            const QString file = v.toMap().value("file").toString();
+            if (!file.isEmpty() && file != result.lesson)
+                kept << v;
+        }
+    m_issues = kept;
     m_errorCount = 0;
-    int rows = 0;
+    for (const QVariant &v : std::as_const(kept))
+        m_errorCount += v.toMap().value("kind").toString() == "error";
+    int rows = 0, errors = 0;                          // di questa compilazione
     for (const Issue &issue : result.issues) {
+        if (!result.lesson.isEmpty() && !issue.file.isEmpty() && issue.file != result.lesson)
+            continue;                                  // di un altro file: c'è già, dall'ultima compilazione del documento
         const bool error = issue.kind == Issue::Error;
         (error ? counts[issue.file].errors : counts[issue.file].rows)++;
-        (error ? m_errorCount : rows)++;
+        (error ? errors : rows)++;
+        m_errorCount += error;
         m_issues << QVariantMap{{"kind", error ? "error" : issue.kind == Issue::WideLine ? "wide" : "loose"},
                                 {"file", issue.file},
                                 {"line", issue.line},
@@ -776,8 +789,8 @@ void Workspace::onBuildFinished(const BuildResult &result)
     }
     const QString what = result.lesson.isEmpty() ? QStringLiteral("Documento compilato") : QStringLiteral("Lezione compilata");
     const QString seconds = QLocale(QLocale::Italian).toString(result.ms / 1000.0, 'f', 1);
-    if (m_errorCount)
-        say(QStringLiteral("%1 con %2.").arg(what, plural(m_errorCount, "errore", "errori")));
+    if (errors)
+        say(QStringLiteral("%1 con %2.").arg(what, plural(errors, "errore", "errori")));
     else if (rows)
         say(QStringLiteral("%1 in %2 s, %3.").arg(what, seconds, plural(rows, "riga fuori misura", "righe fuori misura")));
     else
@@ -3104,47 +3117,10 @@ void Workspace::computeTags()
     });
 }
 
-QString Workspace::snippet(const QString &text, const QString &kind, const QString &color)
+QString Workspace::fileStamp(const QString &path) const
 {
-    if (!hasProject() || text.trimmed().isEmpty())
-        return {};
-    const snippets::Kind k = kind == "latex" ? snippets::Kind::Latex : snippets::Kind::Prose;
-    const QString path = snippets::pathOf(m_project, text, k, color);
-    if (QFileInfo::exists(path))
-        return path;
-    if (QFileInfo::exists(path.chopped(4) + ".no"))
-        return {};                                     // non compila: resta il testo
-    const QStringList wanted{text, kind, color};
-    if (!m_snippetQueue.contains(wanted))
-        m_snippetQueue << wanted;
-    QTimer::singleShot(40, this, &Workspace::renderSnippets);   // quelle chieste insieme si fanno insieme
-    return {};
-}
-
-QString Workspace::snippetText(const QString &text, const QString &kind) const
-{
-    return snippets::preview(text, kind == "latex" ? snippets::Kind::Latex : snippets::Kind::Prose);
-}
-
-void Workspace::renderSnippets()
-{
-    if (m_snippetsRunning || m_snippetQueue.isEmpty() || !hasProject())
-        return;
-    m_snippetsRunning = true;
-    const QList<QStringList> queue = m_snippetQueue;
-    m_snippetQueue.clear();
-    QThreadPool::globalInstance()->start([this, queue, project = m_project] {
-        // un giro solo, qualunque sia il tipo e il colore
-        QList<snippets::Piece> pieces;
-        for (const QStringList &q : queue)
-            pieces << snippets::Piece{q[0], q[1] == "latex" ? snippets::Kind::Latex : snippets::Kind::Prose, q[2]};
-        snippets::render(project, pieces);
-        QMetaObject::invokeMethod(this, [this] {
-            m_snippetsRunning = false;
-            emit snippetsReady();
-            renderSnippets();
-        });
-    });
+    const QFileInfo info(QFileInfo(path).isAbsolute() ? path : m_project.path(path));
+    return info.exists() ? QString::number(info.lastModified().toMSecsSinceEpoch()) + '-' + QString::number(info.size()) : QString();
 }
 
 void Workspace::recheckFigures()

@@ -80,7 +80,7 @@ Rectangle {
         if (!c || c.type !== "doubt" || c.pending || index >= (c.readings || []).length)
             return
         Workspace.chooseReading(c.lesson, c.id, index)
-        deck.next(c)
+        deck.next(c, true)
     }
     Repeater {
         model: 9
@@ -100,13 +100,13 @@ Rectangle {
                 c.state === "tolta" ? Workspace.restoreDeclared(c.lesson, c.hash) : Workspace.keepDeclared(c.lesson, c.hash, true)
             else
                 return
-            deck.next(c)
+            deck.next(c, true)
         }
     }
     Shortcut {                                         // L: toglie un'aggiunta
         sequence: "L"
         enabled: root.visible && deck.card !== null && deck.card.type === "declared" && deck.card.state !== "tolta"
-        onActivated: { const c = deck.card; Workspace.dropDeclared(c.lesson, c.hash); deck.next(c) }
+        onActivated: { const c = deck.card; Workspace.dropDeclared(c.lesson, c.hash); deck.next(c, true) }
     }
     Shortcut {                                         // M: correggo io
         sequence: "M"
@@ -129,6 +129,7 @@ Rectangle {
         enabled: root.visible && deck.card !== null && !root.isOpen(deck.card)
         onActivated: {
             const c = deck.card
+            deck.hold(c)
             if (c.type === "doubt")
                 Workspace.reopenDoubt(c.lesson, c.id, false)
             else if (c.type === "declared" && c.state === "tenuta")
@@ -220,7 +221,7 @@ Rectangle {
                 Layout.fillWidth: true
                 TxLabel {
                     Layout.fillWidth: true
-                    text: (row.source || "") + (row.page > 0 ? ", pagina " + row.page : "") + (row.sourcePath && !deck.isFocused(row) ? " · un clic qui per vederla" : "")
+                    text: (row.source || "") + (row.page > 0 ? ", pagina " + row.page : "") + ""
                     color: Theme.textFaint
                     font.pixelSize: Theme.smallSize
                 }
@@ -235,15 +236,32 @@ Rectangle {
                 wrapMode: Text.WrapAnywhere
                 elide: Text.ElideNone
             }
-            Image {                                    // la pagina della fonte, per il dubbio evidenziato
+            // la pagina della fonte, in un riquadro di altezza fissa: caricarla non sposta niente; un clic la mostra
+            // intera (e un altro la rimpicciolisce)
+            Rectangle {
+                id: pageBox
+                property bool big: false
                 Layout.fillWidth: true
                 Layout.maximumWidth: 900
-                Layout.preferredHeight: status === Image.Ready ? width * sourceSize.height / Math.max(1, sourceSize.width) : 0
-                visible: source != ""
-                fillMode: Image.PreserveAspectFit
-                horizontalAlignment: Image.AlignLeft
-                asynchronous: true
-                source: row.sourcePath && deck.isFocused(row) ? "image://pdf/0/" + (Math.max(1, row.page) - 1) + "/1400/" + encodeURIComponent(row.sourcePath) : ""
+                Layout.preferredHeight: big && page.status === Image.Ready ? width * page.sourceSize.height / Math.max(1, page.sourceSize.width) : 260
+                visible: (row.sourcePath || "") !== ""
+                color: "white"
+                radius: Theme.radius - 2
+                clip: true
+                Image {
+                    id: page
+                    anchors.fill: parent
+                    fillMode: pageBox.big ? Image.PreserveAspectFit : Image.PreserveAspectCrop
+                    verticalAlignment: Image.AlignTop
+                    asynchronous: true
+                    retainWhileLoading: true
+                    source: row.sourcePath ? "image://pdf/0/" + (Math.max(1, row.page) - 1) + "/1400/" + encodeURIComponent(row.sourcePath) : ""
+                }
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: pageBox.big = !pageBox.big }
+                ToolTip.visible: pageHover.hovered
+                ToolTip.delay: 700
+                ToolTip.text: pageBox.big ? "Rimpicciolisci" : "Mostra la pagina intera"
+                HoverHandler { id: pageHover }
             }
         }
     }
@@ -256,7 +274,7 @@ Rectangle {
             // da confermare: corretto a mano o deciso dal modello
             TxChoice { visible: row.pending === true; text: "Conferma  (A)"; tone: Theme.good; onClicked: { const r = row; Workspace.confirmDoubt(r.lesson, r.id); deck.next(r) } }
             TxChoice { visible: row.pending === true && row.how === "corretta"; text: "Modifica ancora"; tone: Theme.warn; onClicked: root.lineAsked(row.lesson, Math.max(1, row.line)) }
-            TxChoice { visible: row.pending === true; text: "Riapri"; tone: Theme.idle; onClicked: Workspace.reopenDoubt(row.lesson, row.id, row.how === "modello") }
+            TxChoice { visible: row.pending === true; text: "Riapri"; tone: Theme.idle; onClicked: { deck.hold(row); Workspace.reopenDoubt(row.lesson, row.id, row.how === "modello") } }
             // le letture, com'è nel PDF: la prima è com'è scritto
             TxLabel { visible: row.pending !== true; Layout.fillWidth: true; text: "Le letture"; color: Theme.textFaint; font.pixelSize: Theme.smallSize }
             Repeater {
@@ -290,8 +308,8 @@ Rectangle {
                 tone: Theme.accent
                 onClicked: Workspace.decideDoubts(row.lesson, [row.id])
             }
-            TxChoice { visible: row.open === false; text: "Riapri  (R)"; tone: Theme.idle; onClicked: Workspace.reopenDoubt(row.lesson, row.id, false) }
-            TxChoice { visible: row.open === false && row.how === "scelta"; text: "Annulla la modifica"; tone: Theme.bad; onClicked: Workspace.reopenDoubt(row.lesson, row.id, true) }
+            TxChoice { visible: row.open === false; text: "Riapri  (R)"; tone: Theme.idle; onClicked: { deck.hold(row); Workspace.reopenDoubt(row.lesson, row.id, false) } }
+            TxChoice { visible: row.open === false && row.how === "scelta"; text: "Annulla la modifica"; tone: Theme.bad; onClicked: { deck.hold(row); Workspace.reopenDoubt(row.lesson, row.id, true) } }
             // dopo una decisione diversa da ciò che era scritto: ricordarla come regola del progetto
             RowLayout {
                 Layout.fillWidth: true
@@ -374,7 +392,7 @@ Rectangle {
                 chosen: row.state === "tolta"
                 onClicked: { const r = row; Workspace.dropDeclared(r.lesson, r.hash); deck.next(r) }
             }
-            TxChoice { visible: row.type === "declared" && row.state === "tenuta"; text: "Riapri  (R)"; tone: Theme.idle; onClicked: Workspace.keepDeclared(row.lesson, row.hash, false) }
+            TxChoice { visible: row.type === "declared" && row.state === "tenuta"; text: "Riapri  (R)"; tone: Theme.idle; onClicked: { deck.hold(row); Workspace.keepDeclared(row.lesson, row.hash, false) } }
             TxChoice {
                 visible: row.type === "issue"
                 enabled: !Workspace.busy

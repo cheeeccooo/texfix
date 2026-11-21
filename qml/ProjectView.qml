@@ -235,7 +235,7 @@ Item {
         function onAgentAsked(message, title) { root.chatOpen = true; Chat.startProcedure(title, message) }
         function onFilesChanged() { root.refreshManual() }
         function onBuildFinished() {
-            if (Workspace.errorCount > 0)
+            if (Workspace.errorCount > 0 && !root.reviewSaved)     // durante una revisione la finestra non cambia da sé
                 root.bottomOpen = true
             const jump = root.pendingJump
             root.pendingJump = null

@@ -1,38 +1,37 @@
 #pragma once
-#include "core/Project.h"
 
 #include <QList>
 #include <QString>
-#include <QStringList>
 
-// La resa compilata di piccoli pezzi (una domanda, una lettura, un'aggiunta) per i pannelli Rivedi: come nel PDF, con
-// il preambolo del progetto, su fondo trasparente e nel colore del testo del tema. Una resa fatta resta in
-// build/resa/; un pezzo che non compila non ha resa, e chi lo mostra tiene il testo (`preview`, già formattato).
+// I piccoli pezzi dei pannelli Rivedi (una domanda, una lettura, un'aggiunta, una didascalia), pronti per essere
+// disegnati nel programma come in Studify: il testo nel carattere dell'interfaccia, le formule disegnate da MicroTeX
+// (src/app/Math, src/app/LatexText). Qui solo ciò che non disegna: la prosa del modello resa LaTeX e il testo
+// spezzato in pezzi.
 namespace tx::snippets {
 
-// Come va letto un pezzo: prosa (con la matematica fra $…$; «ω0» e «V_CB» diventano matematica) o LaTeX com'è scritto
-// in una lezione (se da solo non compila, lo si prova come formula).
+// Come va letto un pezzo: prosa del modello (con la matematica fra $…$; «ω0» e «V_CB» diventano matematica) o LaTeX
+// com'è scritto in una lezione.
 enum class Kind { Prose, Latex };
 
-struct Piece {
-    QString text;
-    Kind kind = Kind::Prose;
-    QString color;                                     // esadecimale, «202020»
+// La prosa pronta per LaTeX.
+QString prose(const QString &text);
+
+// Un pezzo di testo: una parola (con grassetto e corsivo), uno spazio, una formula in linea o a sé, un a capo, un
+// capoverso, uno stacco, una voce d'elenco con la sua etichetta, l'inizio e la fine di un elenco.
+struct Token {
+    enum Type { Word, Space, Math, Display, Break, Para, VSpace, Item, ListBegin, ListEnd };
+    Type type = Word;
+    QString text;                                      // la parola, la formula, l'etichetta della voce
+    bool bold = false, italic = false;
+    float amount = 0;                                  // Space: larghezza in em (0: uno spazio); VSpace: in righe
+    bool operator==(const Token &) const = default;
 };
 
-// Dove sta (o starà) la resa di un pezzo: lo stesso pezzo, con lo stesso colore e lo stesso preambolo, ha lo stesso file.
-QString pathOf(const Project &project, const QString &text, Kind kind, const QString &color);
-// Fa le rese che mancano, tutte insieme: una compilazione sola, con il preambolo del progetto precompilato
-// (`build/resa/preambolo-….fmt`, rifatto quando cambia uno stile); se qualcosa non compila, si divide a metà finché
-// non si trova (un pezzo che non compila non ferma gli altri). Restituisce i file fatti; quelli che non compilano
-// lasciano un file «.no», così non si riprovano.
-QStringList render(const Project &project, const QList<Piece> &pieces);
-QStringList render(const Project &project, const QStringList &texts, Kind kind, const QString &color);
-// La prosa pronta per LaTeX (pubblica per le prove).
-QString prose(const QString &text);
-// Il pezzo da leggere subito, mentre la resa si fa (o se non compila): testo ricco di Qt, con la matematica in
-// simboli, pedici ed esponenti, il grassetto e il corsivo, gli elenchi, i riquadri con il loro nome. Non è il PDF,
-// ma non è il sorgente.
-QString preview(const QString &text, Kind kind);
+// Il testo spezzato in pezzi. Le formule restano LaTeX ($…$, \(…\), \[…\], $$…$$, equation, align…: align e simili
+// diventano aligned); il resto si legge come lo leggerebbe LaTeX per quanto serve a vederlo: grassetto e corsivo,
+// elenchi, a capo e capoversi, i commenti tolti, i riquadri con il loro nome e il titolo in grassetto, i titoli delle
+// sezioni, i rimandi con la loro etichetta, i disegni e le immagini come «[disegno]», le unità di siunitx come
+// formule. Un comando che non si conosce si toglie e ne restano gli argomenti.
+QList<Token> tokens(const QString &text, Kind kind);
 
 }

@@ -15,7 +15,6 @@ Rectangle {
     signal adoptAsked()                                // ci sono figure senza segno: ProjectView salva le schede e le registra
     color: Theme.window
 
-    property int revision: 0                           // le immagini si rileggono dopo ogni lavoro
     function reload() {
         items = Workspace.figureItems()
         if (Workspace.busy)
@@ -27,16 +26,17 @@ Rectangle {
     }
     Component.onCompleted: reload()
     onVisibleChanged: if (visible) reload()
-    // le immagini si rileggono quando i file cambiano o un lavoro finisce; non a ogni decisione (non lampeggiano)
-    Connections { target: Workspace; function onFilesChanged() { root.revision++; if (root.visible) root.reload() } }
+    // le righe si rileggono quando i file cambiano o un lavoro finisce; un'immagine si ricarica solo se il suo file è
+    // cambiato (`file`: l'ora del file nell'indirizzo), e intanto resta quella di prima
+    Connections { target: Workspace; function onFilesChanged() { if (root.visible) root.reload() } }
     Connections { target: Workspace; function onTreeChanged() { if (root.visible) root.reload() } }
-    Connections { target: Workspace; function onBusyChanged() { if (!Workspace.busy) { root.revision++; if (root.visible) root.reload() } } }
+    Connections { target: Workspace; function onBusyChanged() { if (!Workspace.busy && root.visible) root.reload() } }
 
     // Dall'albero: la lezione, se ha figure.
     function showLesson(lesson) { deck.open(lesson) }
     function showShots() { if (deck.groups.length > 0) deck.open(deck.groups[0].row.lesson) }   // per le prove: la prima lezione
 
-    function file(path) { return path ? "file://" + encodeURI(path) + "?" + root.revision : "" }
+    function file(path) { return path ? "file://" + encodeURI(path) + "?" + Workspace.fileStamp(path) : "" }
     function stateText(row) {
         return ({ disegnata: "disegnata", ritagliata: "ritagliata dalla fonte", scritta: "scritta nella lezione",
                   da_inserire: "da inserire" })[row.state] || row.state
@@ -86,7 +86,7 @@ Rectangle {
     Shortcut {
         sequence: "R"
         enabled: root.visible && root.cropping === null && deck.card !== null && root.accepted(deck.card)
-        onActivated: Workspace.acceptFigure(deck.card.id, false)
+        onActivated: { deck.hold(deck.card); Workspace.acceptFigure(deck.card.id, false) }
     }
     Shortcut {
         sequence: "C"
@@ -105,7 +105,9 @@ Rectangle {
         TxLabel { visible: picture.title !== ""; Layout.fillWidth: true; text: picture.title; color: Theme.textFaint; font.pixelSize: Theme.smallSize }
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: image.status === Image.Ready ? Math.min(width * image.sourceSize.height / Math.max(1, image.sourceSize.width) + 16, picture.maxHeight) : 60
+            // l'altezza dell'ultima immagine letta: mentre se ne carica un'altra non cambia
+            property real ratio: 0
+            Layout.preferredHeight: ratio > 0 ? Math.min(width * ratio + 16, picture.maxHeight) : 60
             color: picture.path ? "white" : Theme.window
             radius: Theme.radius - 2
             border.width: picture.path ? 0 : 1
@@ -115,10 +117,11 @@ Rectangle {
                 anchors.fill: parent
                 anchors.margins: 8
                 fillMode: Image.PreserveAspectFit
-                cache: false
                 asynchronous: true
+                retainWhileLoading: true
                 mipmap: true
-                source: root.file(picture.path)
+                source: root.items && root.file(picture.path)  // con le righe: si rilegge l'ora del file
+                onStatusChanged: if (status === Image.Ready && sourceSize.width > 0) parent.ratio = sourceSize.height / sourceSize.width
             }
             TxLabel {
                 anchors.centerIn: parent
@@ -201,13 +204,13 @@ Rectangle {
                 chosen: root.accepted(row)
                 onClicked: { const r = row; Workspace.acceptFigure(r.id, true); deck.next(r) }
             }
-            TxChoice { visible: root.accepted(row); text: "Riapri  (R)"; tone: Theme.idle; onClicked: Workspace.acceptFigure(row.id, false) }
+            TxChoice { visible: root.accepted(row); text: "Riapri  (R)"; tone: Theme.idle; onClicked: { deck.hold(row); Workspace.acceptFigure(row.id, false) } }
             // disegno o ritaglio, per una figura che viene da una pagina
             TxSegmented {
                 visible: row.origin === "fonte"
                 Layout.fillWidth: true
                 choices: [{ value: "disegnata", label: "Disegno" }, { value: "ritagliata", label: "Ritaglio dalla fonte" }]
-                value: row.state
+                value: row.state || ""
                 enabled: !Workspace.busy
                 onChosen: value => {
                     if (value === row.state)

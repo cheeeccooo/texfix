@@ -545,47 +545,54 @@ private slots:
         QCOMPARE(model.calls().size(), 2);
     }
 
-    // La resa compilata dei pezzi per i pannelli Rivedi: la prosa con «ω0» e «V_CB», un tratto di formula, e un
-    // pezzo che non compila resta senza resa (e non si riprova).
-    void snippetRender()
+    // I pezzi dei pannelli Rivedi: la prosa del modello resa LaTeX, e il testo spezzato in parole, formule, elenchi,
+    // riquadri, come lo disegna il programma.
+    void snippetTokens()
     {
+        using T = snippets::Token;
         QCOMPARE(snippets::prose("Vale ω0 o V_CB al 50%? Con $x_1$."), "Vale $\\omega_{0}$ o $V_{CB}$ al 50\\%? Con $x_1$.");
         QCOMPARE(snippets::prose("un $ solo"), "un  solo");
-        // il pezzo da leggere subito: simboli, pedici, frazioni, grassetto, riquadri ed elenchi, niente sorgente
-        QCOMPARE(snippets::preview("Vale $\\alpha_0 \\leq \\frac{1}{2}$ e \\textbf{sempre}.", snippets::Kind::Latex),
-                 "Vale α<sub>0</sub> ≤ 1/2 e <b>sempre</b>.");
-        QCOMPARE(snippets::preview("Vale ω0 o V_CB al 50%?", snippets::Kind::Prose), "Vale ω<sub>0</sub> o <i>V</i><sub><i>C</i><i>B</i></sub> al 50%?");
-        QCOMPARE(snippets::preview("\\begin{theorem}[Rolle]\\label{t:r}Se $f'(c)=0$.\\end{theorem} % nota", snippets::Kind::Latex),
-                 "<b>Theorem (Rolle).</b> Se <i>f</i>′(<i>c</i>) = 0.");
-        QCOMPARE(snippets::preview("\\begin{itemize}\\item uno\\item due\\end{itemize}", snippets::Kind::Latex), "• uno<br>• due");
-        QCOMPARE(snippets::preview("\\[ \\sqrt{x+1} \\]", snippets::Kind::Latex), "<div align=\"center\">√(<i>x</i>+1)</div>");
-        if (!hasLatexmk())
-            QSKIP("latexmk non c'è");
-        QTemporaryDir dir;
-        const QString root = dir.filePath("prova");
-        QCOMPARE(Project::create(root), QString());
-        const Project p(root);
-        const QStringList texts{"f(x) = \\ell", "\\begin{theorem}Vero.\\end{theorem}", "\\nonesiste{"};
-        const QStringList done = snippets::render(p, texts, snippets::Kind::Latex, "202020");
-        QCOMPARE(done.size(), 2);
-        QVERIFY(QFileInfo::exists(snippets::pathOf(p, texts[0], snippets::Kind::Latex, "202020")));
-        QVERIFY(!QFileInfo::exists(snippets::pathOf(p, texts[2], snippets::Kind::Latex, "202020")));
-        QImage formula(snippets::pathOf(p, texts[0], snippets::Kind::Latex, "202020"));
-        QVERIFY(formula.width() > 20 && formula.width() < 400);                        // ritagliata a ciò che è scritto
-        QVERIFY(formula.hasAlphaChannel());
-        QCOMPARE(snippets::render(p, texts, snippets::Kind::Latex, "202020").size(), 0);   // niente da rifare
-        // la prosa del modello: simboli Unicode (anche dentro $…$), pedici in fila, comandi senza $, un carattere sconosciuto
         QCOMPARE(snippets::prose("i_C^Q e \\beta_F, -R_C, x-y_1"), "$i_{C}^{Q}$ e $\\beta_{F}$, $-R_{C}$, x-$y_{1}$");
-        // formule vicine in una sola (segni compresi), due pedici di fila, una greca nel pedice
         QCOMPARE(snippets::prose("A_vs=A_v Z_in/(R_s+Z_in), quindi"), "$A_{vs}=A_{v} Z_{in}/(R_{s}+Z_{in})$, quindi");
         QCOMPARE(snippets::prose("k_BTr_e, I_EΔf, v_π, (1+h_fe)R_E, R_o^(1)~R_C·I_b"), "$k_{BTr}{}_{e}$, $I_{E}\\Delta $f, $v_{π}$, $(1+h_{fe})R_{E}$, $R_{o}^{(1)}\\sim R_{C}\\cdot I_{b}$");
-        const QString model = "Vale −I_C R_C/V_T ≃ −100 con 1/h_oe ≫ R_C, i_C^Q, \\beta_F, $A ≈ 2$ e 5 kΩ ☃.";
-        QCOMPARE(snippets::render(p, {model}, snippets::Kind::Prose, "202020").size(), 1);
-        // tipi e colori diversi in un giro, con un pezzo che non compila in mezzo: gli altri hanno la resa
-        const QList<snippets::Piece> mixed{{"Uno $x$", snippets::Kind::Prose, "202020"}, {"\\rotto{", snippets::Kind::Latex, "202020"},
-                                           {"y^2", snippets::Kind::Latex, "C02020"}, {"Tre", snippets::Kind::Prose, "20C020"}};
-        QCOMPARE(snippets::render(p, mixed).size(), 3);
-        QVERIFY(QFileInfo::exists(snippets::pathOf(p, "y^2", snippets::Kind::Latex, "C02020")));
+
+        auto types = [](const QList<T> &list) {
+            QString out;
+            for (const T &t : list)
+                out += t.type == T::Word ? (t.bold ? "B" : t.italic ? "I" : "W") : t.type == T::Space ? "_" : t.type == T::Math ? "M"
+                     : t.type == T::Display ? "D" : t.type == T::Break ? "/" : t.type == T::Para ? "P" : t.type == T::Item ? "*"
+                     : t.type == T::ListBegin ? "[" : t.type == T::ListEnd ? "]" : "?";
+            return out;
+        };
+        // parole, formule, grassetto; un commento sparisce
+        QList<T> t = snippets::tokens("Vale $\\alpha_0$ e \\textbf{sempre}. % nota", snippets::Kind::Latex);
+        QCOMPARE(types(t), "W_M_W_BW");
+        QCOMPARE(t[2].text, "\\alpha_0");
+        QCOMPARE(t[6].text, "sempre");
+        // un riquadro: il nome e il titolo in grassetto, l'etichetta tolta
+        t = snippets::tokens("\\begin{theorem}[Rolle]\\label{t:r}Se $f'(c)=0$.\\end{theorem}", snippets::Kind::Latex);
+        QCOMPARE(types(t), "B_B_W_MW");
+        QCOMPARE(t[0].text + " " + t[2].text, "Theorem (Rolle).");
+        // un elenco numerato, una formula a sé con la sua punteggiatura, un'equazione senza etichetta
+        t = snippets::tokens("\\begin{enumerate}\\item uno\\item due\\end{enumerate}", snippets::Kind::Latex);
+        QCOMPARE(types(t), "[*W*W]");
+        QCOMPARE(t[3].text, "2.");
+        t = snippets::tokens("Quindi \\[ x = 1 \\] .", snippets::Kind::Latex);
+        QCOMPARE(types(t), "W_D");
+        QCOMPARE(t[2].text, " x = 1 .");
+        t = snippets::tokens("\\begin{align*} a &= b \\label{e:1} \\end{align*}", snippets::Kind::Latex);
+        QCOMPARE(t.size(), 1);
+        QCOMPARE(t[0].text, "\\begin{aligned} a &= b  \\end{aligned}");
+        // disegni, rimandi, unità
+        t = snippets::tokens("Vedi \\cref{fig:a}: \\begin{tikzpicture}\\draw (0,0);\\end{tikzpicture} con \\SI{5}{\\kilo\\ohm}", snippets::Kind::Latex);
+        QCOMPARE(t[2].text, "fig:a");
+        QVERIFY(t[2].italic);
+        QVERIFY(std::any_of(t.begin(), t.end(), [](const T &x) { return x.text == "[disegno]"; }));
+        QCOMPARE(t.last().text, "5\\,\\mathrm{k\\Omega}");
+        // la prosa del modello: «ω0» è una formula
+        t = snippets::tokens("Vale ω0?", snippets::Kind::Prose);
+        QCOMPARE(types(t), "W_MW");
+        QCOMPARE(t[2].text, "\\omega_{0}");
     }
 
     // Le versioni delle fonti: un file identico a una fonte usata non si aggiunge; uno diverso con lo stesso nome prende

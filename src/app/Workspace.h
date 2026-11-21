@@ -404,11 +404,8 @@ public:
     Q_INVOKABLE void checkpoint(const QString &title);
 
     // La resa compilata di un pezzo, per i pannelli Rivedi (kind: prosa | latex; color: il colore del testo, «rrggbb»).
-    // Il file dell'immagine se c'è; vuoto se non compila o se la si sta facendo: allora snippetsReady quando è pronta.
-    Q_INVOKABLE QString snippet(const QString &text, const QString &kind, const QString &color);
-    // Lo stesso pezzo da leggere subito, in testo ricco: la matematica in simboli, il grassetto, gli elenchi.
-    Q_INVOKABLE QString snippetText(const QString &text, const QString &kind) const;
-    bool rendering() const { return m_snippetsRunning || !m_snippetQueue.isEmpty(); }
+    // L'ora dell'ultima modifica di un file (in millisecondi), per l'indirizzo di un'immagine che si rifà con lo stesso nome.
+    Q_INVOKABLE QString fileStamp(const QString &path) const;
     Q_INVOKABLE void say(const QString &text);         // un messaggio breve nella barra di stato
 
 signals:
@@ -428,7 +425,6 @@ signals:
     void planEdited(const QString &id);                // una modifica dell'utente al piano, già salvata
     void consoleChanged();
     void tagsChanged();
-    void snippetsReady();
     void styleProposed(const QString &name, const QVariantList &environments);
     void styleQuestions(const QString &name, const QVariantList &questions);
     void outlineReady(const QVariantList &topics);
@@ -509,9 +505,6 @@ private:
     QStringList m_converting;                          // le fonti della conversione in corso
     QVariantList m_tags;
     QString m_outcomeHead;                             // una riga in testa al prossimo esito di Converti
-    QList<QStringList> m_snippetQueue;                 // le rese chieste e non ancora fatte: testo, tipo, colore
-    bool m_snippetsRunning = false;
-    void renderSnippets();
     bool m_showTags = false;
     int m_tagsRun = 0;                                 // l'ultimo calcolo dei tag chiesto: quelli di prima si buttano
     void computeTags();

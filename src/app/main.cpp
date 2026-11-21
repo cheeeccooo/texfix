@@ -92,7 +92,7 @@ void runHandsFree(QQuickWindow *window, QStringList gestures, const QString &pho
             window->grabWindow().save(next.section(' ', 1));
             return;
         }
-        if ((Workspace::instance()->busy() && !Chat::instance()->waiting()) || Workspace::instance()->rendering())
+        if (Workspace::instance()->busy() && !Chat::instance()->waiting())
             return;
         if (!gestures.isEmpty()) {
             const QString gesture = gestures.takeFirst().trimmed();

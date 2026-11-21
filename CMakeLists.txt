@@ -18,7 +18,6 @@ qt_add_library(texfix_core STATIC
     src/core/Files.cpp
     src/core/Tools.cpp
     src/core/Snippets.cpp
-    src/core/SnippetPreview.cpp
     src/core/Project.cpp
     src/core/TexLog.cpp
     src/core/Compiler.cpp
@@ -73,6 +72,32 @@ qt_add_qml_module(texfix_style
     IMPORTS QtQuick.Controls.Basic
 )
 target_link_libraries(texfix_style PRIVATE Qt6::Quick Qt6::QuickControls2)
+
+# Le formule disegnate nel programma, come in Studify: MicroTeX (licenza MIT; i suoi font Computer Modern hanno le loro
+# licenze in res/fonts) e tinyxml2 (zlib), a versione fissa. Se ne compila solo il nucleo: il disegno con QPainter è in
+# src/app/Formulas.cpp. Le risorse (font e tabelle) vanno accanto al programma.
+include(FetchContent)
+FetchContent_Declare(microtex
+    URL https://github.com/NanoMichael/MicroTeX/archive/0e3707f6dafebb121d98b53c64364d16fefe481d.tar.gz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SOURCE_SUBDIR no-cmake-here) # il suo CMakeLists vuole tinyxml2 da pkg-config e compila gli esempi
+set(tinyxml2_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(tinyxml2
+    URL https://github.com/leethomason/tinyxml2/archive/refs/tags/10.0.0.tar.gz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+FetchContent_MakeAvailable(microtex tinyxml2)
+file(GLOB_RECURSE _microtex_sources CONFIGURE_DEPENDS
+    ${microtex_SOURCE_DIR}/src/atom/*.cpp ${microtex_SOURCE_DIR}/src/box/*.cpp ${microtex_SOURCE_DIR}/src/core/*.cpp
+    ${microtex_SOURCE_DIR}/src/fonts/*.cpp ${microtex_SOURCE_DIR}/src/utils/*.cpp ${microtex_SOURCE_DIR}/src/res/*.cpp)
+add_library(microtex STATIC ${_microtex_sources} ${microtex_SOURCE_DIR}/src/latex.cpp ${microtex_SOURCE_DIR}/src/render.cpp)
+set_target_properties(microtex PROPERTIES CXX_STANDARD 17 AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
+target_include_directories(microtex SYSTEM PUBLIC ${microtex_SOURCE_DIR}/src)
+target_link_libraries(microtex PRIVATE tinyxml2)
+if(MSVC)
+    target_compile_options(microtex PRIVATE /w)
+else()
+    target_compile_options(microtex PRIVATE -w)
+endif()
 
 # Il programma: una finestra sola in Qt Quick; i tipi C++ di src/app sono il suo modello.
 qt_add_executable(texfix MACOSX_BUNDLE
@@ -130,9 +155,21 @@ qt_add_qml_module(texfix
         src/app/LineGutter.h src/app/LineGutter.cpp
         src/app/PdfBackend.h src/app/PdfBackend.cpp
         src/app/Chat.h src/app/Chat.cpp
+        src/app/Formulas.h src/app/Formulas.cpp
+        src/app/LatexText.h src/app/LatexText.cpp
 )
 target_include_directories(texfix PRIVATE src src/app)
-target_link_libraries(texfix PRIVATE texfix_core texfix_styleplugin Qt6::Network Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::Pdf)
+target_link_libraries(texfix PRIVATE texfix_core texfix_styleplugin Qt6::Network Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::Pdf microtex)
+# le risorse di MicroTeX: nel pacchetto sul Mac (Contents/Resources/microtex), accanto al programma altrove; se mancano,
+# quelle scaricate
+target_compile_definitions(texfix PRIVATE TEXFIX_MICROTEX_RES="${microtex_SOURCE_DIR}/res")
+if(APPLE)
+    add_custom_command(TARGET texfix POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${microtex_SOURCE_DIR}/res $<TARGET_BUNDLE_CONTENT_DIR:texfix>/Resources/microtex)
+else()
+    add_custom_command(TARGET texfix POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${microtex_SOURCE_DIR}/res $<TARGET_FILE_DIR:texfix>/microtex)
+endif()
 set_target_properties(texfix PROPERTIES
     OUTPUT_NAME "Texfix"
     MACOSX_BUNDLE_BUNDLE_NAME "Texfix"
