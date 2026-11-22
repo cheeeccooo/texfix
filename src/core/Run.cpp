@@ -194,6 +194,8 @@ Result execute(const Project &project, const Settings &settings, const Style &st
 
     // un compito dell'agente
     std::atomic<bool> stopped{false};
+    QString halted;                                    // perché il lavoro si è fermato da sé (una fonte che non si apre)
+    QMutex haltMutex;
     auto runTask = [&](int index) {
         QJsonObject t;
         {
@@ -283,6 +285,18 @@ Result execute(const Project &project, const Settings &settings, const Style &st
             s["compiti"] = all;
         });
         site({{"chiave", key}, {"fase", "Fine"}, {"stato", r.ok ? "fatta" : "fallita"}, {"esito", r.text}, {"motivo", r.failure}});
+        if (!r.ok && r.text.startsWith(QLatin1String(worker::UNREADABLE), Qt::CaseInsensitive)) {
+            // una fonte che non si apre: niente lezioni scritte a metà delle fonti, il lavoro si ferma e lo dice
+            {
+                QMutexLocker lock(&haltMutex);
+                if (halted.isEmpty())
+                    halted = QStringLiteral("%1: %2 Il lavoro è fermo: sistema la fonte (o caricane una versione nuova) e premi «Riprendi».")
+                                 .arg(t.value("titolo").toString(), r.failure.endsWith('.') ? r.failure : r.failure + '.');
+            }
+            stopped = true;
+            if (control)
+                control->stop();
+        }
     };
     // i compiti, due alla volta e mai due sulla stessa lezione
     auto runTasks = [&](const QStringList &kinds) {
@@ -353,7 +367,7 @@ Result execute(const Project &project, const Settings &settings, const Style &st
 
     // l'esito
     out.stopped = stopped || out.converted.stopped || (control && (control->stopped() || control->pausedUntil().isValid()));
-    out.failure = out.converted.failure;
+    out.failure = halted.isEmpty() ? out.converted.failure : halted;
     out.cost = out.converted.cost;
     QStringList outcome;
     for (const QJsonValue &v : state.value("fatto").toArray())

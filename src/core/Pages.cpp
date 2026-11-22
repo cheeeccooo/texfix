@@ -168,7 +168,8 @@ bool Pages::unite(const QStringList &pdfs, const QString &target, const QString 
 {
     if (pdfs.isEmpty())
         return false;
-    if (pdfs.size() == 1 ? QFile::copy(pdfs.first(), target) : tools::run("pdfunite", pdfs + QStringList{target}, work, 120000).ok && QFileInfo::exists(target))
+    const bool locked = std::any_of(pdfs.begin(), pdfs.end(), encrypted);
+    if (!locked && (pdfs.size() == 1 ? QFile::copy(pdfs.first(), target) : tools::run("pdfunite", pdfs + QStringList{target}, work, 120000).ok && QFileInfo::exists(target)))
         return true;
     QFile::remove(target);
     constexpr int dpi = 200;
@@ -197,6 +198,13 @@ bool Pages::unite(const QStringList &pdfs, const QString &target, const QString 
         }
     }
     return painter.end() && QFileInfo(target).size() > 0;
+}
+
+bool Pages::encrypted(const QString &pdf)
+{
+    static const QRegularExpression yes(R"(^Encrypted:\s+yes)", QRegularExpression::MultilineOption);
+    const tools::Output r = tools::run("pdfinfo", {pdf}, QFileInfo(pdf).absolutePath(), 20000);
+    return yes.match(r.text).hasMatch() || r.text.contains("Incorrect password");
 }
 
 int Pages::size(const QString &source)

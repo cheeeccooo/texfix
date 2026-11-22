@@ -233,6 +233,17 @@ QString readable(const Project &project, const QString &file)
     static const QStringList documents{"docx", "doc", "odt", "rtf"}, images{"heic", "heif", "tif", "tiff"};
     const QFileInfo source(project.path(file));
     const QString ext = source.suffix().toLower();
+    if (ext == "pdf") {                                // protetto: l'agente non lo apre, legge una copia ridisegnata senza protezione
+        if (!Pages::encrypted(source.filePath()))
+            return {};
+        const QString copy = QStringLiteral("build/lavori/leggibili/%1").arg(source.fileName());
+        const QFileInfo made(project.path(copy));
+        if (made.exists() && made.lastModified() >= source.lastModified())
+            return copy;
+        QDir().mkpath(made.path());
+        QFile::remove(made.filePath());
+        return Pages::unite({source.filePath()}, made.filePath(), made.path()) ? copy : QString();
+    }
     if (!documents.contains(ext) && !images.contains(ext))
         return {};
     const QString copy = QStringLiteral("build/lavori/leggibili/%1.%2").arg(source.fileName(), documents.contains(ext) ? "md" : "png");

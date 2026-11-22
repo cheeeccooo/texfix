@@ -2714,6 +2714,43 @@ private slots:
         qunsetenv("TEXFIX_CLAUDE");
     }
 
+    // Un agente che non riesce ad aprire una fonte non ripiega sulle altre: dice «FONTE ILLEGGIBILE», il compito non riesce e
+    // il lavoro si ferma con il perché (si riprende dopo aver sistemato la fonte).
+    void runStopsOnUnreadableSource()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        files::write(p.path("src/src1.tex"), "\\section{Limiti}\n\\lezione{1}{01/10/2026}\n\nIl limite.\n");
+        files::write(p.path("fonti/coda/B.md"), "Un esempio di limite.\n");
+        const QJsonObject plan{{"titolo", "Aggiungi materiale"}, {"stato", "piano"}, {"tipo", "materiale"}, {"formato", "concetti"},
+                               {"file", QJsonArray{"fonti/coda/B.md"}},
+                               {"fonti", QJsonArray{QJsonObject{{"key", "B"}, {"name", "B"}, {"source", "fonti/coda/B.md"}, {"file", "B"}, {"pagine", false}}}},
+                               {"corso", QJsonArray{QJsonObject{{"key", "L1"}, {"name", "Lezione 1 · Limiti"}, {"source", "src/src1.tex"}}}},
+                               {"concetti", QJsonObject{{"B.1", QJsonObject{{"title", "Esempio"}, {"from", 1}, {"to", 1}}}}},
+                               {"destinazioni", QJsonArray{QJsonObject{{"into", "L1"}, {"concepts", QJsonArray{"B.1"}}, {"fare", true}, {"nota", ""}}}}};
+        QVERIFY(plans::save(p, "20261122-190000", plan));
+        auto line = [](const QJsonObject &o) { return QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)) + '\n'; };
+        files::write(dir.filePath("agente.json"), line({{"type", "system"}, {"subtype", "init"}, {"session_id", "s1"}})
+            + line({{"type", "result"}, {"result", "FONTE ILLEGGIBILE: B.md è protetto da password."}, {"total_cost_usd", 0.1}, {"session_id", "s1"}}));
+        files::write(dir.filePath("claude"), QString("#!/bin/sh\ncat > /dev/null\ncat '%1/agente.json'\n").arg(dir.path()));
+        QFile(dir.filePath("claude")).setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
+        JobControl control;
+        const run::Result r = run::execute(p, Settings::load(p), Style::classic(), "20261122-190000", &control);
+        qunsetenv("TEXFIX_CLAUDE");
+        QVERIFY(r.stopped);
+        QVERIFY2(r.failure.contains("Una fonte non si apre: B.md è protetto da password."), qPrintable(r.failure));
+        QVERIFY(r.failure.contains("«Riprendi»"));
+        const QJsonObject state = run::load(p, "20261122-190000");
+        QCOMPARE(state.value("stato").toString(), "fermato");
+        QCOMPARE(state.value("compiti").toArray()[0].toObject().value("stato").toString(), "fallita");
+        QCOMPARE(files::read(p.path("src/src1.tex")), "\\section{Limiti}\n\\lezione{1}{01/10/2026}\n\nIl limite.\n");   // niente scritto
+    }
+
     // «Avvia» è un lavoro solo: la conversione scrive la lezione nuova e, insieme, l'agente completa la lezione del corso
     // (senza chat). Il piano resta con l'esito; «Ferma» e la ripresa non rifanno ciò che è fatto; «Annulla tutto il
     // lavoro» riporta il progetto com'era e il piano da avviare.

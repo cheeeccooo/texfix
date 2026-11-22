@@ -22,7 +22,10 @@ struct Pages {
     static Pages read(const QString &source, const QString &dir, const QString &root = {});
     // Unisce dei PDF in uno (pdfunite). Se poppler non può (un PDF protetto: «Could not merge encrypted files») le pagine
     // si ridisegnano con QtPdf, a 200 punti per pollice, in un PDF nuovo: si legge uguale, il testo non si seleziona più.
+    // Un PDF protetto (cifrato, anche solo con la password del proprietario) va ridisegnato anche da solo: l'agente non lo apre.
     static bool unite(const QStringList &pdfs, const QString &target, const QString &work);
+    // Il PDF è cifrato (pdfinfo: «Encrypted: yes»): chi non è poppler (l'agente) di solito non lo apre.
+    static bool encrypted(const QString &pdf);
     // Quante pagine ha, senza renderla (per la stima del costo); per il testo le righe.
     static int size(const QString &source);
 };

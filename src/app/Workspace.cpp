@@ -2273,6 +2273,8 @@ void Workspace::runFinished(const run::Result &result)
         say(result.failure);
     } else if (result.stopped) {
         m_runState = m_closing ? QStringLiteral("interrotto") : QStringLiteral("fermato");
+        if (!m_closing && !result.failure.isEmpty())   // fermato da sé (una fonte che non si apre): il perché, in barra e in Attività
+            say(result.failure);
         if (m_closing) {                               // chiuso il programma: alla riapertura si riprende con un clic
             QJsonObject s = state;
             s["stato"] = "interrotto";

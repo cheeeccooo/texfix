@@ -5,6 +5,7 @@
 #include "core/Model.h"
 #include "core/Tools.h"
 
+#include <QRegularExpression>
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
@@ -210,6 +211,11 @@ Result run(const Project &project, const Settings &settings, const Style &style,
             control->pause(until, said);
             out.limited = true;
             return out;
+        }
+        if (!result.isEmpty() && !result.value("is_error").toBool() && text.startsWith(QLatin1String(UNREADABLE), Qt::CaseInsensitive)) {
+            out.text = text;
+            out.failure = QStringLiteral("Una fonte non si apre: %1").arg(text.mid(int(qstrlen(UNREADABLE))).remove(QRegularExpression(R"(^[\s:.\-–]+)")).trimmed());
+            break;
         }
         if (!result.isEmpty() && !result.value("is_error").toBool() && !text.isEmpty()) {
             out.ok = true;

@@ -17,6 +17,10 @@
 // continuando la stessa conversazione (session). «Ferma» chiude il processo.
 namespace tx::worker {
 
+// L'inizio dell'ultimo messaggio di un agente che non riesce ad aprire una fonte: il compito non è riuscito e il lavoro
+// si ferma (non si scrive una lezione con una fonte sola quando ne aveva due).
+inline constexpr const char *UNREADABLE = "FONTE ILLEGGIBILE";
+
 struct Result {
     bool ok = false;
     QString text;                          // l'esito, come l'ha scritto l'agente
