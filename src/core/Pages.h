@@ -20,6 +20,9 @@ struct Pages {
     // tabelle, formule e figure (in build/lavori/documenti/<impronta>/, i riferimenti relativi al progetto); senza, o
     // senza pandoc, solo il testo.
     static Pages read(const QString &source, const QString &dir, const QString &root = {});
+    // Unisce dei PDF in uno (pdfunite). Se poppler non può (un PDF protetto: «Could not merge encrypted files») le pagine
+    // si ridisegnano con QtPdf, a 200 punti per pollice, in un PDF nuovo: si legge uguale, il testo non si seleziona più.
+    static bool unite(const QStringList &pdfs, const QString &target, const QString &work);
     // Quante pagine ha, senza renderla (per la stima del costo); per il testo le righe.
     static int size(const QString &source);
 };

@@ -11,7 +11,7 @@ TxSheet {
     title: "Il progetto nuovo"
     wantedWidth: 620
     property string path
-    property bool byTopic: false
+    property bool byTopic: true                       // un progetto nuovo parte per argomento
     property string program                            // per argomento: il programma del corso, facoltativo
     property string profile: "Neutro"                  // un nome, «@agente», «@file:<percorso>»
     property string style: "default"
@@ -20,7 +20,7 @@ TxSheet {
     signal chosen(string path, string profile, bool byTopic, string program, string style)
     function ask(path) {
         root.path = path
-        byTopic = false
+        byTopic = true
         program = ""
         profiles = Workspace.profiles()
         styles = Workspace.styleLibrary()

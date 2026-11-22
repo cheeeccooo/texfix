@@ -86,7 +86,7 @@ void discard(const Project &project, const QString &id)
 
 bool hasInstructions(const QJsonObject &plan)
 {
-    if (!plan.value("commento").toString().trimmed().isEmpty())
+    if (!plan.value("commento").toString().trimmed().isEmpty() || !plan.value("nota_scaletta").toString().trimmed().isEmpty())
         return true;
     for (const QJsonValue &s : plan.value("sezioni").toArray())
         for (const QJsonValue &v : s.toObject().value("voci").toArray())

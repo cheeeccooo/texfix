@@ -1385,6 +1385,44 @@ private slots:
         QVERIFY(QFileInfo::exists(p.path("fonti/coda/x.xyz")));                         // resta in arrivo, con il suo perché
     }
 
+    // Una fonte in cui il modello non trova concetti (un PDF che esce bianco) resta in arrivo con il perché: le altre
+    // fanno la mappa e il piano lo stesso (prima un file solo fermava tutti, anche con «Riprova»).
+    void sortOneUnread()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        files::write(p.path("src/src1.tex"), "\\section{Limiti}\n\\lezione{1}{01/10/2026}\nuno\n");
+        files::write(p.path("fonti/coda/A.md"), "a1\na2\n");
+        files::write(p.path("fonti/coda/vuoto.md"), "niente\n");
+        auto answer = [](const QJsonObject &o) {
+            return QJsonDocument(QJsonObject{{"type", "result"}, {"result", QString::fromUtf8(QJsonDocument(o).toJson())}, {"total_cost_usd", 0.01}}).toJson(QJsonDocument::Compact) + '\n';
+        };
+        files::writeBytes(dir.filePath("concetti.json"), answer(QJsonObject{{"concepts", QJsonArray{QJsonObject{{"title", "Primo"}, {"what", "il primo"}, {"where", "s"}, {"from", 1}, {"to", 2}}}}}));
+        files::writeBytes(dir.filePath("vuoto.json"), answer(QJsonObject{{"concepts", QJsonArray()}}));
+        files::writeBytes(dir.filePath("mappa.json"), answer(QJsonObject{{"shared", QJsonArray()}, {"skip", QJsonArray()},
+                                                                          {"place", QJsonArray{QJsonObject{{"concepts", QJsonArray{"A.1"}}, {"into", "L1"}, {"why", "completa"}}}}}));
+        files::write(dir.filePath("claude"), QString("#!/bin/sh\nin=$(mktemp)\ncat > \"$in\"\nfor a; do case \"$a\" in *'List its CONCEPTS'*) "
+                                                     "if grep -q 'MATERIAL «vuoto»' \"$in\"; then cat '%1/vuoto.json'; else cat '%1/concetti.json'; fi; exit 0;; "
+                                                     "*'You compare the concepts'*) cat '%1/mappa.json'; exit 0;; esac; done\nexit 1\n").arg(dir.path()));
+        QFile(dir.filePath("claude")).setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
+        JobControl control;
+        const sort::Outcome o = sort::plan(p, Settings(), {"fonti/coda/A.md", "fonti/coda/vuoto.md"}, &control);
+        qunsetenv("TEXFIX_CLAUDE");
+        QCOMPARE(o.failure, QString());
+        QVERIFY(!o.plan.isEmpty());
+        QCOMPARE(o.unread.value("fonti/coda/vuoto.md"), "il modello non ha trovato concetti");
+        const QJsonObject plan = plans::load(p, o.plan);
+        QCOMPARE(plan.value("file").toArray(), QJsonArray{"fonti/coda/A.md"});          // il file illeggibile non è nel piano
+        QCOMPARE(plan.value("fonti").toArray().size(), 1);
+        QVERIFY(plan.value("illeggibili").toArray()[0].toString().startsWith("vuoto.md"));
+        QCOMPARE(plan.value("destinazioni").toArray().size(), 1);
+    }
+
     // Le pagine: i concetti di un PDF stanno su pagine, e «Avvia» ritaglia le pagine di ciascuno dove va.
     void sortConceptsPages()
     {

@@ -381,7 +381,7 @@ QString unite(const Project &project, const QStringList &sources, const QList<in
         pieces << pdf;
     }
     const QString target = files::freeName(project.path(QStringLiteral("fonti/coda/lezione %1.pdf").arg(number)));
-    if (!tools::run("pdfunite", pieces + QStringList{target}, work, 120000).ok || !QFileInfo::exists(target))
+    if (!Pages::unite(pieces, target, work))
         return {};
     for (const QString &source : sources)              // le fonti sono dentro il file unito: quelle in coda non servono più
         if (source.startsWith("fonti/coda/"))

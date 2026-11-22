@@ -258,6 +258,8 @@ public:
     Q_INVOKABLE void setPlanAnswer(const QString &id, int question, const QString &answer);
     Q_INVOKABLE void setPlanOrder(const QString &id, bool keep);   // l'ordine nuovo degli argomenti: tenerlo o no
     Q_INVOKABLE void setPlanComment(const QString &id, const QString &text);
+    // il piano dei concetti: che cosa cambiare della scaletta proposta (rifà la mappa, come un commento)
+    Q_INVOKABLE void setOutlineNote(const QString &id, const QString &text);
     // Il piano dei concetti: una voce di un elenco (comuni, destinazioni, versioni) e il suo campo (valore, fare, nota).
     Q_INVOKABLE void setPlanField(const QString &id, const QString &list, int index, const QString &key, const QVariant &value);
     Q_INVOKABLE bool planHasInstructions(const QString &id) const;
