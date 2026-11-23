@@ -2,6 +2,7 @@
 #include "core/Project.h"
 #include "core/TexLog.h"
 
+#include <QDateTime>
 #include <QElapsedTimer>
 #include <QObject>
 #include <QProcessEnvironment>
@@ -66,6 +67,7 @@ private:
     int m_goneTicks = 0;
     BuildResult m_result;
     QElapsedTimer m_timer;
+    QDateTime m_logBefore;                 // l'ora del log prima di partire: se non cambia, il log non è suo
     QByteArray m_output;
     qsizetype m_scanned = 0;
     int m_pass = 0, m_pages = 0, m_lastPage = 0, m_expectedPages = 0;

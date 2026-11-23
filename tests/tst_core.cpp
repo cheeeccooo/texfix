@@ -1259,17 +1259,21 @@ private slots:
         files::write(outside.filePath("corso/parte 2/b.md"), "b");
         files::write(outside.filePath("corso/parte 2/a.pdf"), "%PDF 2");
         files::write(outside.filePath("corso/parte 2/.vecchi/c.md"), "no");
+        QFile empty(outside.filePath("corso/vuoto.md"));
+        QVERIFY(empty.open(QIODevice::WriteOnly));
+        empty.close();
         int skipped = -1;
+        // il nome dice da quale sottocartella viene: due a.pdf restano distinguibili
         QCOMPARE(newlesson::toQueue(p, {outside.filePath("corso")}, {}, &skipped),
-                 (QStringList{"fonti/coda/a.pdf", "fonti/coda/a (2).pdf", "fonti/coda/b.md"}));
-        QCOMPARE(skipped, 1);                                                             // note.xyz
+                 (QStringList{"fonti/coda/a.pdf", "fonti/coda/parte 2 - a.pdf", "fonti/coda/parte 2 - b.md"}));
+        QCOMPARE(skipped, 2);                                                             // note.xyz e il file vuoto
 
         // il progetto stesso trascinato sul pannello: le lezioni e ciò che Texfix rifà non sono materiale, i documenti sì
         files::write(p.path("src/src9.tex"), "\\section{Una lezione}\n");
         files::write(p.path("build/main.log"), "log");
         files::write(p.path("docs/dispensa.pdf"), "%PDF");
         const QStringList again = newlesson::toQueue(p, {p.root()});
-        QVERIFY2(again.contains("fonti/coda/dispensa.pdf") && again.contains("fonti/coda/a.pdf"), qPrintable(again.join(", ")));
+        QVERIFY2(again.contains("fonti/coda/docs - dispensa.pdf") && again.contains("fonti/coda/a.pdf"), qPrintable(again.join(", ")));
         QVERIFY(std::none_of(again.begin(), again.end(), [](const QString &f) { return f.contains("src9") || f.contains("main.log"); }));
         QVERIFY(!QFileInfo::exists(p.path("fonti/coda/a (3).pdf")));                      // ciò che era già in arrivo resta com'è
 
@@ -2613,10 +2617,10 @@ private slots:
         QCOMPARE(Project::create(root, {{"appunti.pdf", "docs"}, {"docs/appunti.pdf", "docs"}, {"vecchi/uno.txt", "coda"}, {"vecchi/sotto/foto.png", "coda"},
                                         {"vecchi/conti.xlsx", "docs"}, {"tieni.md", "lascia"}}, &moved), QString());
         QCOMPARE(moved, (QStringList{"appunti.pdf → docs/appunti (2).pdf", "vecchi/conti.xlsx → docs/vecchi/conti.xlsx",
-                                     "vecchi/sotto/foto.png → fonti/coda/foto.png", "vecchi/uno.txt → fonti/coda/uno.txt"}));
+                                     "vecchi/sotto/foto.png → fonti/coda/vecchi - sotto - foto.png", "vecchi/uno.txt → fonti/coda/vecchi - uno.txt"}));
         QCOMPARE(files::read(root + "/docs/appunti.pdf"), "già qui");
         QCOMPARE(files::read(root + "/docs/appunti (2).pdf"), "a");
-        QCOMPARE(files::read(root + "/fonti/coda/uno.txt"), "1");
+        QCOMPARE(files::read(root + "/fonti/coda/vecchi - uno.txt"), "1");
         QVERIFY(!QFileInfo::exists(root + "/vecchi"));                                  // rimasta vuota: tolta
         QCOMPARE(files::read(root + "/tieni.md"), "t");
         QVERIFY(QFileInfo::exists(root + "/.nascosto"));
@@ -2723,6 +2727,21 @@ private slots:
             QVERIFY2(!again.hasErrors(), "il .aux troncato ha fermato la compilazione");
             QVERIFY(files::read(aux).size() >= whole.size());
         }
+
+        // build/ che non si può scrivere (come un disco pieno): non è «compilato pulito» con il log di prima
+#ifndef Q_OS_WIN
+        {
+            files::write(p.path("src/src1.tex"), files::read(p.path("src/src1.tex")) + "% cambiata\n");
+            QFile::setPermissions(p.path("build/lezioni"), QFile::ReadOwner | QFile::ExeOwner);
+            const BuildResult blocked = Compiler::compileSync(p, "src/src1.tex");
+            const BuildResult blockedToo = build(compiler, "src/src1.tex");
+            QFile::setPermissions(p.path("build/lezioni"), QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+            QVERIFY2(blocked.failure.contains("non ha potuto scrivere"), qPrintable(blocked.failure));
+            QVERIFY2(blockedToo.failure.contains("non ha potuto scrivere"), qPrintable(blockedToo.failure));
+            r = build(compiler, "src/src1.tex");
+            QVERIFY2(r.failure.isEmpty(), qPrintable(r.failure));
+        }
+#endif
 
         // il salto: dalla riga del teorema alla pagina della lezione, e da quel punto di nuovo alla lezione
         const synctex::Spot there = synctex::toPdf(root, r.pdf, "src/src1.tex", 3);

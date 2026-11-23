@@ -4,6 +4,7 @@
 #include "core/Job.h"
 #include "core/Tools.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -14,6 +15,26 @@
 #include <optional>
 
 using RE = QRegularExpression;
+
+namespace {
+// latexmk è finito male senza riscrivere il log: non ha potuto scrivere in build/ (o non ha trovato il documento)
+constexpr const char *UNWRITTEN = "La compilazione non ha potuto scrivere in build/: la cartella del progetto non si può scrivere, "
+                                  "o il disco è pieno. Il PDF e gli avvisi sono quelli di prima.";
+QDateTime stamp(const QString &log) { return QFileInfo(log).lastModified(); }   // invalida se non c'è
+// latexmk è uscito con un errore e il log non è cambiato: o non ha potuto scrivere (permessi, disco pieno) o non ha
+// voluto rifare una compilazione già fallita con gli stessi sorgenti. Lo dice un byte scritto accanto al log.
+bool unwritable(const QString &log, const QDateTime &before)
+{
+    const QFileInfo info(log);
+    if (info.exists() && info.lastModified() != before)
+        return false;
+    QFile probe(info.absolutePath() + "/.prova-scrittura");
+    const bool ok = probe.open(QIODevice::WriteOnly) && probe.write("x", 1) == 1 && probe.flush();
+    probe.close();
+    probe.remove();
+    return !ok;
+}
+}
 
 namespace tx {
 
@@ -196,6 +217,7 @@ void Compiler::start(const QString &lesson)
     m_result.pdf = pdfOf(m_project, lesson);
     m_retried = false;
     m_timer.start();
+    m_logBefore = stamp(base() + ".log");
     if (!lesson.isEmpty()) {
         QString error;
         const QString main = reducedMain(m_project, lesson, &error);
@@ -301,6 +323,8 @@ void Compiler::finish()
     m_result.issues = texlog::parse(log.isEmpty() ? QString::fromUtf8(m_output) : log);
     if (log.isEmpty() && !QFileInfo::exists(m_result.pdf))
         m_result.failure = QStringLiteral("La compilazione non è partita.");
+    else if (m_process->exitStatus() == QProcess::NormalExit && m_process->exitCode() != 0 && unwritable(base() + ".log", m_logBefore))
+        m_result.failure = QString::fromUtf8(UNWRITTEN);   // il log è quello di prima: dirlo pulito sarebbe falso
     m_result.ms = m_timer.elapsed();
     emit finished(m_result);
 }
@@ -354,6 +378,8 @@ BuildResult Compiler::compileSync(const Project &project, const QString &lesson,
     }
     QElapsedTimer timer;
     timer.start();
+    const QDateTime logBefore = stamp(base + ".log");
+    int exitCode = 0;
     // due volte al più: un .aux troncato (una compilazione interrotta a metà) si butta e si ricompila, una volta
     for (int attempt = 0; attempt < 2; ++attempt) {
         QProcess process;
@@ -380,6 +406,7 @@ BuildResult Compiler::compileSync(const Project &project, const QString &lesson,
                 break;
             }
         }
+        exitCode = process.exitStatus() == QProcess::NormalExit ? process.exitCode() : 0;
         if (control) {
             control->untrack(process.processId());
             control->check();
@@ -390,6 +417,8 @@ BuildResult Compiler::compileSync(const Project &project, const QString &lesson,
             QFile::remove(base + QLatin1String(ext));
     }
     result.issues = texlog::parse(files::read(base + ".log"));
+    if (exitCode != 0 && unwritable(base + ".log", logBefore))
+        result.failure = QString::fromUtf8(UNWRITTEN);
     result.ms = timer.elapsed();
     if (step)
         step->done(summary(result), !result.hasErrors());

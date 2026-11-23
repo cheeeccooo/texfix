@@ -74,7 +74,8 @@ Rectangle {
             }
             Item { Layout.fillWidth: true }
             TxButton {
-                visible: Workspace.issues.length > 0
+                // solo per gli avvisi delle lezioni: una compilazione che non è partita non si risolve con il modello
+                visible: Workspace.issues.some(i => i.file !== "")
                 text: "Risolvi tutto"
                 hint: "Sistema errori e righe fuori misura delle lezioni"
                 enabled: !Workspace.busy
