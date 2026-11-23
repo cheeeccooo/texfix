@@ -361,6 +361,8 @@ ApplicationWindow {
                 const a = argument.split(" ")
                 const target = a.slice(0, -1).join(" ")
                 profileSheet.place(target.endsWith("/") ? { folder: target.slice(0, -1) } : { file: target }, a[a.length - 1])
+            } else if (name === "inizio-organizza") {         // nel foglio dell'inizio: data | argomento
+                profileSheet.organization = argument
             } else if (name === "crea-progetto") {
                 profileSheet.create()
             } else if (name === "profilo-usa") {

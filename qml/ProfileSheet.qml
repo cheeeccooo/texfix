@@ -13,7 +13,9 @@ TxSheet {
     title: root.files.length > 0 ? "La cartella diventa un progetto" : "Il progetto nuovo"
     wantedWidth: 620
     property string path
-    property bool byTopic: true                       // un progetto nuovo parte per argomento
+    // «data» o «argomento»: niente di scelto in partenza, il progetto si crea quando l'utente ha scelto
+    property string organization: ""
+    readonly property bool byTopic: organization === "argomento"
     property string program                            // per argomento: il programma del corso, facoltativo
     property string profile: "Neutro"                  // un nome, «@agente», «@file:<percorso>»
     property string style: "default"
@@ -26,7 +28,7 @@ TxSheet {
     signal chosen(string path, string profile, bool byTopic, string program, string style, var placement)
     function ask(path) {
         root.path = path
-        byTopic = true
+        organization = ""
         program = ""
         profiles = Workspace.profiles()
         styles = Workspace.styleLibrary()
@@ -60,8 +62,8 @@ TxSheet {
     TxSegmented {
         Layout.fillWidth: true
         choices: [{ value: "data", label: "Per data" }, { value: "argomento", label: "Per argomento" }]
-        value: root.byTopic ? "argomento" : "data"
-        onChosen: value => root.byTopic = value === "argomento"
+        value: root.organization
+        onChosen: value => root.organization = value
     }
     TxLabel {
         Layout.fillWidth: true
@@ -69,7 +71,8 @@ TxSheet {
         elide: Text.ElideNone
         color: Theme.textMuted
         font.pixelSize: Theme.smallSize
-        text: root.byTopic ? "Un libro, una dispensa, un corso senza calendario: il materiale va negli argomenti, nell'ordine più logico, e ogni pezzo ricorda da dove viene."
+        text: root.organization === "" ? "Per data: le lezioni di un corso, in ordine di calendario. Per argomento: un libro, una dispensa, un corso senza calendario, nell'ordine più logico. Si cambia anche dopo, dalle Impostazioni."
+              : root.byTopic ? "Un libro, una dispensa, un corso senza calendario: il materiale va negli argomenti, nell'ordine più logico, e ogni pezzo ricorda da dove viene."
                            : "Le lezioni di un corso, in ordine di calendario. Ciò che non ha data va dove lo mette la logica del corso."
     }
     RowLayout {                                        // per argomento: il programma del corso, se c'è
@@ -145,6 +148,8 @@ TxSheet {
         return inside.every(v => v === inside[0]) ? inside[0] : ""
     }
     function create() {
+        if (root.organization === "")
+            return
         root.close()
         root.chosen(root.path, root.profile, root.byTopic, root.program, root.style, root.placement)
     }
@@ -235,6 +240,12 @@ TxSheet {
     }
     buttons: [
         TxButton { text: "Annulla"; onClicked: root.close() },
-        TxButton { text: "Crea il progetto"; primary: true; onClicked: root.create() }
+        TxButton {
+            text: "Crea il progetto"
+            primary: true
+            enabled: root.organization !== ""
+            hint: enabled ? "" : "Scegli prima come si organizza: per data o per argomento"
+            onClicked: root.create()
+        }
     ]
 }
