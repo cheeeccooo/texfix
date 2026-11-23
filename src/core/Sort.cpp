@@ -683,6 +683,14 @@ Estimate estimate(const Project &project, const QJsonObject &plan, const QString
         touched.insert(version.value("file").toString());
     }
     e.agent += AGENT_BASE * touched.size();
+    if (plan.value("formato").toString() != "concetti")   // un piano dell'agente: un compito per sezione con voci da fare
+        for (const QJsonValue &s : plan.value("sezioni").toArray()) {
+            int entries = 0;
+            for (const QJsonValue &v : s.toObject().value("voci").toArray())
+                entries += v.toObject().value("fare").toBool() ? 1 : 0;
+            if (entries > 0)
+                e.agent += AGENT_BASE + PAGE * entries;
+        }
     const QJsonObject correction = learned().value(quality.isEmpty() ? QStringLiteral("normale") : quality).toObject();
     e.lessons *= factor * correction.value("lessons").toDouble(1.0);
     e.agent *= factor * correction.value("agent").toDouble(1.0);

@@ -34,7 +34,7 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
 // che mescolano pagine e testi sono compiti dell'agente del lavoro (core/Worker), uno per lezione: le aggiunte alla
 // stessa lezione sono un compito solo. Le fonti smistate vanno fra le usate.
 struct Task {
-    QString kind;                                      // integra | versione | fondi
+    QString kind;                                      // integra | versione | fondi | piano (una sezione di un piano dell'agente)
     QString lesson;                                    // la lezione che tocca, o quella nuova che scrive
     QString title;                                     // per chi guarda: «Aggiunte alla lezione 3»
     QStringList sources;                               // i file in arrivo che usa (relativi alla radice)

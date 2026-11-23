@@ -21,16 +21,16 @@ Rectangle {
                                                         : Workspace.pausedUntil !== "" ? "limite di utilizzo raggiunto: finisco ciò che è in corso e mi fermo"
                                                         : Workspace.offline ? "manca la connessione: aspetto che torni"
                                                         : Workspace.jobLabel + (Workspace.usage.runsOut !== undefined ? " · a questo ritmo il limite di Claude arriva " + Workspace.usage.runsOut : ""),
-                       progress: run.id && Workspace.jobTitle === "Aggiungi materiale" ? run.progress : Workspace.jobProgress, state: Workspace.pausedUntil !== "" || Workspace.offline ? "wait" : "run", stop: true,
-                       open: run.id && Workspace.jobTitle === "Aggiungi materiale" ? "lavoro:" + run.id : "" })
+                       progress: run.id && Workspace.jobTitle === run.title ? run.progress : Workspace.jobProgress, state: Workspace.pausedUntil !== "" || Workspace.offline ? "wait" : "run", stop: true,
+                       open: run.id && Workspace.jobTitle === run.title ? "lavoro:" + run.id : "" })
         if (Chat.running)
             out.push({ title: "Agente" + (Chat.title !== "" ? ": " + Chat.title : ""), detail: Chat.waiting ? "aspetta la tua conferma" : "sta lavorando", progress: -1, state: "run", agent: true })
         if (run.id && !Workspace.jobRunning && run.state !== "finito")      // il lavoro di «Avvia» fermato o interrotto
-            out.push({ title: "Aggiungi materiale", detail: (run.state === "fermato" ? (run.connection ? "in pausa perché mancava la connessione" : run.until !== "" ? "in pausa per il limite di utilizzo" : "in pausa") : "interrotto")
+            out.push({ title: run.title, detail: (run.state === "fermato" ? (run.connection ? "in pausa perché mancava la connessione" : run.until !== "" ? "in pausa per il limite di utilizzo" : "in pausa") : "interrotto")
                                + (run.until !== "" && !run.untilPassed && !run.connection ? ": si può riprendere " + run.until : ": riprende senza rifare ciò che è già fatto"),
                        progress: -1, state: "wait", resume: true, open: "lavoro:" + run.id })
         else if (run.id && run.state === "finito")
-            out.push({ title: "Aggiungi materiale", detail: "finito: l'esito è da leggere", progress: -1, state: "done", open: "lavoro:" + run.id })
+            out.push({ title: run.title, detail: "finito: l'esito è da leggere", progress: -1, state: "done", open: "lavoro:" + run.id })
         else if (Workspace.resumable)
             out.push({ title: "Scrittura delle lezioni interrotta", detail: "riprende senza rifare ciò che è già fatto", progress: -1, state: "wait", resume: true })
         // ciò che aspetta il limite di Claude: riparte da sé quando la finestra si azzera

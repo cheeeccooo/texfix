@@ -23,6 +23,7 @@
 #include "core/StyleSwitch.h"
 #include "core/SyncTex.h"
 #include "core/Usage.h"
+#include "core/Worker.h"
 
 #include <QCoreApplication>
 #include <QClipboard>
@@ -84,6 +85,7 @@ Workspace::Workspace()
     connect(this, &Workspace::jobChanged, this, &Workspace::busyChanged);
     connect(this, &Workspace::busyChanged, this, &Workspace::nextSort, Qt::QueuedConnection);   // prima il materiale che aspetta
     connect(this, &Workspace::busyChanged, this, &Workspace::nextLater, Qt::QueuedConnection);
+    connect(this, &Workspace::busyChanged, this, &Workspace::nextAgentAction, Qt::QueuedConnection);   // ciò che ha avviato l'agente, uno alla volta
     m_runTimer.setSingleShot(true);
     m_runTimer.setInterval(250);
     connect(&m_runTimer, &QTimer::timeout, this, [this] {
@@ -1969,10 +1971,34 @@ void Workspace::decideMove(const QString &lesson, const QString &block, const QS
     // l'ordine conta: se la lezione è cambiata, le mosse non ancora decise che vengono dopo si ricalcolano
     if (redo && (state == "risolta" || files::read(m_project.path(lesson)) != textBefore))
         redoFollowing(lesson, block, state == "risolta");
-    if (state == "agente")                             // se ne occupa l'agente, nella chat
-        emit agentAsked(QStringLiteral("Nella lezione %1, al blocco %2, c'è un problema di impaginazione: %3\nSistemalo toccando il meno possibile "
-                                       "(accorciare, spostare, cambiare la misura di una figura, spezzare in un punto migliore), poi compila la lezione "
-                                       "e controlla com'è venuta. Non cambiare il contenuto.").arg(lesson, block, what), QStringLiteral("Impaginazione di %1").arg(QFileInfo(lesson).completeBaseName()));
+    if (state == "agente")                             // se ne occupa un agente di Texfix, come un lavoro (non nella chat)
+        layoutToAgent(lesson, block, what);
+}
+
+void Workspace::layoutToAgent(const QString &lesson, const QString &block, const QString &what)
+{
+    if (busy())
+        return say(QStringLiteral("C'è già un lavoro in corso: la mossa resta all'agente, rimandala quando ha finito."));
+    const QString title = QStringLiteral("Impaginazione di %1 all'agente").arg(QFileInfo(lesson).completeBaseName());
+    if (limited(title, [this, lesson, block, what] { layoutToAgent(lesson, block, what); }, "impagina-agente:" + lesson + block))
+        return;
+    const QString task = QStringLiteral("Nella lezione %1, al blocco %2, c'è un problema di impaginazione: %3\nSistemalo toccando il meno possibile "
+                                        "(accorciare, spostare, cambiare la misura di una figura, spezzare in un punto migliore), poi compila la lezione "
+                                        "finché è pulita. Non cambiare il contenuto e non toccare altre lezioni.").arg(lesson, block, what);
+    checkpoint(QStringLiteral("Modifiche a mano"));
+    startJob(title, [this, lesson, task, title, project = m_project, settings = m_settings, style = m_style](JobControl *control) {
+        const worker::Result r = worker::run(project, settings, style, task, title, control);
+        return std::function<void()>([this, r, lesson, title] {
+            checkpoint(title);
+            refreshTree();
+            emit filesChanged();
+            say(r.ok ? QStringLiteral("%1: fatto. %2").arg(title, r.text.section('\n', 0, 0))
+                     : r.paused || r.limited ? QStringLiteral("%1: fermato.").arg(title)
+                     : QStringLiteral("%1: non riuscito (%2).").arg(title, r.failure));
+            if (r.ok)
+                compileFile(lesson);
+        });
+    });
 }
 
 void Workspace::setAgentRunning(bool running)
@@ -1980,6 +2006,11 @@ void Workspace::setAgentRunning(bool running)
     if (m_agentRunning == running)
         return;
     m_agentRunning = running;
+    if (running) {
+        m_turnJobs.clear();
+        for (const QVariant &job : std::as_const(m_jobs))
+            m_turnJobs.insert(job.toMap().value("id").toString(), job.toMap().value("state").toString());
+    }
     emit busyChanged();
 }
 
@@ -1987,10 +2018,9 @@ void Workspace::agentTurnDone()
 {
     if (!hasProject())
         return;
-    // un piano o un esito consegnato in questo turno si apre da sé
-    QHash<QString, QString> before;
-    for (const QVariant &job : std::as_const(m_jobs))
-        before.insert(job.toMap().value("id").toString(), job.toMap().value("state").toString());
+    // un piano consegnato in questo turno si apre da sé: rispetto ai lavori di quando l'agente ha cominciato (l'albero si
+    // rilegge anche durante il turno)
+    const QHash<QString, QString> before = m_turnJobs;
     checkpoint(QStringLiteral("Agente"));
     styleFileChanged();                                // se l'agente ha toccato lo stile, la descrizione lo segue
     loadSettings();
@@ -2000,6 +2030,66 @@ void Workspace::agentTurnDone()
         const QVariantMap now = job.toMap();
         if (before.value(now.value("id").toString()) != now.value("state").toString() && now.value("state") != "in_corso")
             emit planReady(now.value("id").toString());
+    }
+    QTimer::singleShot(0, this, &Workspace::nextAgentAction);   // ciò che l'agente ha avviato parte adesso
+}
+
+void Workspace::agentOpen(const QJsonObject &arguments)
+{
+    const QString where = arguments.value("dove").toString(), lesson = arguments.value("lezione").toString();
+    if (where == "impostazioni")
+        return emit settingsAsked();
+    const QString target = where == "lezione" ? lesson
+                         : where.startsWith("rivedi_") ? "rivedi:" + where.mid(7)
+                         : where == "piano" ? "piano:" + arguments.value("lavoro").toString()
+                         : where == "lavoro" ? "lavoro:" + arguments.value("lavoro").toString()
+                         : where == "profilo" ? QStringLiteral("profilo:") : QString();
+    if (!target.isEmpty())
+        emit openAsked(target, where == "lezione" ? QString() : lesson, arguments.value("riga").toInt());
+}
+
+void Workspace::queueAgentAction(const QJsonObject &arguments, const QString &title)
+{
+    m_agentActions.append({arguments, title});
+    if (!m_agentRunning)
+        QTimer::singleShot(0, this, &Workspace::nextAgentAction);
+}
+
+void Workspace::nextAgentAction()
+{
+    if (!hasProject() || m_agentActions.isEmpty() || busy())
+        return;
+    const auto [arguments, title] = m_agentActions.takeFirst();
+    say(QStringLiteral("Avviato dall'agente: %1.").arg(title));
+    agentAction(arguments);
+    if (!m_agentActions.isEmpty() && !busy())          // non è partito niente (o ha già finito): la prossima
+        QTimer::singleShot(0, this, &Workspace::nextAgentAction);
+}
+
+void Workspace::agentAction(const QJsonObject &arguments)
+{
+    const QString action = arguments.value("azione").toString(), lesson = arguments.value("lezione").toString();
+    if (action == "compila") {
+        compileDocument();
+    } else if (action == "smista") {
+        QStringList waiting;
+        for (const QVariant &q : std::as_const(m_queue))
+            if (q.toMap().value("state") == "smistare" || q.toMap().value("state") == "errore")
+                waiting << q.toMap().value("file").toString();
+        if (waiting.isEmpty())
+            say(QStringLiteral("Non c'è niente da smistare."));
+        else
+            sortMaterial(waiting);
+    } else if (action == "risolvi_errori") {
+        fixAll(lesson);
+    } else if (action == "impagina") {
+        paginateLesson(lesson);
+    } else if (action == "decidi_dubbi") {
+        decideDoubts(lesson, {});
+    } else if (action == "ridisegna_figura") {
+        redoFigure(arguments.value("figura").toString(), QStringLiteral("ridisegna"), arguments.value("commento").toString());
+    } else if (action == "proponi_argomenti") {
+        proposeTopics();
     }
 }
 
@@ -2123,15 +2213,9 @@ bool Workspace::planHasInstructions(const QString &id) const
     return plans::hasInstructions(plan) || (plan.value("formato").toString() == "concetti" && plan.value("stato").toString() == "piano" && plan.value("programma").toString() != m_settings.program);
 }
 
-QString Workspace::planMessage(const QString &id, const QString &how)
+QString Workspace::planRevision(const QString &id)
 {
-    QJsonObject plan = plans::load(m_project, id);
-    if (how != "avvia")
-        return plans::reviseMessage(id, plan);
-    plan["stato"] = "in_corso";
-    plans::save(m_project, id, plan);
-    refreshTree();
-    return plans::startMessage(id, plan);
+    return plans::reviseMessage(id, plans::load(m_project, id));
 }
 
 void Workspace::discardPlan(const QString &id)
@@ -2298,7 +2382,7 @@ void Workspace::startSortPlan(const QString &id)
 {
     if (busy())
         return say(QStringLiteral("C'è già un lavoro in corso."));
-    if (limited(QStringLiteral("Aggiungi materiale"), [this, id] { startSortPlan(id); }))
+    if (limited(runTitle(id), [this, id] { startSortPlan(id); }))
         return;
     checkpoint(QStringLiteral("Modifiche a mano"));
     // un lavoro nuovo: la finestra comincia vuota; quello di prima, se c'era e non era archiviato, va fra gli esiti
@@ -2315,7 +2399,14 @@ void Workspace::startSortPlan(const QString &id)
     m_runStepAt.clear();
     m_runOutcome.clear();
     m_runWorked = 0;
-    m_runEstimate = plans::load(m_project, id).value("stima").toDouble();
+    QJsonObject plan = plans::load(m_project, id);
+    if (plan.value("formato").toString() != "concetti") {     // un piano dell'agente: la stima dei suoi compiti
+        const sort::Estimate guess = sort::estimate(m_project, plan, m_settings.quality);
+        plan["stima"] = guess.total();
+        plan["stima_parti"] = QJsonObject{{"lezioni", 0}, {"agente", guess.agent}};
+        plans::save(m_project, id, plan);
+    }
+    m_runEstimate = plan.value("stima").toDouble();
     startRun(id);
 }
 
@@ -2328,7 +2419,7 @@ void Workspace::startRun(const QString &id)
     m_runOutcome.clear();
     emit runChanged();
     emit runOpened(id);
-    startJob(QStringLiteral("Aggiungi materiale"), [this, id, project = m_project, settings = m_settings, style = m_style, last = lastRunId()](JobControl *control) {
+    startJob(runTitle(id), [this, id, project = m_project, settings = m_settings, style = m_style, last = lastRunId()](JobControl *control) {
         control->callsAfter(last);                    // ripreso: le chiamate e i passi nuovi non prendono il posto dei vecchi
         const run::Result result = run::execute(project, settings, style, id, control);
         return std::function<void()>([this, result] { runFinished(result); });
@@ -2338,7 +2429,7 @@ void Workspace::startRun(const QString &id)
 
 void Workspace::runFinished(const run::Result &result)
 {
-    checkpoint(QStringLiteral("Aggiungi materiale"));  // tutto il lavoro è un passo solo
+    checkpoint(runTitle(m_runId));                     // tutto il lavoro è un passo solo
     loadSettings();                                    // i pacchetti chiesti dalle figure
     const QJsonObject state = run::load(m_project, m_runId);
     if (m_runStarted > 0)
@@ -2403,9 +2494,11 @@ void Workspace::runFinished(const run::Result &result)
         m_runOutcome = QVariantMap{{"lines", lines}, {"cost", italian.toString(state.value("costo").toDouble(), 'f', 2)},
                                    {"minutes", italian.toString(result.minutes, 'f', 1)}};
         if (!m_closing)
-            say(result.stopped ? QStringLiteral("Aggiungi materiale: in pausa. «Riprendi» continua da lì.")
-                               : QStringLiteral("Aggiungi materiale: %1, %2.").arg(plural(result.converted.written(), "lezione scritta", "lezioni scritte"),
-                                                                                    plural(result.tasksDone, "lezione completata dall'agente", "lezioni completate dall'agente")));
+            say(result.stopped ? QStringLiteral("%1: in pausa. «Riprendi» continua da lì.").arg(runTitle(m_runId))
+                : plans::load(m_project, m_runId).value("formato").toString() != "concetti"
+                    ? QStringLiteral("%1: %2.").arg(runTitle(m_runId), plural(result.tasksDone, "parte fatta", "parti fatte"))
+                    : QStringLiteral("Aggiungi materiale: %1, %2.").arg(plural(result.converted.written(), "lezione scritta", "lezioni scritte"),
+                                                                       plural(result.tasksDone, "lezione completata dall'agente", "lezioni completate dall'agente")));
     }
     saveRunView();
     emit runChanged();
@@ -2415,13 +2508,20 @@ void Workspace::runFinished(const run::Result &result)
         m_compiler.compileDocument();                  // dà lo stato alle lezioni nuove e cambiate
 }
 
+// Il nome del lavoro di «Avvia»: Aggiungi materiale per il piano dei concetti, il titolo per un piano dell'agente.
+QString Workspace::runTitle(const QString &id) const
+{
+    const QJsonObject plan = plans::load(m_project, id);
+    return plan.isEmpty() || plan.value("formato").toString() == "concetti" ? QStringLiteral("Aggiungi materiale") : plan.value("titolo").toString();
+}
+
 void Workspace::resumeRun()
 {
     if (m_runId.isEmpty() || (m_runState != "fermato" && m_runState != "interrotto"))
         return;
     if (busy())
         return say(QStringLiteral("C'è già un lavoro in corso."));
-    if (limited(QStringLiteral("Aggiungi materiale"), [this] { resumeRun(); }))
+    if (limited(runTitle(m_runId), [this] { resumeRun(); }))
         return;
     checkpoint(QStringLiteral("Modifiche a mano"));
     startRun(m_runId);
@@ -2437,7 +2537,7 @@ void Workspace::undoRun()
     const QStringList changed = run::undo(m_project, id, &error);
     if (!error.isEmpty())
         return say(error);
-    checkpoint(QStringLiteral("Aggiungi materiale annullato"));
+    checkpoint(runTitle(id) + QStringLiteral(" annullato"));
     m_runId.clear();
     m_runState.clear();
     emit runChanged();
@@ -2933,7 +3033,7 @@ QVariantMap Workspace::run() const
     if (state == "in_corso" && m_pausedUntil.isValid())
         state = QStringLiteral("in_pausa");
     const QDateTime until = state == "in_pausa" ? m_pausedUntil : m_runUntil;
-    return QVariantMap{{"id", m_runId}, {"title", QStringLiteral("Aggiungi materiale")}, {"state", state},
+    return QVariantMap{{"id", m_runId}, {"title", runTitle(m_runId)}, {"state", state},
                        {"until", until.isValid() ? Model::when(until) : QString()},
                        {"untilPassed", until.isValid() && until <= QDateTime::currentDateTime()},
                        {"connection", state == "in_pausa" ? m_pauseConnection : m_runConnection}, {"offline", m_offline && state == "in_corso"},
@@ -3338,7 +3438,7 @@ void Workspace::recheckFigures()
                                    "figure doppie o nel posto sbagliato, didascalie sbagliate.\n"
                                    "- Consegna un piano con consegna_piano: una sezione per lezione, una voce per figura da aggiungere, rifare o "
                                    "spostare, con la fonte e la pagina. Se è tutto a posto dillo e non consegnare niente.\n"
-                                   "- Quando il piano è approvato fai le modifiche, compila le lezioni toccate finché sono pulite e consegna l'esito."),
+                                   "- Non cambiare niente tu: quando l'utente preme «Avvia», ogni sezione del piano la esegue un agente di Texfix."),
                     QStringLiteral("Figure: ricontrollo con le fonti"));
 }
 

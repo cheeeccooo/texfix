@@ -1136,7 +1136,7 @@ private slots:
         QCOMPARE(ask({{"id", 1}, {"method", "initialize"}, {"params", QJsonObject{{"protocolVersion", "2025-06-18"}}}})
                      .value("result").toObject().value("protocolVersion").toString(), "2025-06-18");
         const QJsonArray list = ask({{"id", 2}, {"method", "tools/list"}}).value("result").toObject().value("tools").toArray();
-        QCOMPARE(list.size(), 12);                                                      // con proponi_profilo, proponi_stile e aggiungi_materiale
+        QCOMPARE(list.size(), 14);                                                      // con avvisi, apri, avvia, aggiungi_materiale, le proposte
         QCOMPARE(list[0].toObject().value("name").toString(), "stato_progetto");
         QVERIFY(ask({{"id", 3}, {"method", "boh"}}).contains("error"));
 
@@ -1153,6 +1153,37 @@ private slots:
             QVERIFY(built.value("content").toArray().first().toObject().value("text").toString().startsWith("- errore, src/src1.tex riga 3: Undefined control sequence"));
         }
         QVERIFY(agent::systemPrompt(s, style).contains("## Come si scrive"));
+        QVERIFY(agent::systemPrompt(s, style).contains("non scrivi né cambi file"));
+
+        // la chat: solo i suoi strumenti, niente che scriva o compili
+        auto chat = [&](const QJsonObject &request) {
+            return QJsonDocument::fromJson(agent::handle(p, style, QJsonDocument(request).toJson(QJsonDocument::Compact), nullptr, agent::CHAT_TOOLS)).object();
+        };
+        QCOMPARE(chat({{"id", 4}, {"method", "tools/list"}}).value("result").toObject().value("tools").toArray().size(), agent::CHAT_TOOLS.size());
+        QVERIFY(chat({{"id", 5}, {"method", "tools/call"}, {"params", QJsonObject{{"name", "compila_lezione"}, {"arguments", QJsonObject{{"lezione", "src/src1.tex"}}}}}})
+                    .value("result").toObject().value("isError").toBool());
+        // gli avvisi dell'ultima compilazione, senza compilare
+        QVERIFY(callTool("avvisi", {}).value("content").toArray().first().toObject().value("text").toString().contains("non è ancora stato compilato"));
+        if (hasLatexmk()) {                                                             // la lezione compilata da sola
+            const QString warned = callTool("avvisi", {{"lezione", "src/src1.tex"}}).value("content").toArray().first().toObject().value("text").toString();
+            QVERIFY2(warned.contains("Undefined control sequence"), qPrintable(warned));
+        }
+        // apri e avvia: li esegue la finestra, qui si controllano
+        QString title;
+        bool costly = true;
+        QCOMPARE(agent::checkAction(p, "apri", {{"dove", "rivedi_dubbi"}, {"lezione", "src/src1.tex"}}, &title), QString());
+        QCOMPARE(title, "Rivedi dubbi, sulla lezione src1");
+        QVERIFY(!agent::checkAction(p, "apri", {{"dove", "lezione"}, {"lezione", "src/manca.tex"}}).isEmpty());
+        QVERIFY(!agent::checkAction(p, "apri", {{"dove", "piano"}, {"lavoro", "nessuno"}}).isEmpty());
+        QCOMPARE(agent::checkAction(p, "avvia", {{"azione", "compila"}}, &title, &costly), QString());
+        QVERIFY(!costly);
+        QCOMPARE(agent::checkAction(p, "avvia", {{"azione", "risolvi_errori"}, {"lezione", "src/src1.tex"}}, &title, &costly), QString());
+        QVERIFY(costly);
+        QVERIFY(agent::checkAction(p, "avvia", {{"azione", "impagina"}}).contains("Manca la lezione"));
+        QVERIFY(agent::checkAction(p, "avvia", {{"azione", "decidi_dubbi"}, {"lezione", "src/src1.tex"}}).contains("non ha dubbi aperti"));
+        QVERIFY(agent::checkAction(p, "avvia", {{"azione", "smista"}}).contains("Non c'è niente in arrivo"));
+        QVERIFY(agent::checkAction(p, "avvia", {{"azione", "ridisegna_figura"}, {"figura", "src1-01"}}).contains("Rivedi figure"));
+        QVERIFY(callTool("avvia", {{"azione", "compila"}}).value("isError").toBool());   // fuori dalla chat non c'è
     }
 
     // I piani: consegnato dall'agente, sistemato dall'utente, eseguito, archiviato con l'esito.
@@ -1189,10 +1220,14 @@ private slots:
         QVERIFY(plans::hasInstructions(plans::load(p, id)));
         QVERIFY(plans::markdown(plan).contains("- [x] Tengo la struttura di A\n- [ ] Aggiungo l'esempio di B\n  ↳ mettilo dopo il teorema"));
         QVERIFY(plans::reviseMessage(id, plan).contains("lavoro: " + id));
-        QVERIFY(plans::startMessage(id, plan).contains("consegna_esito"));
+        // il compito di una sezione: il piano intero per capire, e la sua parte con le sole voci da fare
+        const QString task = plans::taskMessage(plan, 0);
+        QVERIFY(task.contains("LA TUA PARTE: «Lezione 3»\n- Tengo la struttura di A\n\n"));
+        QVERIFY(task.contains("- [ ] Aggiungo l'esempio di B"));
 
-        agent::call(p, Style::classic(), "consegna_esito", {{"lavoro", id}, {"testo", "Fatto: src/src3.tex."}}, nullptr, &error);
-        QVERIFY(!error);
+        plan["stato"] = "esito";                                                        // l'esito lo scrive il lavoro (core/Run)
+        plan["esito"] = "Fatto: src/src3.tex.";
+        QVERIFY(plans::save(p, id, plan));
         QCOMPARE(plans::open(p).first().state, "esito");
         const QString archived = plans::archive(p, id);
         QVERIFY(QFileInfo(archived).fileName().endsWith(" — Fusione lezione 3.md"));
@@ -2975,6 +3010,61 @@ private slots:
         QVERIFY(files::read(dir.filePath("ripreso.txt")).contains("--resume s1"));
         QVERIFY(files::read(p.path("src/src1.tex")).contains("Mezzo esempio."));          // la lezione è rimasta com'era a metà
         QCOMPARE(run::load(p, "20261123-120000").value("compiti").toArray()[0].toObject().value("stato").toString(), "fatta");
+    }
+
+    // Il piano dell'agente non si esegue nella chat: «Avvia» lo fa diventare un lavoro, un compito per sezione con voci da
+    // fare, uno dopo l'altro; l'esito resta nel piano e «Annulla tutto il lavoro» riporta il progetto com'era.
+    void agentPlanRun()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        files::write(p.path("src/src1.tex"), "\\section{Limiti}\n\\lezione{1}{01/10/2026}\n\nIl limite.\n");
+        bool error = false;
+        agent::call(p, Style::classic(), "consegna_piano",
+                    {{"titolo", "Correzioni"}, {"sezioni", QJsonArray{QJsonObject{{"titolo", "Lezione 1"}, {"voci", QJsonArray{"Correggi il refuso"}}},
+                                                                      QJsonObject{{"titolo", "Lezione 2"}, {"voci", QJsonArray{"Niente"}}},
+                                                                      QJsonObject{{"titolo", "Lezione 3"}, {"voci", QJsonArray{"Aggiungi un esempio"}}}}}},
+                    nullptr, &error);
+        QVERIFY(!error);
+        const QString id = plans::open(p).first().id;
+        QJsonObject plan = plans::load(p, id);
+        QJsonArray sections = plan.value("sezioni").toArray();          // la seconda sezione senza spunte: niente compito
+        QJsonObject second = sections[1].toObject();
+        QJsonArray entries = second.value("voci").toArray();
+        QJsonObject entry = entries[0].toObject();
+        entry["fare"] = false;
+        entries[0] = entry;
+        second["voci"] = entries;
+        sections[1] = second;
+        plan["sezioni"] = sections;
+        plans::save(p, id, plan);
+        QVERIFY(sort::estimate(p, plan, "normale").agent > 0);
+
+        // il finto agente: scrive nella lezione la parte che riceve, e la sua risposta è l'esito
+        files::write(dir.filePath("claude"), QString("#!/bin/sh\nmsg=$(cat)\ncase \"$msg\" in *\"PARTE: «Lezione 1»\"*) part=uno;; *) part=tre;; esac\n"
+                                                     "printf '%s\\n' \"$part\" >> '%1/src/src1.tex'\n"
+                                                     "printf '{\"type\":\"result\",\"result\":\"- Parte %s fatta.\",\"total_cost_usd\":0.05,\"session_id\":\"s\"}\\n' \"$part\"\n").arg(root));
+        QFile(dir.filePath("claude")).setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
+        JobControl control;
+        const run::Result result = run::execute(p, Settings::load(p), Style::classic(), id, &control);
+        qunsetenv("TEXFIX_CLAUDE");
+        QVERIFY2(!result.stopped && result.failure.isEmpty(), qPrintable(result.failure));
+        QCOMPARE(result.tasksDone, 2);
+        QVERIFY(files::read(p.path("src/src1.tex")).endsWith("Il limite.\nuno\ntre\n"));   // una parte dopo l'altra, nell'ordine
+        const QJsonArray tasks = run::load(p, id).value("compiti").toArray();
+        QCOMPARE(tasks.size(), 2);
+        QCOMPARE(tasks[0].toObject().value("tipo").toString(), "piano");
+        plan = plans::load(p, id);
+        QCOMPARE(plan.value("stato").toString(), "esito");
+        QVERIFY(plan.value("esito").toString().contains("Parte uno fatta."));
+        QVERIFY(!run::undo(p, id).isEmpty());
+        QCOMPARE(files::read(p.path("src/src1.tex")), "\\section{Limiti}\n\\lezione{1}{01/10/2026}\n\nIl limite.\n");
+        QCOMPARE(plans::load(p, id).value("stato").toString(), "piano");
     }
 
     // «Avvia» è un lavoro solo: la conversione scrive la lezione nuova e, insieme, l'agente completa la lezione del corso

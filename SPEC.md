@@ -333,6 +333,13 @@ Le mosse e le misure sono regole strutturali (§4.1); quanto essere severi è un
 - **[O]** L'agente scrive `piano.json` e stampa la riga `TEXFIX: piano pronto` / `TEXFIX: esito pronto`; l'app la legge dall'output. *→ Da ripensare: un'app nativa può dare all'agente uno strumento per consegnare il piano invece di un protocollo a righe.*
 
 ### 3.13 Agente e chat
+- **[S]** L'agente della chat non lavora nella chat e non scrive file (decisione del 23/11/2026): legge, spiega e porta
+  l'utente ai flussi del programma. Apre la vista dove si decide (una lezione, Rivedi dubbi, correzioni, figure,
+  impaginazione, un piano, la finestra di un lavoro, il profilo, le impostazioni), avvia un'azione del programma
+  (compila, smista, risolvi errori, impagina, decidi i dubbi, ridisegna una figura, proponi gli argomenti: parte come un
+  lavoro a fine turno, da sé o dopo la conferma secondo il modo), e ogni modifica alle lezioni, anche piccola, è un piano:
+  «Avvia» lo esegue come un lavoro (un agente per sezione, una dopo l'altra), con pausa, «Annulla tutto il lavoro» ed esito.
+  Anche la mossa di impaginazione mandata «all'agente» è un lavoro, non una chat.
 - **[S]** Il materiale nuovo che l'utente dà all'agente (un file, un allegato) l'agente non lo lavora da sé e non ne fa un piano
   suo: lo mette in arrivo (`aggiungi_materiale`, con la lezione se l'utente l'ha detta), e il piano lo fa «Smista»
   (decisione del 23/11/2026).

@@ -95,8 +95,8 @@ Rectangle {
                     anchors.top: bubble.bottom
                     anchors.topMargin: Theme.gap / 2
                     spacing: Theme.gap
-                    TxButton { text: "Consenti"; primary: true; onClicked: Chat.answer(true) }
-                    TxButton { text: "Nega"; onClicked: Chat.answer(false) }
+                    TxButton { text: row.modelData.detail === "avvia" ? "Avvia" : "Consenti"; primary: true; onClicked: Chat.answer(true) }
+                    TxButton { text: row.modelData.detail === "avvia" ? "No" : "Nega"; onClicked: Chat.answer(false) }
                 }
                 Rectangle {
                     id: bubble
@@ -113,7 +113,7 @@ Rectangle {
                         x: Theme.gap
                         width: bubble.width - 2 * Theme.gap
                         text: row.tool ? (row.modelData.detail ? (row.expanded ? "▾ " : "▸ ") : "⚙ ") + row.modelData.text + (row.expanded ? "\n" + row.modelData.detail : "")
-                              : row.ask ? "L'agente chiede di usare: " + row.modelData.text
+                              : row.ask ? (row.modelData.detail === "avvia" ? "L'agente vuole avviare: " : "L'agente chiede di usare: ") + row.modelData.text
                               : row.modelData.text + (row.files.length > 0 ? (row.modelData.text !== "" ? "\n" : "") + row.files.map(f => "📎 " + f.substring(f.lastIndexOf("/") + 1)).join("\n") : "")
                         textFormat: row.modelData.role === "assistant" ? Text.MarkdownText : Text.PlainText
                         wrapMode: Text.Wrap
@@ -245,9 +245,9 @@ Rectangle {
     }
     Menu {
         id: modeMenu
-        MenuItem { text: "Automatico: fa da solo ciò che è sicuro, chiede per il resto"; onTriggered: Chat.mode = "auto" }
-        MenuItem { text: "Chiedi conferma: prima di ogni modifica"; onTriggered: Chat.mode = "chiedi" }
-        MenuItem { text: "Autonomo: non chiede mai"; onTriggered: Chat.mode = "autonomo" }
+        MenuItem { text: "Automatico: avvia da solo ciò che non usa il modello, chiede per il resto"; onTriggered: Chat.mode = "auto" }
+        MenuItem { text: "Chiedi conferma: prima di avviare qualunque cosa"; onTriggered: Chat.mode = "chiedi" }
+        MenuItem { text: "Autonomo: avvia senza chiedere"; onTriggered: Chat.mode = "autonomo" }
     }
     // lo storico: le chat del progetto, la più recente in cima; elimina in due clic
     Popup {

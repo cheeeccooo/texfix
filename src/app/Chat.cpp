@@ -14,6 +14,7 @@
 #include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QRegularExpression>
 #include <QJsonObject>
 #include <QLocalSocket>
 #include <QLocale>
@@ -107,15 +108,51 @@ Chat::Chat()
                     emit waitingChanged();
                     continue;
                 }
+                const QString name = params.value("name").toString();
                 if (message.value("method").toString() == "tools/call")
-                    add("tool", params.value("name").toString(),
-                        QString::fromUtf8(QJsonDocument(params.value("arguments").toObject()).toJson(QJsonDocument::Indented)).trimmed());
+                    add("tool", name, QString::fromUtf8(QJsonDocument(params.value("arguments").toObject()).toJson(QJsonDocument::Indented)).trimmed());
+                if (message.value("method").toString() == "tools/call" && (name == "apri" || name == "avvia")) {
+                    // i flussi del programma: si aprono qui, nella finestra; un'azione parte quando l'agente ha finito di rispondere
+                    const QJsonObject arguments = params.value("arguments").toObject();
+                    auto reply = [socket, id = message.value("id")](const QString &text, bool error) {
+                        const QJsonObject result{{"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", text}}}}, {"isError", error}};
+                        socket->write(QJsonDocument(QJsonObject{{"jsonrpc", "2.0"}, {"id", id}, {"result", result}}).toJson(QJsonDocument::Compact) + '\n');
+                    };
+                    QString title;
+                    bool costly = false;
+                    const QString why = agent::checkAction(workspace->project(), name, arguments, &title, &costly);
+                    if (!why.isEmpty()) {
+                        reply(why, true);
+                    } else if (name == "apri") {
+                        workspace->agentOpen(arguments);
+                        reply(title + QStringLiteral(": è aperto davanti all'utente."), false);
+                    } else if (m_mode == "autonomo" || (m_mode == "auto" && !costly)) {
+                        workspace->queueAgentAction(arguments, title);
+                        reply(QStringLiteral("«%1» parte appena finisci di rispondere, come un lavoro di Texfix: l'utente lo segue in Attività.").arg(title), false);
+                    } else {                           // chiede all'utente, con la scheda nella chat
+                        m_asking = socket;
+                        m_askingId = message.value("id");
+                        m_askingInput = arguments;
+                        m_askingAction = title;
+                        add("ask", title + (costly ? QStringLiteral(" (usa il modello)") : QString()), QStringLiteral("avvia"));
+                        emit waitingChanged();
+                    }
+                    continue;
+                }
+                const bool delivered = message.value("method").toString() == "tools/call" && (name == "consegna_piano" || name == "aggiungi_materiale");
                 QPointer<QLocalSocket> target(socket);
-                QThreadPool::globalInstance()->start([request, target, project = workspace->project(), style = workspace->style()] {
-                    const QByteArray reply = agent::handle(project, style, request);
-                    QMetaObject::invokeMethod(qApp, [reply, target] {
+                QThreadPool::globalInstance()->start([request, target, delivered, project = workspace->project(), style = workspace->style()] {
+                    const QByteArray reply = agent::handle(project, style, request, nullptr, agent::CHAT_TOOLS);
+                    QMetaObject::invokeMethod(qApp, [reply, target, delivered] {
                         if (target && !reply.isEmpty())
                             target->write(reply);
+                        if (!delivered)
+                            return;
+                        // il materiale in arrivo e il piano consegnato si vedono subito nell'albero
+                        const QJsonObject result = QJsonDocument::fromJson(reply).object().value("result").toObject();
+                        if (result.value("isError").toBool())
+                            return;
+                        Workspace::instance()->refreshTree();   // il piano si apre alla fine del turno (agentTurnDone)
                     });
                 });
             }
@@ -222,15 +259,17 @@ void Chat::launch(const QString &text)
     m_answered = false;
 
     const QJsonObject server{{"command", QCoreApplication::applicationFilePath()}, {"args", QJsonArray{"--strumenti", m_tools.serverName()}}};
+    QStringList allowed;                               // gli strumenti di Texfix senza conferma del CLI: apri e avvia chiedono da sé
+    for (const QString &tool : agent::CHAT_TOOLS)
+        if (tool != "conferma")
+            allowed << "mcp__texfix__" + tool;
     QStringList arguments{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
                           "--model", m_model, "--system-prompt", agent::systemPrompt(workspace->settings_(), workspace->style()),
-                          // chiuso nel progetto: i file sì, una shell no; solo gli strumenti di Texfix, nessuna impostazione dell'utente
-                          "--tools", "Read,Edit,Write,Grep,Glob", "--mcp-config",
+                          // chiuso nel progetto e senza scrivere: legge i file, il resto lo fa con gli strumenti di Texfix (che aprono e
+                          // avviano i flussi del programma); nessuna shell, nessuna impostazione dell'utente
+                          "--tools", "Read,Grep,Glob", "--mcp-config",
                           QString::fromUtf8(QJsonDocument(QJsonObject{{"mcpServers", QJsonObject{{"texfix", server}}}}).toJson(QJsonDocument::Compact)),
-                          "--strict-mcp-config", "--allowedTools",
-                          "mcp__texfix__stato_progetto,mcp__texfix__compila_lezione,mcp__texfix__compila_documento,mcp__texfix__dubbi,mcp__texfix__impagina,mcp__texfix__chiudi_lezione,mcp__texfix__aggiungi_materiale,mcp__texfix__consegna_piano,mcp__texfix__consegna_esito,mcp__texfix__proponi_profilo,mcp__texfix__proponi_stile",
-                          // il profilo e lo stile non si scrivono: si propongono, e decide l'utente
-                          "--disallowedTools", agent::guardedRules(),
+                          "--strict-mcp-config", "--allowedTools", allowed.join(','),
                           "--setting-sources", "", "--disable-slash-commands"};
     // ciò che vuole una conferma arriva al programma: fuori dal progetto si nega sempre; dentro, «Autonomo» consente da sé
     // e gli altri due modi chiedono all'utente
@@ -339,6 +378,7 @@ void Chat::stop()
     if (!running())
         return;
     m_asking.clear();
+    m_askingAction.clear();
     emit waitingChanged();
     tools::stopGroup(m_process.processId());
     m_process.waitForFinished(2000);
@@ -454,6 +494,30 @@ void Chat::answer(bool allow)
 {
     if (!m_asking)
         return;
+    if (!m_askingAction.isEmpty()) {                   // un'azione di Texfix che l'agente vuole avviare
+        const QString text = allow ? QStringLiteral("L'utente ha detto di sì: «%1» parte appena finisci di rispondere, come un lavoro di Texfix "
+                                                    "(lo segue in Attività).").arg(m_askingAction)
+                                   : QStringLiteral("L'utente ha detto di no: «%1» non parte.").arg(m_askingAction);
+        if (allow)
+            Workspace::instance()->queueAgentAction(m_askingInput, m_askingAction);
+        const QJsonObject result{{"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", text}}}}};
+        m_asking->write(QJsonDocument(QJsonObject{{"jsonrpc", "2.0"}, {"id", m_askingId}, {"result", result}}).toJson(QJsonDocument::Compact) + '\n');
+        m_asking.clear();
+        m_askingAction.clear();
+        for (qsizetype i = m_messages.size() - 1; i >= 0; --i) {
+            QVariantMap message = m_messages[i].toMap();
+            if (message.value("role") != "ask")
+                continue;
+            message["role"] = "tool";
+            message["text"] = QStringLiteral("Avvia: ") + message.value("text").toString() + (allow ? " · sì" : " · no");
+            message.remove("detail");
+            m_messages[i] = message;
+            break;
+        }
+        emit messagesChanged();
+        emit waitingChanged();
+        return;
+    }
     const QJsonObject decision = allow ? QJsonObject{{"behavior", "allow"}, {"updatedInput", m_askingInput}}
                                        : QJsonObject{{"behavior", "deny"}, {"message", "L'utente ha detto di no."}};
     const QJsonObject result{{"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", QString::fromUtf8(QJsonDocument(decision).toJson(QJsonDocument::Compact))}}}}};

@@ -20,8 +20,8 @@ class Chat : public QObject {
     Q_PROPERTY(QVariantList messages READ messages NOTIFY messagesChanged)
     Q_PROPERTY(bool running READ running NOTIFY runningChanged)
     Q_PROPERTY(QString model READ model WRITE setModel NOTIFY modelChanged)   // sonnet | opus
-    // Quanto l'agente fa da solo, come in Claude Code: auto (decide lui che cosa è sicuro, chiede per il resto),
-    // chiedi (chiede conferma prima di ogni modifica), autonomo (non chiede mai). Vale per tutti i progetti.
+    // Quanto l'agente avvia da solo le azioni di Texfix (avvia): auto (da solo ciò che non usa il modello, chiede per il resto),
+    // chiedi (chiede sempre), autonomo (non chiede mai). L'agente non scrive file. Vale per tutti i progetti.
     Q_PROPERTY(QString mode READ mode WRITE setMode NOTIFY modeChanged)
     Q_PROPERTY(bool waiting READ waiting NOTIFY waitingChanged)
     Q_PROPERTY(QString title READ title NOTIFY messagesChanged)          // il nome della chat           // aspetta una conferma dell'utente
@@ -85,5 +85,6 @@ private:
     QPointer<QLocalSocket> m_asking;                   // chi aspetta la conferma, la sua richiesta e che cosa voleva fare
     QJsonValue m_askingId;
     QJsonObject m_askingInput;
+    QString m_askingAction;                            // l'azione di Texfix (avvia) che aspetta il sì, per l'utente
     bool m_streamed = false;                           // il testo di questo messaggio è già arrivato a pezzi
 };

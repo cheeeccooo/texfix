@@ -130,6 +130,11 @@ public:
     // L'agente sta lavorando: come un lavoro, niente altro parte e niente si annulla.
     void setAgentRunning(bool running);
     void agentTurnDone();
+    void refreshTree();
+    // Gli strumenti apri e avvia dell'agente della chat (gli argomenti già controllati da agent::checkAction): apri porta
+    // l'utente alla vista (openAsked); un'azione aspetta la fine del turno dell'agente e parte come un lavoro, una alla volta.
+    void agentOpen(const QJsonObject &arguments);
+    void queueAgentAction(const QJsonObject &arguments, const QString &title);
     const tx::Settings &settings_() const { return m_settings; }
 
     // Apre una cartella. «» se è aperta; «prepara» se non è ancora un progetto: allora il foglio dell'inizio
@@ -256,8 +261,8 @@ public:
     // I lavori con un piano. jobs: quelli aperti (id, title, state). plan: il piano com'è. Ogni modifica dell'utente è una
     // chiamata sua, salvata subito: la spunta o l'istruzione di una voce (key: fare, nota), la scelta di una sezione (il
     // valore), la risposta a una domanda, il commento.
-    // planMessage: ciò che si dice all'agente per avviarlo (how: avvia) o rifarlo (rivedi). planReady: l'agente ha
-    // consegnato un piano o un esito.
+    // planRevision: ciò che si dice all'agente per rifare il suo piano con le istruzioni dell'utente; «Avvia» lo esegue
+    // startSortPlan, come un lavoro. planReady: c'è un piano da leggere.
     Q_PROPERTY(QVariantList jobs READ jobs NOTIFY treeChanged)
 public:
     QVariantList jobs() const { return m_jobs; }
@@ -272,7 +277,7 @@ public:
     // Il piano dei concetti: una voce di un elenco (comuni, destinazioni, versioni) e il suo campo (valore, fare, nota).
     Q_INVOKABLE void setPlanField(const QString &id, const QString &list, int index, const QString &key, const QVariant &value);
     Q_INVOKABLE bool planHasInstructions(const QString &id) const;
-    Q_INVOKABLE QString planMessage(const QString &id, const QString &how);
+    Q_INVOKABLE QString planRevision(const QString &id);
     Q_INVOKABLE void discardPlan(const QString &id);
     Q_INVOKABLE void archivePlan(const QString &id);
 
@@ -363,6 +368,7 @@ public:
     QVariantMap run() const;
     Q_INVOKABLE QVariantMap runCall(int id) const;
     Q_INVOKABLE void resumeRun();
+    QString runTitle(const QString &id) const;
     Q_INVOKABLE void undoRun();
     Q_INVOKABLE void closeRun();
 
@@ -465,12 +471,19 @@ signals:
     void buildFinished();
     void prepareAsked(const QString &path);            // una cartella che non è un progetto: chiedere se prepararla
     void settingsAsked();                              // aprire le impostazioni del progetto (da un piano: «Cambia»)
+    // l'agente porta l'utente a una vista: target come i nomi delle schede («rivedi:dubbi», «piano:<id>», un file,
+    // «profilo:», «impostazioni»), lesson la lezione su cui aprirla, line la riga
+    void openAsked(const QString &target, const QString &lesson, int line);
     void gesture(const QString &name, const QString &argument);   // le prove senza mani
 
 private:
     Workspace();
+    void layoutToAgent(const QString &lesson, const QString &block, const QString &what);   // «all'agente» in Rivedi impaginazione
+    void nextAgentAction();                            // la prima azione chiesta dall'agente, quando niente lavora
+    void agentAction(const QJsonObject &arguments);
+    QList<std::pair<QJsonObject, QString>> m_agentActions;
+    QHash<QString, QString> m_turnJobs;                // i lavori (id → stato) quando l'agente ha cominciato il turno
     void open(const QString &path);
-    void refreshTree();
     void watch();
     void onBuildFinished(const tx::BuildResult &result);
     void remember(const QString &path);

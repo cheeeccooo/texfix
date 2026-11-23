@@ -90,10 +90,22 @@ Result execute(const Project &project, const Settings &settings, const Style &st
             return out;
         }
         copying.done();
-        Step preparing(control, QStringLiteral("Preparo i pezzi delle fonti per ogni lezione"));
+        const bool agentPlan = plan.value("formato").toString() != "concetti";
+        Step preparing(control, agentPlan ? QStringLiteral("Preparo i compiti del piano, uno per parte") : QStringLiteral("Preparo i pezzi delle fonti per ogni lezione"));
         sort::Prepared prepared;
         try {
-            prepared = sort::prepare(project, plan);
+            if (agentPlan) {                           // il piano dell'agente: un compito per sezione, uno dopo l'altro
+                const QJsonArray sections = plan.value("sezioni").toArray();
+                for (int i = 0; i < sections.size(); ++i) {
+                    const QJsonArray entries = sections[i].toObject().value("voci").toArray();
+                    if (std::any_of(entries.begin(), entries.end(), [](const QJsonValue &v) { return v.toObject().value("fare").toBool(); }))
+                        prepared.tasks << sort::Task{QStringLiteral("piano"), QString(), sections[i].toObject().value("titolo").toString(), {}, plans::taskMessage(plan, i)};
+                }
+                if (prepared.tasks.isEmpty())
+                    prepared.failure = QStringLiteral("nessuna voce del piano ha la spunta.");
+            } else {
+                prepared = sort::prepare(project, plan);
+            }
         } catch (const std::exception &e) {            // niente in silenzio, e niente che chiuda il programma
             prepared.failure = QString::fromUtf8(e.what());
         }
@@ -104,8 +116,9 @@ Result execute(const Project &project, const Settings &settings, const Style &st
             out.failure = QStringLiteral("Non riesco ad avviare il piano: %1").arg(prepared.failure);
             return out;
         }
-        preparing.done((prepared.wanted.size() == 1 ? QStringLiteral("1 lezione nuova da scrivere") : QStringLiteral("%1 lezioni nuove da scrivere").arg(prepared.wanted.size()))
-                       + (prepared.tasks.size() == 1 ? QStringLiteral(", 1 compito per l'agente") : QStringLiteral(", %1 compiti per l'agente").arg(prepared.tasks.size())));
+        preparing.done(agentPlan ? (prepared.tasks.size() == 1 ? QStringLiteral("1 compito per l'agente") : QStringLiteral("%1 compiti per l'agente, uno dopo l'altro").arg(prepared.tasks.size()))
+                                 : (prepared.wanted.size() == 1 ? QStringLiteral("1 lezione nuova da scrivere") : QStringLiteral("%1 lezioni nuove da scrivere").arg(prepared.wanted.size()))
+                                       + (prepared.tasks.size() == 1 ? QStringLiteral(", 1 compito per l'agente") : QStringLiteral(", %1 compiti per l'agente").arg(prepared.tasks.size())));
         newlesson::addPlacements(project, prepared.placements);
         QJsonObject chosen;
         for (auto it = prepared.wanted.begin(); it != prepared.wanted.end(); ++it)
@@ -235,10 +248,17 @@ Result execute(const Project &project, const Settings &settings, const Style &st
                 site({{"chiave", key}, {"fase", "Fine"}, {"stato", "fatta"}});
                 return;
             }
+            if (t.value("tipo").toString() == "piano") {
+                // una parte di un piano dell'agente, interrotta senza conversazione: non si sa che lezioni avesse toccato, si
+                // rifà guardando com'è
+                message += QStringLiteral("\n\nUn tentativo di prima di questa parte si è interrotto a metà: guarda com'è ogni lezione "
+                                          "e fai solo ciò che manca.");
+            } else {
             // interrotto a metà: la lezione torna com'era prima del lavoro, e il compito si rifà da capo
             Step restoring(control, QStringLiteral("Rimetto %1 com'era: il compito interrotto si rifà da capo").arg(lesson));
             History::restoreCopy(project.root(), copy, {lesson});
             restoring.done();
+            }
         }
         if (t.value("tipo").toString() == "fondi" && QFileInfo::exists(project.path(lesson)) && !project.inputs().contains(lesson)
             && t.value("stato").toString() != "in_corso") {
@@ -369,7 +389,7 @@ Result execute(const Project &project, const Settings &settings, const Style &st
         worker();
         other.get();
     };
-    runTasks({"integra", "versione"});
+    runTasks({"integra", "versione", "piano"});      // le parti di un piano dell'agente hanno la stessa «lezione» (nessuna): una alla volta
     out.converted = converting.get();
     if (!stopped && !out.converted.stopped && !(control && (control->stopped() || control->pausedUntil().isValid()))) {
         tasks = state.value("compiti").toArray();

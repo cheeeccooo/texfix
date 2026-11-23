@@ -56,7 +56,8 @@ Rectangle {
     }
     function kindLabel(kind) {
         return kind === "converti" ? "Lezione nuova" : kind === "integra" ? "Aggiunte a una lezione del corso"
-             : kind === "versione" ? "Versione nuova di una fonte" : kind === "fondi" ? "Lezione nuova, scritta dall'agente" : ""
+             : kind === "versione" ? "Versione nuova di una fonte" : kind === "fondi" ? "Lezione nuova, scritta dall'agente"
+             : kind === "piano" ? "Una parte del piano" : ""
     }
     readonly property string stateText: {
         if (!mine)
@@ -100,7 +101,7 @@ Rectangle {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: Theme.gap
-                TxLabel { text: "Aggiungi materiale"; font.pixelSize: Theme.textSize + 3; font.weight: Font.DemiBold }
+                TxLabel { Layout.maximumWidth: root.width * 0.55; text: root.mine ? Workspace.run.title : "Il lavoro"; font.pixelSize: Theme.textSize + 3; font.weight: Font.DemiBold }
                 Rectangle {
                     visible: root.mine
                     implicitWidth: stateLabel.implicitWidth + 14

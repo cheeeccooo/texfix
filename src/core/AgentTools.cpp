@@ -9,9 +9,11 @@
 #include "core/NewLesson.h"
 #include "core/Plans.h"
 #include "core/Review.h"
+#include "core/TexLog.h"
 #include "core/Rules.h"
 
 #include <QDir>
+#include <QHash>
 #include <QFileInfo>
 #include <QJsonDocument>
 
@@ -66,9 +68,34 @@ QJsonArray tools()
                                                   {"description", "I file, relativi alla cartella del progetto (anche salvataggi/chat/allegati/…)"}}},
                              {"lezione", QJsonObject{{"type", "string"}, {"description", "Solo se l'utente vuole il materiale in una lezione precisa: il suo file (src/…)"}}}},
                  {"file"}),
-            tool("consegna_piano", "Consegna all'utente il piano di un lavoro grande (fondere fonti, riorganizzare, toccare più lezioni) PRIMA di "
-                                   "eseguirlo. Dopo averlo consegnato fermati: l'utente lo sistema e lo approva. Per rifare un piano già "
-                                   "consegnato indica il suo lavoro.",
+            tool("avvisi", "Gli avvisi dell'ultima compilazione: errori e righe fuori misura, con file e riga. Con una lezione, quelli della sua "
+                           "ultima compilazione da sola (se c'è). Non compila: per compilare c'è avvia con «compila».",
+                 QJsonObject{{"lezione", QJsonObject{{"type", "string"}, {"description", "Facoltativa: il file della lezione, per esempio src/src3.tex"}}}}),
+            tool("apri", "Apre per l'utente, nella finestra di Texfix, il posto dove si fa una cosa: una lezione (a una riga), la revisione dei "
+                         "dubbi, delle correzioni, delle figure o dell'impaginazione (su una lezione), un piano, la finestra di un lavoro, il "
+                         "profilo, le impostazioni. Usalo per portare l'utente dove decide lui.",
+                 QJsonObject{{"dove", QJsonObject{{"type", "string"}, {"enum", QJsonArray{"lezione", "rivedi_dubbi", "rivedi_correzioni", "rivedi_figure",
+                                                                                         "rivedi_impaginazione", "piano", "lavoro", "profilo", "impostazioni"}}}},
+                             {"lezione", QJsonObject{{"type", "string"}, {"description", "Il file della lezione (src/…), per «lezione» e per le revisioni"}}},
+                             {"riga", QJsonObject{{"type", "integer"}}},
+                             {"lavoro", QJsonObject{{"type", "string"}, {"description", "Per «piano» e «lavoro»: il nome del lavoro"}}}},
+                 {"dove"}),
+            tool("avvia", "Avvia un'azione di Texfix, che gira come un lavoro del programma (l'utente la segue in Attività, la mette in pausa, "
+                          "la annulla con la cronologia): «compila» (il documento), «smista» (il materiale in arrivo: riconosce e fa il piano), "
+                          "«risolvi_errori» (errori e righe fuori misura, di una lezione o di tutte), «impagina» (una lezione), «decidi_dubbi» "
+                          "(il modello sceglie la lettura dei dubbi aperti di una lezione), «ridisegna_figura» (una figura, con un commento per "
+                          "il disegnatore), «proponi_argomenti» (la scaletta per riorganizzare per argomenti). Secondo come l'utente ha "
+                          "scelto, parte subito o gli chiede prima conferma: la risposta lo dice.",
+                 QJsonObject{{"azione", QJsonObject{{"type", "string"}, {"enum", QJsonArray{"compila", "smista", "risolvi_errori", "impagina", "decidi_dubbi",
+                                                                                            "ridisegna_figura", "proponi_argomenti"}}}},
+                             {"lezione", QJsonObject{{"type", "string"}, {"description", "Il file della lezione, dove serve"}}},
+                             {"figura", QJsonObject{{"type", "string"}, {"description", "Per «ridisegna_figura»: il nome della figura (src3-01)"}}},
+                             {"commento", QJsonObject{{"type", "string"}, {"description", "Per «ridisegna_figura»: che cosa cambiare"}}}},
+                 {"azione"}),
+            tool("consegna_piano", "Consegna all'utente il piano di un lavoro sulle lezioni (correggere, riscrivere, fondere, spostare, rifare "
+                                   "figure: anche una modifica piccola). Ogni sezione è un compito che un agente di Texfix esegue, una dopo "
+                                   "l'altra, quando l'utente preme «Avvia»: scrivila perché basti da sola (quali lezioni, quali blocchi, "
+                                   "che cosa fare). Dopo averlo consegnato fermati. Per rifare un piano già consegnato indica il suo lavoro.",
                  QJsonObject{{"titolo", QJsonObject{{"type", "string"}}},
                              {"riepilogo", QJsonObject{{"type", "string"}, {"description", "Due o tre frasi: che cosa si fa e perché"}}},
                              {"sezioni", QJsonObject{{"type", "array"}, {"items", QJsonObject{{"type", "object"}, {"properties", QJsonObject{
@@ -96,9 +123,6 @@ QJsonArray tools()
                                  "\"rimandi\": \"cref\", \"convenzioni\": \"…\"}"}}},
                              {"nuovo", QJsonObject{{"type", "boolean"}, {"description", "Vero se è uno stile nuovo, da mettere anche nella libreria"}}}},
                  {"nome", "sty", "descrizione"}),
-            tool("consegna_esito", "Consegna l'esito di un lavoro eseguito: che cosa è stato fatto, file per file, e che cosa resta da decidere.",
-                 QJsonObject{{"lavoro", QJsonObject{{"type", "string"}}}, {"testo", QJsonObject{{"type", "string"}, {"description", "In markdown, breve"}}}},
-                 {"lavoro", "testo"}),
             // la conferma dell'utente prima di un'azione: la chiama il CLI, non l'agente; risponde la finestra (app/Chat)
             tool("conferma", "Chiede all'utente se permettere un'azione. Lo usa il programma, non l'agente.",
                  QJsonObject{{"tool_name", QJsonObject{{"type", "string"}}}, {"input", QJsonObject{{"type", "object"}}}}, {"tool_name", "input"})};
@@ -170,6 +194,24 @@ QString call(const Project &project, const Style &style, const QString &name, co
             sources << v.toString();
         return newlesson::settle(project, style.boxes(), style.figureWrapper(), arguments.value("lezione").toString(), sources).join("; ") + '.';
     }
+    if (name == "avvisi") {
+        // l'ultima compilazione: della lezione da sola se c'è, se no del documento
+        QString log;
+        if (!lesson.isEmpty()) {
+            if (!project.inputs().contains(lesson))
+                return fail(QStringLiteral("«%1» non è una lezione del documento. Le lezioni si vedono con stato_progetto.").arg(lesson));
+            log = files::read(project.path("build/lezioni/" + QFileInfo(lesson).completeBaseName() + ".log"));
+        }
+        if (log.isEmpty())
+            log = files::read(project.path("build/main.log"));
+        if (log.isEmpty())
+            return QStringLiteral("Il documento non è ancora stato compilato: avvia «compila».");
+        BuildResult built;
+        built.issues = texlog::parse(log);
+        return issuesText(built, lesson);
+    }
+    if (name == "apri" || name == "avvia")             // li esegue la finestra (app/Chat), dopo checkAction
+        return fail(QStringLiteral("Questo strumento c'è solo nella chat di Texfix."));
     if (name == "aggiungi_materiale") {
         const QString chosen = arguments.value("lezione").toString();
         if (!chosen.isEmpty() && !project.inputs().contains(chosen))
@@ -260,14 +302,94 @@ QString call(const Project &project, const Style &style, const QString &name, co
                      QString::fromUtf8(QJsonDocument(QJsonObject{{"nome", styleName}, {"nuovo", arguments.value("nuovo").toBool()}}).toJson()));
         return QStringLiteral("La pagina di prova compila. Proposta consegnata: l'utente la vede e decide. Ora fermati.");
     }
-    if (name == "consegna_esito") {
-        const QString why = plans::setOutcome(project, arguments.value("lavoro").toString(), arguments.value("testo").toString());
-        return why.isEmpty() ? QStringLiteral("Esito consegnato.") : fail(why);
-    }
     return fail(QStringLiteral("Lo strumento «%1» non esiste.").arg(name));
 }
 
-QByteArray handle(const Project &project, const Style &style, const QByteArray &request, JobControl *control)
+QString checkAction(const Project &project, const QString &name, const QJsonObject &arguments, QString *title, bool *costly)
+{
+    const QString lesson = arguments.value("lezione").toString();
+    const QString shown = lesson.isEmpty() ? QString() : QFileInfo(lesson).completeBaseName();
+    auto lessonOk = [&](bool needed) -> QString {
+        if (lesson.isEmpty())
+            return needed ? QStringLiteral("Manca la lezione (il suo file, src/…).") : QString();
+        return project.inputs().contains(lesson) ? QString() : QStringLiteral("«%1» non è una lezione del documento. Le lezioni si vedono con stato_progetto.").arg(lesson);
+    };
+    QString why, what;
+    bool model = false;
+    if (name == "apri") {
+        const QString where = arguments.value("dove").toString();
+        const QString job = arguments.value("lavoro").toString();
+        static const QHash<QString, QString> reviews{{"rivedi_dubbi", "Rivedi dubbi"}, {"rivedi_correzioni", "Rivedi correzioni"},
+                                                     {"rivedi_figure", "Rivedi figure"}, {"rivedi_impaginazione", "Rivedi impaginazione"}};
+        if (where == "lezione") {
+            if (lesson.isEmpty() || !QFileInfo(project.path(lesson)).isFile() || outside(project.root(), QJsonObject{{"file_path", project.path(lesson)}}))
+                why = QStringLiteral("Non trovo «%1» nel progetto.").arg(lesson);
+            what = QStringLiteral("Apro %1").arg(lesson);
+        } else if (reviews.contains(where)) {
+            why = lessonOk(false);
+            what = reviews.value(where) + (shown.isEmpty() ? QString() : QStringLiteral(", sulla lezione %1").arg(shown));
+        } else if (where == "piano" || where == "lavoro") {
+            if (job.isEmpty() || plans::load(project, job).isEmpty())
+                why = QStringLiteral("Non c'è un lavoro «%1».").arg(job);
+            else if (where == "lavoro" && !QFileInfo::exists(project.path("salvataggi/lavori/" + job + "/esecuzione.json")))
+                why = QStringLiteral("Il lavoro «%1» non è ancora stato avviato: apri il suo piano.").arg(job);
+            what = (where == "piano" ? QStringLiteral("Apro il piano «%1»") : QStringLiteral("Apro la finestra del lavoro «%1»")).arg(plans::load(project, job).value("titolo").toString(job));
+        } else if (where == "profilo") {
+            what = QStringLiteral("Apro il profilo del progetto");
+        } else if (where == "impostazioni") {
+            what = QStringLiteral("Apro le impostazioni del progetto");
+        } else {
+            why = QStringLiteral("Non so aprire «%1».").arg(where);
+        }
+    } else if (name == "avvia") {
+        const QString action = arguments.value("azione").toString();
+        if (action == "compila") {
+            what = QStringLiteral("Compilo il documento");
+        } else if (action == "smista") {
+            const QDir queue(project.path("fonti/coda"));
+            if (queue.entryList(QDir::Files | QDir::NoDotAndDotDot).isEmpty())
+                why = QStringLiteral("Non c'è niente in arrivo: il materiale nuovo si aggiunge prima con aggiungi_materiale.");
+            what = QStringLiteral("Smista il materiale in arrivo");
+            model = true;
+        } else if (action == "risolvi_errori") {
+            why = lessonOk(false);
+            what = shown.isEmpty() ? QStringLiteral("Risolvi errori e righe fuori misura") : QStringLiteral("Risolvi errori e righe fuori misura della lezione %1").arg(shown);
+            model = true;
+        } else if (action == "impagina") {
+            why = lessonOk(true);
+            what = QStringLiteral("Impagina la lezione %1").arg(shown);
+        } else if (action == "decidi_dubbi") {
+            why = lessonOk(true);
+            const QList<review::Doubt> doubts = why.isEmpty() ? review::doubts(project, lesson) : QList<review::Doubt>{};
+            if (why.isEmpty() && std::none_of(doubts.begin(), doubts.end(), [](const review::Doubt &d) { return d.open; }))
+                why = QStringLiteral("La lezione %1 non ha dubbi aperti.").arg(shown);
+            what = QStringLiteral("Il modello decide i dubbi aperti della lezione %1").arg(shown);
+            model = true;
+        } else if (action == "ridisegna_figura") {
+            const QString id = arguments.value("figura").toString();
+            if (id.isEmpty() || figures::find(project, id).id.isEmpty())
+                why = QStringLiteral("Non c'è una figura «%1» nel registro: le figure si vedono in Rivedi figure (apri rivedi_figure).").arg(id);
+            what = QStringLiteral("Ridisegna la figura %1").arg(id);
+            model = true;
+        } else if (action == "proponi_argomenti") {
+            if (!Settings::load(project).topics.isEmpty())
+                why = QStringLiteral("Il corso è già per argomento.");
+            what = QStringLiteral("Proponi gli argomenti per riorganizzare il corso");
+            model = true;
+        } else {
+            why = QStringLiteral("Non so avviare «%1».").arg(action);
+        }
+    } else {
+        why = QStringLiteral("Lo strumento «%1» non esiste.").arg(name);
+    }
+    if (title)
+        *title = what;
+    if (costly)
+        *costly = model;
+    return why;
+}
+
+QByteArray handle(const Project &project, const Style &style, const QByteArray &request, JobControl *control, const QStringList &only)
 {
     const QJsonObject message = QJsonDocument::fromJson(request).object();
     if (!message.contains("id"))
@@ -281,12 +403,19 @@ QByteArray handle(const Project &project, const Style &style, const QByteArray &
     } else if (method == "ping") {
         reply["result"] = QJsonObject();
     } else if (method == "tools/list") {
-        reply["result"] = QJsonObject{{"tools", tools()}};
+        QJsonArray shown;
+        for (const QJsonValue &t : tools())
+            if (only.isEmpty() || only.contains(t.toObject().value("name").toString()))
+                shown.append(t);
+        reply["result"] = QJsonObject{{"tools", shown}};
     } else if (method == "tools/call") {
         const QJsonObject params = message.value("params").toObject();
         bool error = false;
         QString text;
-        try {
+        if (!only.isEmpty() && !only.contains(params.value("name").toString())) {
+            error = true;
+            text = QStringLiteral("Lo strumento «%1» non c'è qui.").arg(params.value("name").toString());
+        } else try {
             text = call(project, style, params.value("name").toString(), params.value("arguments").toObject(), control, &error);
         } catch (const std::exception &e) {
             error = true;
@@ -302,22 +431,34 @@ QByteArray handle(const Project &project, const Style &style, const QByteArray &
 QString systemPrompt(const Settings &settings, const Style &style)
 {
     return QStringLiteral(
-               R"(Sei l'agente di Texfix, un programma che trasforma appunti di ogni tipo in appunti LaTeX da studiare. Lavori dentro il progetto aperto dall'utente e parli con lui in italiano, con parole semplici e risposte brevi.
+               R"(Sei l'agente di Texfix, un programma che trasforma appunti di ogni tipo in appunti LaTeX da studiare. Parli con l'utente in italiano, con parole semplici e risposte brevi.
+
+Tu non lavori nella chat: non scrivi né cambi file. Leggi, spieghi, e porti l'utente al posto di Texfix dove la cosa si fa, oppure la avvii lì. Così ogni lavoro si vede in Attività, si mette in pausa, si annulla con la cronologia, e l'utente decide nelle viste fatte per decidere.
 
 Che cosa hai:
-- i file del progetto: li leggi e li modifichi con gli strumenti per i file. `main.tex` è il documento, le lezioni sono in `src/`, le immagini in `imgs/`, le fonti in `fonti/`, i documenti da consultare in `docs/` (quelli non si cambiano mai);
-- gli strumenti di Texfix (stato_progetto, compila_lezione, compila_documento, dubbi, impagina, chiudi_lezione, aggiungi_materiale, consegna_piano, consegna_esito): sono l'unico modo di compilare e di sapere lo stato delle lezioni. Non hai una shell: niente comandi, niente Python, niente git.
+- i file del progetto, in lettura: `main.tex` è il documento, le lezioni sono in `src/`, le immagini in `imgs/`, le fonti in `fonti/`, i documenti da consultare in `docs/`. Non hai una shell;
+- per sapere: stato_progetto (le lezioni e che cosa resta da decidere), dubbi (di una lezione), avvisi (errori e righe fuori misura dell'ultima compilazione);
+- per portare l'utente dove si decide: apri (una lezione a una riga, Rivedi dubbi, correzioni, figure, impaginazione, un piano, la finestra di un lavoro, il profilo, le impostazioni);
+- per far partire un'azione di Texfix: avvia (compila, smista, risolvi_errori, impagina, decidi_dubbi, ridisegna_figura, proponi_argomenti);
+- per il materiale nuovo: aggiungi_materiale;
+- per cambiare le lezioni: consegna_piano;
+- per il profilo e lo stile: proponi_profilo, proponi_stile.
+
+Che cosa usare:
+- materiale nuovo (un file che l'utente ti dà o allega, appunti, dispense, una versione nuova di una fonte): aggiungi_materiale, poi avvia «smista». Texfix lo riconosce per concetti e propone il piano. Non leggerlo per scriverne tu una lezione e non farne un piano tuo;
+- errori e righe fuori misura: avvia «risolvi_errori»; un errore che quello non risolve, spiegalo e consegna un piano;
+- dubbi: apri «rivedi_dubbi» sulla lezione, dove l'utente sceglie; se vuole che decida il modello, avvia «decidi_dubbi»;
+- impaginazione: avvia «impagina», poi apri «rivedi_impaginazione»;
+- figure: apri «rivedi_figure»; una da rifare con un'indicazione, avvia «ridisegna_figura» con il commento;
+- riorganizzare per argomenti: avvia «proponi_argomenti»;
+- ogni altra modifica alle lezioni, anche piccola (una frase, una formula, un riquadro, un blocco da spostare, lezioni da fondere o da rifare): consegna_piano. Ogni sezione del piano è un compito che un agente di Texfix esegue quando l'utente preme «Avvia», nella finestra del lavoro: scrivila perché basti da sola (quale lezione, quale blocco, che cosa fare). Dopo averlo consegnato fermati;
+- il profilo e lo stile: proponi_profilo o proponi_stile; l'utente li vede accanto a ciò che c'è e decide;
+- una domanda sul corso, su una lezione, su come funziona Texfix: rispondi leggendo i file.
 
 Regole che valgono sempre:
-- prima di cambiare qualcosa chiama stato_progetto; una lezione FATTA si tocca solo dopo che l'utente ha detto di sì;
-- dopo ogni modifica a una lezione chiama compila_lezione su quella lezione, e non dire che hai finito finché non compila pulita;
-- `texfix.sty` lo scrive il programma: non modificarlo. In `salvataggi/` non scrivere;
-- lo stile del progetto (il suo `.sty` nella cartella principale, se c'è) è un file del progetto: se l'utente lo chiede puoi aggiungere o cambiare un ambiente, un colore, una macro. Non togliere ciò che le lezioni usano, poi compila il documento. La descrizione dello stile (`<nome>.stile.json`) la aggiorna il programma, che chiede all'utente a che cosa serve un ambiente nuovo: non scriverla tu;
-- le righe `% @L3.7 · fonte p.2` sono i marcatori dei blocchi e `% img src3-01` i segni delle figure: restano con il loro blocco, non si tolgono e non si inventano;
-- le aggiunte tue vanno in `addedtext`, le correzioni alla fonte in `correction`;
-- il materiale nuovo (un file che l'utente ti dà o allega, appunti, dispense, una versione nuova di una fonte) passa sempre da aggiungi_materiale: Texfix lo riconosce per concetti e propone lui il piano quando l'utente preme «Smista». Non leggerlo per scriverne tu una lezione o un'aggiunta, e non farne un piano tuo;
-- un altro lavoro grande (riorganizzare, rifare o fondere lezioni che ci sono già, toccare più lezioni) comincia sempre da un piano: consegnalo con consegna_piano e fermati; lo esegui solo quando l'utente lo approva, e alla fine consegni l'esito con consegna_esito;
-- di' sempre che cosa hai cambiato, in quali file, e che cosa resta da decidere all'utente.
+- una lezione FATTA (stato_progetto lo dice) si tocca solo se l'utente lo chiede: dillo nel piano;
+- le righe `% @L3.7 · fonte p.2` sono i marcatori dei blocchi e `% img src3-01` i segni delle figure: servono a indicare i blocchi nei piani;
+- alla fine di' sempre in una riga dove deve guardare l'utente e che cosa deve premere (per esempio: «Il piano è aperto: guardalo e premi Avvia»).
 )") + "\nREGOLE EDITORIALI\n\n" + rules::forPrompt(rules::allIds(), settings.profile) + "\n\nSTILE DEL DOCUMENTO\n\n" + style.forPrompt();
 }
 
@@ -336,7 +477,8 @@ Che cosa hai:
 
 Regole che valgono sempre:
 - tocca solo la lezione del tuo compito (quella da completare, o quella nuova da scrivere); le fonti si leggono e basta. `main.tex`, `texfix.sty`, i `.sty` e `salvataggi/` non si toccano: chiudi_lezione mette nel documento una lezione nuova;
-- altri agenti lavorano nello stesso momento su altre lezioni: non aprire né compilare le loro;
+- se il compito è una parte di un piano dell'agente, tocca le lezioni che la parte nomina e, solo se la parte lo chiede (fondere, togliere, spostare una lezione), anche `main.tex`; compila ogni lezione toccata;
+- altri agenti possono lavorare nello stesso momento su altre lezioni: non aprire né compilare le loro;
 - dopo ogni modifica chiama compila_lezione sulla tua lezione, finché compila pulita;
 - le righe `% @L3.7 · fonte p.2` sono i marcatori dei blocchi e `% img src3-01` i segni delle figure: restano con il loro blocco, non si tolgono e non si inventano;
 - le aggiunte tue vanno in `addedtext`, le correzioni alla fonte in `correction`;

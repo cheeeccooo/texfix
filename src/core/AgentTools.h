@@ -16,7 +16,11 @@ QJsonArray tools();                                    // nome, descrizione e fo
 // Esegue uno strumento. Restituisce il testo per l'agente; *error dice se non è andata.
 QString call(const Project &project, const Style &style, const QString &name, const QJsonObject &arguments, JobControl *control, bool *error);
 // Una riga del protocollo: la risposta da mandare indietro, o vuoto se la riga non ne vuole (una notifica).
-QByteArray handle(const Project &project, const Style &style, const QByteArray &request, JobControl *control = nullptr);
+// only: gli strumenti che chi chiama vede e può usare (vuoto: tutti).
+QByteArray handle(const Project &project, const Style &style, const QByteArray &request, JobControl *control = nullptr, const QStringList &only = {});
+// apri e avvia li esegue la finestra (app/Chat): qui si controllano gli argomenti. Restituisce il perché non va (vuoto se
+// va); *title dice all'utente che cosa si fa, *costly se usa il modello (allora, salvo «Autonomo», si chiede conferma).
+QString checkAction(const Project &project, const QString &name, const QJsonObject &arguments, QString *title = nullptr, bool *costly = nullptr);
 // Il prompt di sistema dell'agente: che cosa può fare e come, le regole editoriali, lo stile.
 QString systemPrompt(const Settings &settings, const Style &style);
 
@@ -24,6 +28,10 @@ QString systemPrompt(const Settings &settings, const Style &style);
 // ultima risposta è l'esito per l'utente. Ha i file e gli strumenti di WORKER_TOOLS.
 QString workerPrompt(const Settings &settings, const Style &style);
 inline const QStringList WORKER_TOOLS{"stato_progetto", "compila_lezione", "dubbi", "chiudi_lezione"};
+// L'agente della chat non scrive niente: legge, spiega e porta l'utente ai flussi di Texfix (apre, avvia, mette in arrivo,
+// consegna un piano che gli agenti di un lavoro eseguono, propone profilo e stile). Più la conferma.
+inline const QStringList CHAT_TOOLS{"stato_progetto", "dubbi", "avvisi", "apri", "avvia", "aggiungi_materiale", "consegna_piano",
+                                    "proponi_profilo", "proponi_stile", "conferma"};
 
 // Una richiesta di permesso dell'agente (lo strumento e i suoi argomenti) tocca un file fuori dal progetto?
 bool outside(const QString &root, const QJsonObject &input);

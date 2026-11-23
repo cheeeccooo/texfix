@@ -67,17 +67,6 @@ QString create(const Project &project, const QJsonObject &delivered, QString *er
     return id;
 }
 
-QString setOutcome(const Project &project, const QString &id, const QString &text)
-{
-    QJsonObject plan = load(project, id);
-    if (plan.isEmpty())
-        return QStringLiteral("Il lavoro «%1» non c'è.").arg(id);
-    plan["esito"] = text;
-    plan["stato"] = "esito";
-    save(project, id, plan);
-    return {};
-}
-
 void discard(const Project &project, const QString &id)
 {
     if (!id.isEmpty())
@@ -137,10 +126,23 @@ QString markdown(const QJsonObject &plan)
     return lines.join('\n').trimmed() + '\n';
 }
 
-QString startMessage(const QString &id, const QJsonObject &plan)
+QString taskMessage(const QJsonObject &plan, int section)
 {
-    return QStringLiteral("Il piano del lavoro «%1» è approvato. Eseguilo così com'è qui sotto: le voci con [x] si fanno, quelle con [ ] no; "
-                          "le risposte alle domande valgono. Alla fine consegna l'esito con consegna_esito (lavoro: %1).\n\n%2").arg(id, markdown(plan));
+    const QJsonObject s = plan.value("sezioni").toArray().at(section).toObject();
+    QStringList entries;
+    for (const QJsonValue &v : s.value("voci").toArray()) {
+        const QJsonObject entry = v.toObject();
+        if (!entry.value("fare").toBool())
+            continue;
+        entries << "- " + entry.value("testo").toString();
+        if (!entry.value("nota").toString().trimmed().isEmpty())
+            entries << "  ↳ " + entry.value("nota").toString().trimmed();
+    }
+    return QStringLiteral("Esegui la tua parte del piano «%1», che l'utente ha letto e approvato. Il piano intero, per capire che cosa fanno "
+                          "gli altri compiti (le voci con [x] si fanno, quelle con [ ] no; le risposte alle domande valgono):\n\n%2\n"
+                          "LA TUA PARTE: «%3»\n%4\n\nFai solo questa parte. Quando ogni lezione che hai toccato compila pulita, il tuo ultimo "
+                          "messaggio è l'esito della tua parte.")
+        .arg(plan.value("titolo").toString(), markdown(plan), s.value("titolo").toString(), entries.join('\n'));
 }
 
 QString reviseMessage(const QString &id, const QJsonObject &plan)

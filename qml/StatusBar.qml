@@ -12,7 +12,7 @@ Rectangle {
     property string messageText
     readonly property bool working: Workspace.busy
     // una compilazione chiesta dall'utente si vede anche mentre un lavoro gira
-    readonly property bool ownRun: Workspace.jobTitle === "Aggiungi materiale" && Workspace.run.id !== undefined
+    readonly property bool ownRun: Workspace.run.id !== undefined && Workspace.jobTitle === Workspace.run.title
     readonly property real fraction: Workspace.compiling ? Workspace.progress : ownRun ? Workspace.run.progress : Workspace.jobProgress
     readonly property string activity: Workspace.compiling
         ? "Compilazione" + (Workspace.progressLabel !== "" ? ": " + Workspace.progressLabel : "")

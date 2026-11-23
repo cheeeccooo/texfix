@@ -231,6 +231,11 @@ Item {
         function onPdfRebuilt() { pdf.reload() }
         function onPlanReady(id) { root.openFile("piano:" + id) }
         function onRunOpened(id) { root.openFile("lavoro:" + id) }
+        function onOpenAsked(target, lesson, line) {   // l'agente porta l'utente a una vista
+            root.openFile(target, line)
+            if (lesson !== "")
+                editor.showLesson(lesson)
+        }
         function onFileRenamed(from, to) { editor.fileRenamed(from, to) }
         function onAgentAsked(message, title) { root.chatOpen = true; Chat.startProcedure(title, message) }
         function onFilesChanged() { root.refreshManual() }
@@ -372,10 +377,8 @@ Item {
             } else if (name === "risolta") {
                 root.endManual(true)
             } else if (name === "avvia-piano") {
-                if (Workspace.jobs.length > 0) {
-                    root.chatOpen = true
-                    Chat.send(Workspace.planMessage(Workspace.jobs[0].id, "avvia"))
-                }
+                if (Workspace.jobs.length > 0)
+                    Workspace.startSortPlan(Workspace.jobs[0].id)
             } else if (name === "archivia") {
                 if (Workspace.jobs.length > 0)
                     Workspace.archivePlan(Workspace.jobs[0].id)

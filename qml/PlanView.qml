@@ -101,7 +101,7 @@ Rectangle {
             TxLabel { Layout.fillWidth: true; text: root.plan.titolo || "Questo lavoro non c'è più."; font.pixelSize: Theme.textSize + 4; font.weight: Font.DemiBold; wrapMode: Text.WordWrap; elide: Text.ElideNone }
             TxLabel {
                 Layout.fillWidth: true
-                text: root.plan.stato === "piano" ? "Piano da approvare" : root.plan.stato === "in_corso" ? "L'agente lo sta eseguendo" : root.plan.stato === "esito" ? "Eseguito" : ""
+                text: root.plan.stato === "piano" ? "Piano da approvare" : root.plan.stato === "in_corso" ? "Avviato: si segue nella finestra del lavoro" : root.plan.stato === "esito" ? "Eseguito" : ""
                 color: root.plan.stato === "piano" ? Theme.warn : Theme.textMuted
                 font.pixelSize: Theme.smallSize
             }
@@ -261,19 +261,17 @@ Rectangle {
                     enabled: !Workspace.busy && (root.instructions || root.answered)
                     hint: Workspace.busy ? "Aspetta che finisca il lavoro in corso" : enabled ? "" : "Rispondi prima alle domande del piano"
                     onClicked: {
-                        if (root.plan.tipo === "materiale") {     // un piano di Texfix, non dell'agente
-                            if (root.instructions)
-                                Workspace.reviseSortPlan(root.planId)
-                            else
-                                Workspace.startSortPlan(root.planId)
+                        if (!root.instructions) {          // il piano si esegue come un lavoro, nella sua finestra
+                            Workspace.startSortPlan(root.planId)
                             return root.closeAsked()
                         }
-                        root.chatAsked()
-                        Chat.send(Workspace.planMessage(root.planId, root.instructions ? "rivedi" : "avvia"))
-                        if (root.instructions)
-                            root.closeAsked()          // il piano rifatto arriva come lavoro nuovo
-                        else
-                            root.reload()
+                        if (root.plan.tipo === "materiale")     // un piano di Texfix: lo rifà Texfix
+                            Workspace.reviseSortPlan(root.planId)
+                        else {                                  // un piano dell'agente: lo rifà l'agente, nella chat
+                            root.chatAsked()
+                            Chat.send(Workspace.planRevision(root.planId))
+                        }
+                        root.closeAsked()              // il piano rifatto arriva come lavoro nuovo
                     }
                 }
                 TxButton {
