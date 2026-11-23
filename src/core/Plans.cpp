@@ -108,6 +108,9 @@ bool hasInstructions(const QJsonObject &plan)
     for (const QJsonValue &v : plan.value("versioni").toArray())
         if (v.toObject().value("valore").toString() == "nuovo")
             return true;
+    for (const QJsonValue &s : plan.value("salta").toArray())             // una parte da saltare che l'utente tiene
+        if (!s.toObject().value("tieni").toArray().isEmpty())
+            return true;
     return false;
 }
 

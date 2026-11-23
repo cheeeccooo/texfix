@@ -160,7 +160,7 @@ sua analisi, un esempio, un esercizio) va dove serve, anche se il file da cui vi
      «Salta il nuovo»;
   2. *Ciò che resta di questi file*: le lezioni nuove e le aggiunte, con i loro concetti (quelli in comune sbiaditi);
   3. *Tutto nuovo*: ciò che non si interseca con niente.
-  In fondo: versioni nuove, già nel corso, parti da saltare, impostazioni del progetto con «Cambia», costo stimato e
+  In fondo: versioni nuove, già nel corso, parti da saltare (ognuna si può tenere: «Non saltarla», e il piano si rivede), impostazioni del progetto con «Cambia», costo stimato e
   costo della mappa. Una destinazione si toglie con la spunta (i suoi pezzi restano in arrivo) o si corregge con
   un'istruzione; un'istruzione o un commento fanno «Rivedi piano»: si rifà solo la mappa.
 - **[S]** **Date.** La data è un indizio fra gli altri. Ciò che non ha data in un progetto per data diventa una lezione

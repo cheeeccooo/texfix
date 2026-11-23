@@ -291,6 +291,11 @@ QString previousPlan(const QJsonObject &document)
         if (!d.value("nota").toString().trimmed().isEmpty())
             lines << QStringLiteral("- %1 (%2): USER: %3").arg(where, ids.join(", "), d.value("nota").toString().trimmed());
     }
+    const QJsonObject concepts = document.value("concetti").toObject();
+    for (const QJsonValue &v : document.value("salta").toArray())
+        for (const QJsonValue &id : v.toObject().value("tieni").toArray())
+            lines << QStringLiteral("- skipped «%1» (%2): USER: do not skip it, place it like the other new concepts")
+                         .arg(concepts.value(id.toString()).toObject().value("title").toString(), id.toString());
     if (!document.value("nota_scaletta").toString().trimmed().isEmpty())
         lines << QStringLiteral("USER, about the outline of the course (which units, how they are split, their order): %1").arg(document.value("nota_scaletta").toString().trimmed());
     if (!document.value("commento").toString().trimmed().isEmpty())

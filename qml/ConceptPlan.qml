@@ -854,27 +854,59 @@ Rectangle {
                 }
             }
 
-            // ciò che è già nel corso, ciò che si salta, ciò che non si legge: una riga che si apre
+            // ciò che è già nel corso, ciò che si salta, ciò che non si legge: una riga che si apre. Una parte da saltare si
+            // può tenere («Non saltarla»): è un'istruzione, e il piano si rivede
             ColumnLayout {
                 id: known
                 property bool open: false
                 // gli elenchi che vengono dal C++ non sono array JavaScript: Array.from prima di concat
-                readonly property var lines: Array.from(root.plan.gia || [])
-                    .concat(Array.from(root.plan.salta || []).reduce((all, s) => all.concat(Array.from(s.concepts).map(id => "Salto «" + root.titleOf(id) + "» (" + root.nameOf(root.holderOf(id)) + "): " + s.why)), []))
-                    .concat(Array.from(root.plan.illeggibili || []).map(u => "Non so leggere " + u))
+                readonly property var skipped: Array.from(root.plan.salta || []).reduce((all, s, index) => all.concat(Array.from(s.concepts).map(id => ({
+                    index: index, id: id, kept: Array.from(s.tieni || []).includes(id),
+                    text: "«" + root.titleOf(id) + "» (" + root.nameOf(root.holderOf(id)) + "): " + s.why }))), [])
+                readonly property int keptCount: skipped.filter(s => s.kept).length
+                readonly property var lines: Array.from(root.plan.gia || []).map(t => ({ text: t }))
+                    .concat(skipped)
+                    .concat(Array.from(root.plan.illeggibili || []).map(u => ({ text: "Non so leggere " + u })))
                 visible: lines.length > 0
                 Layout.fillWidth: true
                 Layout.topMargin: Theme.gap
                 spacing: 4
                 TxButton {
-                    text: (known.open ? "▾ " : "▸ ") + (root.plan.gia || []).length + " già nel corso, " + (root.plan.salta || []).reduce((n, s) => n + s.concepts.length, 0)
-                          + " parti da saltare" + ((root.plan.illeggibili || []).length ? ", " + root.plan.illeggibili.length + " file che non so leggere" : "")
+                    text: (known.open ? "▾ " : "▸ ") + (root.plan.gia || []).length + " già nel corso, " + (known.skipped.length - known.keptCount)
+                          + (known.skipped.length - known.keptCount === 1 ? " parte" : " parti") + " da saltare" + (known.keptCount ? ", " + known.keptCount + " da tenere" : "")
+                          + ((root.plan.illeggibili || []).length ? ", " + root.plan.illeggibili.length + " file che non so leggere" : "")
                     flat: true
                     onClicked: known.open = !known.open
                 }
                 Repeater {
                     model: known.open ? known.lines : []
-                    TxLabel { required property string modelData; Layout.fillWidth: true; text: modelData; color: Theme.textMuted; font.pixelSize: Theme.smallSize; wrapMode: Text.WordWrap; elide: Text.ElideNone }
+                    RowLayout {
+                        id: knownLine
+                        required property var modelData
+                        readonly property bool skip: modelData.id !== undefined
+                        Layout.fillWidth: true
+                        spacing: Theme.gap
+                        TxLabel {
+                            Layout.fillWidth: true
+                            text: knownLine.skip ? (knownLine.modelData.kept ? "Non lo salto: " : "Salto ") + knownLine.modelData.text : knownLine.modelData.text
+                            color: knownLine.skip && knownLine.modelData.kept ? Theme.text : Theme.textMuted
+                            font.pixelSize: Theme.smallSize
+                            wrapMode: Text.WordWrap
+                            elide: Text.ElideNone
+                        }
+                        TxButton {
+                            visible: knownLine.skip && root.editable
+                            text: knownLine.modelData.kept ? "Saltala" : "Non saltarla"
+                            flat: true
+                            hint: knownLine.modelData.kept ? "Torna come l'aveva proposta il modello" : "La parte entra nel corso: «Rivedi piano» le trova un posto"
+                            onClicked: {
+                                const s = Array.from(root.plan.salta)[knownLine.modelData.index]
+                                const kept = Array.from(s.tieni || []).filter(id => id !== knownLine.modelData.id)
+                                Workspace.setPlanField(root.planId, "salta", knownLine.modelData.index, "tieni",
+                                                       knownLine.modelData.kept ? kept : kept.concat([knownLine.modelData.id]))
+                            }
+                        }
+                    }
                 }
             }
 

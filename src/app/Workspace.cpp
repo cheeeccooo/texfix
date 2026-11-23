@@ -2013,9 +2013,16 @@ void Workspace::setPlanField(const QString &id, const QString &list, int index, 
     static const QHash<QString, QStringList> values{{"comuni", {"one", "both", "skip"}}, {"versioni", {"porta", "nuovo", "salta"}}};
     QJsonObject plan = plans::load(m_project, id);
     QJsonArray items = plan.value(list).toArray();
-    if (!hasProject() || index < 0 || index >= items.size() || !QStringList{"comuni", "destinazioni", "versioni"}.contains(list))
+    if (!hasProject() || index < 0 || index >= items.size() || !QStringList{"comuni", "destinazioni", "versioni", "salta"}.contains(list))
         return;
-    const bool allowed = (key == "valore" && values.value(list).contains(value.toString())) || (list == "destinazioni" && (key == "fare" || key == "nota"));
+    // le parti da saltare che l'utente tiene: solo concetti di quella voce
+    const auto keeps = [&] {
+        const QJsonArray concepts = items.at(index).toObject().value("concepts").toArray();
+        const QStringList ids = value.toStringList();
+        return std::all_of(ids.begin(), ids.end(), [&](const QString &c) { return concepts.contains(c); });
+    };
+    const bool allowed = (key == "valore" && values.value(list).contains(value.toString())) || (list == "destinazioni" && (key == "fare" || key == "nota"))
+                         || (list == "salta" && key == "tieni" && keeps());
     if (!allowed)
         return;
     QJsonObject item = items.at(index).toObject();

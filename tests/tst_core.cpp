@@ -1351,6 +1351,14 @@ private slots:
         QVERIFY(asked.contains("YOUR PREVIOUS MAP"));
         QVERIFY(asked.contains("USER: mettila dopo la 1"));
         QVERIFY(!asked.contains("MATERIAL «"));                                            // i concetti erano tenuti
+
+        // una parte da saltare che l'utente tiene: è un'istruzione, e il modello la riceve con il suo titolo
+        QJsonObject kept{{"concetti", QJsonObject{{"B.9", QJsonObject{{"title", "Un esercizio"}}}}},
+                         {"salta", QJsonArray{QJsonObject{{"concepts", QJsonArray{"B.9"}}, {"why", "doppio"}}}}};
+        QVERIFY(!plans::hasInstructions(kept));
+        kept["salta"] = QJsonArray{QJsonObject{{"concepts", QJsonArray{"B.9"}}, {"why", "doppio"}, {"tieni", QJsonArray{"B.9"}}}};
+        QVERIFY(plans::hasInstructions(kept));
+        QVERIFY(sort::previousPlan(kept).contains("skipped «Un esercizio» (B.9): USER: do not skip it"));
     }
 
     // Riconoscere senza modello: una versione nuova, un doppione, un file che non si legge; e il modello che non
