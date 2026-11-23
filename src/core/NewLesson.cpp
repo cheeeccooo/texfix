@@ -8,7 +8,6 @@
 #include "core/Settings.h"
 #include "core/TexSource.h"
 #include "core/Tools.h"
-#include <QCryptographicHash>
 #include <algorithm>
 #include <QDirIterator>
 #include <QFile>
@@ -325,7 +324,7 @@ QStringList pagesForAgent(const Project &project, const QString &file)
 {
     // una cartella dal nome semplice: poppler su Windows non scrive dove il percorso ha lettere come «·»
     const QString dir = project.path(QStringLiteral("build/lavori/leggibili/pagine-%1")
-                                         .arg(QString::fromLatin1(QCryptographicHash::hash(file.toUtf8(), QCryptographicHash::Sha1).toHex().left(10))));
+                                         .arg(QString::fromLatin1(files::sha1(file.toUtf8()).left(10))));
     try {
         QStringList out;
         for (const QString &page : Pages::read(project.path(file), dir).full)

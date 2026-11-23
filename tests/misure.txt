@@ -1,10 +1,10 @@
 1.53	lezioni del documento (numero, data, titolo)
 0.18	blocchi di una lezione
-31.49	dubbi e aggiunte di tutte le lezioni
-10.22	figure da inserire di tutte le lezioni
-4.87	mosse di impaginazione di tutte le lezioni
-2.02	una decisione su un dubbio
-4.64	avvisi di un log di 1200 righe fuori misura
+17.74	dubbi e aggiunte di tutte le lezioni
+8.23	figure da inserire di tutte le lezioni
+4.94	mosse di impaginazione di tutte le lezioni
+2.13	una decisione su un dubbio
+4.85	avvisi di un log di 1200 righe fuori misura
 0.13	paragrafo di una riga
 0.00	prosa di una domanda per la resa
-2.33	un passo della cronologia dopo una modifica
+2.35	un passo della cronologia dopo una modifica

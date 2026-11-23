@@ -16,5 +16,8 @@ QString freeName(const QString &path);
 QString bare(const QString &name);
 // La cartella dei dati del programma (librerie, utilizzo, stime): `TEXFIX_DATI` nelle prove dell'interfaccia.
 QString dataDir();
+// L'impronta SHA-1 in esadecimale. Un oggetto per thread: QCryptographicHash::hash, con OpenSSL, ricarica il fornitore a
+// ogni chiamata e costa cento volte di più (SPEC §3.7 [C]).
+QByteArray sha1(const QByteArray &data);
 
 }

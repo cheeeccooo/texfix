@@ -5,7 +5,6 @@
 #include "core/Settings.h"
 #include "core/TexSource.h"
 
-#include <QCryptographicHash>
 #include <QLocale>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -40,7 +39,7 @@ const char *const PROGRAM_PROMPT =
     R"(You read the program, index or outline of a university course (usually in Italian). List its topics in the order the course follows them: one entry per topic a student studies as one chapter, with its sub-items merged into it.
 Return only a JSON object: {"topics": [{"title": "<Italian, at most 8 words, plain words without formulas>", "what": "<Italian, one short sentence: what it covers>"}]})";
 
-QString hashOf(const QByteArray &bytes) { return QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha1).toHex().left(16)); }
+QString hashOf(const QByteArray &bytes) { return QString::fromLatin1(files::sha1(bytes).left(16)); }
 
 // La risposta del modello, con gli id dati da Texfix in ordine.
 Holder parse(Holder h, const QJsonObject &answer)

@@ -5,7 +5,6 @@
 #include "core/TexLog.h"
 #include "core/Tools.h"
 
-#include <QCryptographicHash>
 #include <QDir>
 #include <QFileInfo>
 #include <QImage>
@@ -14,6 +13,7 @@
 #include <QMutex>
 #include <QPainter>
 #include <QRegularExpression>
+#include <QSet>
 
 using RE = QRegularExpression;
 
@@ -200,10 +200,17 @@ QString lessonOf(const Project &project, const QString &id)
 
 int pending(const Project &project, const QString &lesson)
 {
-    const QString text = files::read(project.path(lesson));
+    // i segni della lezione, letti una volta (non una ricerca per ogni figura del registro), e per nome intero:
+    // «% img src1-1» non è «% img src1-10»
+    static const QRegularExpression signs(R"(% img ([\w-]+))");
+    QSet<QString> here;
+    for (auto it = signs.globalMatch(files::read(project.path(lesson))); it.hasNext();)
+        here.insert(it.next().captured(1));
+    if (here.isEmpty())
+        return 0;
     int n = 0;
     for (const Figure &f : all(project))
-        n += (f.state == "da_inserire" || f.decision.isEmpty()) && text.contains(mark(f.id));       // da inserire, o da rivedere
+        n += (f.state == "da_inserire" || f.decision.isEmpty()) && here.contains(f.id);       // da inserire, o da rivedere
     return n;
 }
 
@@ -281,7 +288,7 @@ QString draw(const Project &project, const Settings &settings, const Style &styl
     }
     // un disegno già fatto e pagato per questa stessa richiesta si riusa (un lavoro ripreso)
     const QString cache = workDir(project, figure.id) + "/disegno-"
-                          + QString::fromLatin1(QCryptographicHash::hash((system + parts.join(QChar(0))).toUtf8(), QCryptographicHash::Sha1).toHex().left(12)) + ".tex";
+                          + QString::fromLatin1(files::sha1((system + parts.join(QChar(0))).toUtf8()).left(12)) + ".tex";
     QString code = files::read(cache), error, png;
     try {
         const bool reused = !code.isEmpty() && compile(project, figure.id, code, &png).isEmpty();
@@ -615,7 +622,7 @@ QString keyOf(const Project &project, const QString &id)
     }
     for (const QFileInfo &f : QDir(project.root()).entryInfoList({"*.sty"}, QDir::Files))
         h += f.fileName().toUtf8() + f.lastModified().toString(Qt::ISODateWithMs).toUtf8();
-    return QString::fromLatin1(QCryptographicHash::hash(h, QCryptographicHash::Sha1).toHex().left(12));
+    return QString::fromLatin1(files::sha1(h).left(12));
 }
 }
 

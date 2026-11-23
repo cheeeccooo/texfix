@@ -3,7 +3,6 @@
 #include "core/Files.h"
 #include "core/Tools.h"
 
-#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -126,7 +125,7 @@ Pages Pages::read(const QString &source, const QString &dir, const QString &root
     if (DOCUMENTS.contains(ext) && !root.isEmpty()) {
         QFile f(source);
         const QString media = f.open(QIODevice::ReadOnly)
-            ? QStringLiteral("build/lavori/documenti/") + QString::fromLatin1(QCryptographicHash::hash(f.readAll(), QCryptographicHash::Sha1).toHex().left(12))
+            ? QStringLiteral("build/lavori/documenti/") + QString::fromLatin1(files::sha1(f.readAll()).left(12))
             : QString();
         pages.text = media.isEmpty() ? QString() : tools::documentMarkdown(source, root, media);
         if (!pages.text.trimmed().isEmpty()) {

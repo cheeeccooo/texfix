@@ -5,7 +5,6 @@
 #include "core/Model.h"
 #include "core/Pages.h"
 
-#include <QCryptographicHash>
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
@@ -26,7 +25,7 @@ bool writeJson(const QString &path, const QJsonObject &o) { return files::write(
 
 QString hashOf(const QString &text)
 {
-    return QString::fromLatin1(QCryptographicHash::hash(text.simplified().toUtf8(), QCryptographicHash::Sha1).toHex().left(12));
+    return QString::fromLatin1(files::sha1(text.simplified().toUtf8()).left(12));
 }
 
 // La riga (da 1) in cui `excerpt` compare, se compare una volta sola; altrimenti 0.

@@ -7,7 +7,6 @@
 #include "core/SyncTex.h"
 #include "core/Tools.h"
 
-#include <QCryptographicHash>
 #include <exception>
 #include <functional>
 #include <optional>
@@ -44,7 +43,7 @@ QStringList withoutSigns(const QStringList &lines)
 // L'impronta della lezione senza le mosse dell'impaginazione: cambia solo se cambia il contenuto.
 QString contentHash(const QString &text)
 {
-    return QString::fromLatin1(QCryptographicHash::hash(withoutSigns(text.split('\n')).join('\n').toUtf8(), QCryptographicHash::Sha1).toHex().left(16));
+    return QString::fromLatin1(files::sha1(withoutSigns(text.split('\n')).join('\n').toUtf8()).left(16));
 }
 
 // La lezione com'era quando è stata misurata (senza le mosse), con la sua impronta nel nome: quando cambia dice da dove.
@@ -71,7 +70,7 @@ void stamp(const Project &project, const QString &file, QJsonObject *entry, cons
 // L'impronta della lezione così com'è, mosse comprese: le pagine in piccolo del «dopo» si fanno da questo testo.
 QString textHash(const QString &text)
 {
-    return QString::fromLatin1(QCryptographicHash::hash(text.toUtf8(), QCryptographicHash::Sha1).toHex().left(16));
+    return QString::fromLatin1(files::sha1(text.toUtf8()).left(16));
 }
 
 blocks::Units unitsOf(const Style &style) { return {style.boxes(), {style.figureWrapper(), "figure"}}; }

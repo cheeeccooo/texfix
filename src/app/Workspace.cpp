@@ -34,7 +34,6 @@
 
 #include <QDir>
 #include <QDirIterator>
-#include <QCryptographicHash>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QDate>
@@ -1755,7 +1754,7 @@ void Workspace::refreshShots()
         if (!QFileInfo::exists(m_project.path(file)))
             continue;
         const QStringList blocks = layout::oldShots(m_project, file);
-        const QByteArray hash = QCryptographicHash::hash(files::read(m_project.path(file)).toUtf8(), QCryptographicHash::Sha1);
+        const QByteArray hash = files::sha1(files::read(m_project.path(file)).toUtf8());
         if (blocks.isEmpty() || m_shotsTried.value(file) == hash)
             continue;
         m_shotsTried.insert(file, hash);

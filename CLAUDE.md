@@ -45,7 +45,7 @@ Due parti, un processo solo.
 
 | Modulo | Che cosa fa |
 |---|---|
-| `core/Files` | letture; scritture sicure (`QSaveFile`); nomi liberi «nome (2)» |
+| `core/Files` | letture; scritture sicure (`QSaveFile`); nomi liberi «nome (2)»; `sha1`, l'impronta di tutto il motore (un oggetto per thread: `QCryptographicHash::hash` con OpenSSL costa cento volte tanto, SPEC §3.7 [C]) |
 | `core/Tools` | il PATH dei programmi esterni (con le cartelle di TeX, Homebrew, Git, claude di ogni sistema); `start` (su Windows uno script passa da `sh`, un `.cmd` da `cmd`); processi a capo di un gruppo (`ownGroup`, `stopGroup`: lui e i figli; su Windows `taskkill /T`; la famiglia muore con Texfix: su Windows il contenitore ha `KILL_ON_JOB_CLOSE`, su Linux `PR_SET_PDEATHSIG`); `commandOf` (la riga di comando di un processo vivo); immagini e documenti per il modello (`imageToPng`, `imageToPdf`, `documentText`: sips e textutil sul Mac, Qt e pandoc altrove); `documentMarkdown`: un documento con pandoc, tabelle, formule e immagini estratte |
 | `core/Project` | il progetto su disco: crea, anche da una cartella con dei file (`loose`: i file con la proposta; `create` con dove va ognuno: in arrivo, in `docs/`, dov'è), completa ciò che manca; la regola delle lezioni (`inputs`) |
 | `core/TexLog` | gli avvisi di un `.log`: errori con file e riga, righe troppo larghe o vuote |
@@ -342,7 +342,7 @@ riquadri, stesso numero di definizioni e di figure; la nuova dà titoli alle sez
 un'osservazione che la vecchia lasciava in prosa, e non va a capo nel sorgente. Simili, non uguali.
 
 **§5 Prove.** `./build.sh prove` (75 prove del motore), `./build.sh misure` (i tempi di ciò che l'interfaccia rifà
-spesso, contro `tests/misure.txt`; `--scrivi` li riscrive). Dei riferimenti della vecchia app sono portate le formule in display vere (`tests/dati/display.json`), per la mossa
+spesso, contro `tests/misure.txt`; `--scrivi` li riscrive; valgono solo con `build/` in RelWithDebInfo, e `build.sh misure` la riconfigura se un editor l'ha messa in Debug). Dei riferimenti della vecchia app sono portate le formule in display vere (`tests/dati/display.json`), per la mossa
 sulle formule; il resto dipende da prompt e stile, che qui sono cambiati per scelta.
 
 Attenzione in QML: una proprietà non può chiamarsi `on…` con la maiuscola dopo (`onStyles`): viene presa per un

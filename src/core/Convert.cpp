@@ -13,7 +13,6 @@
 #include "core/TexSource.h"
 #include "core/Tools.h"
 
-#include <QCryptographicHash>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFileInfo>
@@ -34,7 +33,7 @@ const char *const RUNNING = "build/lavori/converti/in-corso.json";
 
 QString hash(const QByteArray &data)
 {
-    return QString::fromLatin1(QCryptographicHash::hash(data, QCryptographicHash::Sha1).toHex().left(12));
+    return QString::fromLatin1(files::sha1(data).left(12));
 }
 QString dump(const QJsonValue &value)
 {

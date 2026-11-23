@@ -18,6 +18,11 @@ if [ ! -f build/CMakeCache.txt ]; then
     prefix=$(qt_prefix)
     cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo ${prefix:+-DCMAKE_PREFIX_PATH="$prefix"}
 fi
+# le misure valgono solo ottimizzate: una build/ riconfigurata in Debug (un editor lo fa) le moltiplica per sette
+if [ "$1" = misure ] && ! grep -q '^CMAKE_BUILD_TYPE:STRING=RelWithDebInfo$' build/CMakeCache.txt; then
+    echo "build/ non è RelWithDebInfo: la riconfiguro così, altrimenti le misure non dicono niente"
+    cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo >/dev/null
+fi
 # al massimo 4 processi: una build da zero con di più blocca un Mac da 8 GB
 cpus=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 JOBS="${TEXFIX_JOBS:-$([ "$cpus" -gt 4 ] && echo 4 || echo "$cpus")}"

@@ -681,8 +681,14 @@ private slots:
         QCOMPARE(figures::caption(p, style, "src1-01"), "Una retta, $y = x$.");
         QVERIFY(figures::code(p, "src1-01").startsWith("\\centering\n\\begin{tikzpicture}"));   // senza il rientro
         QVERIFY(figures::origin(p, figures::find(p, "src1-01")).isEmpty());
+        QCOMPARE(figures::pending(p, "src/src1.tex"), 1);   // scritta, da rivedere
         figures::decide(p, "src1-01", true);
         QCOMPARE(figures::find(p, "src1-01").decision, "accettata");
+        QCOMPARE(figures::pending(p, "src/src1.tex"), 0);
+        figures::Figure other;                                                          // «src1-0» non è «src1-01»
+        other.id = "src1-0";
+        figures::save(p, other);
+        QCOMPARE(figures::pending(p, "src/src1.tex"), 0);
 
         // la figura viene da una pagina: disegnata, poi ritagliata con il cancellino, poi di nuovo il disegno
         QVERIFY(figures::place(p, "src1-01", drawn).isEmpty());

@@ -1,5 +1,7 @@
 #include "core/Files.h"
 
+#include <QCryptographicHash>
+
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -61,6 +63,14 @@ QString bare(const QString &name)
 }
 
 namespace tx::files {
+QByteArray sha1(const QByteArray &data)
+{
+    thread_local QCryptographicHash hash(QCryptographicHash::Sha1);
+    hash.reset();
+    hash.addData(data);
+    return hash.result().toHex();
+}
+
 QString dataDir()
 {
     const QString data = qEnvironmentVariable("TEXFIX_DATI");          // per le prove dell'interfaccia: dati a parte
