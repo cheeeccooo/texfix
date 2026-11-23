@@ -140,7 +140,8 @@ public:
     // Un progetto nuovo, per data o per argomento, anche da un profilo di partenza (vuoto: nessuno), in una cartella
     // vuota o con dei file: placement dice dove va ognuno (file → «coda», «docs», «lascia»; Project::create). I
     // profili: i nomi; saveProfile salva le scelte del progetto aperto (vuoto se è andata).
-    Q_INVOKABLE QString newProject(const QString &path, const QString &profile = {}, bool byTopic = false, const QVariantMap &placement = {});
+    Q_INVOKABLE QString newProject(const QString &path, const QString &profile = {}, bool byTopic = false, const QVariantMap &placement = {},
+                                   const QString &style = {});   // style: uno della libreria (gli altri, «@…», li fa chi chiama)
     Q_INVOKABLE QStringList profiles() const;                              // i predefiniti, poi la libreria
     Q_INVOKABLE QStringList builtinProfiles() const;
     Q_INVOKABLE QStringList libraryProfiles() const;
@@ -373,8 +374,10 @@ public:
     // Il limite di utilizzo in ogni azione: un'azione con il modello chiesta quando il limite è raggiunto (limited), o
     // un lavoro che il limite ha fermato, aspetta la ripresa e riparte da sé (later). Attività la mostra con «Adesso»
     // (retryLater) e «Lascia stare» (dropLater). limited: vero se l'azione aspetta, e allora chi chiama non parte.
-    bool limited(const QString &title, std::function<void()> again);
-    void later(const QString &title, std::function<void()> again, const QDateTime &until);
+    // key: che cosa la distingue da un'altra con lo stesso titolo (la lezione dei dubbi, la figura…); la stessa due volte
+    // aspetta una volta sola
+    bool limited(const QString &title, std::function<void()> again, const QString &key = {});
+    void later(const QString &title, std::function<void()> again, const QDateTime &until, const QString &key = {});
     QVariantList waitingLimit() const;
     Q_INVOKABLE void retryLater(int index);
     Q_INVOKABLE void dropLater(int index);
@@ -542,6 +545,7 @@ private:
         QString title;
         std::function<void()> again;
         QDateTime until;
+        QString key;
     };
     QList<Later> m_later;
     QVariantList m_recent, m_outcomes, m_strays, m_jobs, m_lessons, m_documentFiles, m_queue, m_documents, m_images, m_issues;

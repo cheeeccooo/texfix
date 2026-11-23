@@ -35,7 +35,8 @@ ApplicationWindow {
     property bool styleAgentNext: false
     function createProject(path, profile, byTopic, program, style, placement) {
         const named = profile && !profile.startsWith("@") ? profile : ""
-        const error = Workspace.newProject(path, named, byTopic === true, placement || {})
+        // uno stile della libreria lo mette newProject (senza lasciare quello di partenza); da file o con l'agente, dopo
+        const error = Workspace.newProject(path, named, byTopic === true, placement || {}, style && !style.startsWith("@") ? style : "")
         if (error === "" && program)
             Workspace.setProgram(program)
         if (error === "") {
@@ -43,8 +44,6 @@ ApplicationWindow {
                 Workspace.importProfile(profile.substring(6))
             if (style && style.startsWith("@file:"))
                 window.importStyle(style.substring(6))
-            else if (style && !style.startsWith("@") && style !== "science_default")
-                Workspace.useLibraryStyle(style)
             styleAgentNext = style === "@agente" && profile === "@agente"
             if (profile === "@agente")
                 Qt.callLater(() => Workspace.askAgent("crea-profilo"))

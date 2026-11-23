@@ -169,7 +169,7 @@ QVariantList Workspace::folderFiles(const QString &path) const
     return out;
 }
 
-QString Workspace::newProject(const QString &path, const QString &profile, bool byTopic, const QVariantMap &placement)
+QString Workspace::newProject(const QString &path, const QString &profile, bool byTopic, const QVariantMap &placement, const QString &style)
 {
     QHash<QString, QString> where;
     for (auto it = placement.begin(); it != placement.end(); ++it)
@@ -184,6 +184,16 @@ QString Workspace::newProject(const QString &path, const QString &profile, bool 
     if (byTopic)
         reorganize::startByTopic(Project(path));
     open(path);
+    // lo stile scelto: il progetto nasce con quello di partenza, che senza lezioni non serve più e si toglie
+    if (!style.isEmpty() && !style.startsWith('@') && style != m_settings.style) {
+        const QString first = m_settings.style;
+        useLibraryStyle(style);
+        if (m_settings.style == style && !first.isEmpty() && m_project.lessons().isEmpty()) {
+            QFile::remove(m_project.path(first + ".sty"));
+            QFile::remove(m_project.path(Style::descriptionFile(first)));
+            refreshTree();
+        }
+    }
     const int queued = int(std::count_if(moved.begin(), moved.end(), [](const QString &m) { return m.contains(QLatin1String("→ fonti/coda/")); }));
     if (queued > 0)                                    // in arrivo, da smistare: non parte niente da sé
         say(QStringLiteral("Progetto pronto: %1 in arrivo, «Smista» %2 riconosce e fa il piano.").arg(plural(queued, "file", "file"), queued == 1 ? "lo" : "li"));
@@ -1094,7 +1104,7 @@ void Workspace::proposeStyle(const QString &name)
         return;
     if (busy())
         return say(QStringLiteral("Aspetta la fine del lavoro in corso."));
-    if (limited(QStringLiteral("Leggo lo stile"), [this, name] { proposeStyle(name); }))
+    if (limited(QStringLiteral("Leggo lo stile"), [this, name] { proposeStyle(name); }, "stile:" + name))
         return;
     startJob(QStringLiteral("Leggo lo stile"), [this, name, project = m_project, quality = m_settings.quality](JobControl *control) {
         QString note;
@@ -1483,7 +1493,7 @@ void Workspace::redoFigure(const QString &id, const QString &how, const QString 
         return;
     if (busy())
         return say(QStringLiteral("C'è già un lavoro in corso."));
-    if (how != "ritaglia" && limited(QStringLiteral("Ridisegno la figura"), [this, id, how, instruction] { redoFigure(id, how, instruction); }))
+    if (how != "ritaglia" && limited(QStringLiteral("Ridisegno la figura"), [this, id, how, instruction] { redoFigure(id, how, instruction); }, "figura:" + id))
         return;
     checkpoint(QStringLiteral("Modifiche a mano"));
     const bool crop = how == "ritaglia";
@@ -1654,7 +1664,7 @@ void Workspace::fixAll(const QString &only, bool errorsOnly)
         return;
     if (busy())
         return say(QStringLiteral("C'è già un lavoro in corso."));
-    if (limited(QStringLiteral("Sistemo errori e righe"), [this, only, errorsOnly] { fixAll(only, errorsOnly); }))
+    if (limited(QStringLiteral("Sistemo errori e righe"), [this, only, errorsOnly] { fixAll(only, errorsOnly); }, "righe:" + only))
         return;
     // le lezioni con errori o righe fuori misura nell'ultima compilazione; quelle fatte si saltano
     QStringList lessons;
@@ -2217,7 +2227,7 @@ void Workspace::sortJob(const QStringList &sources, const QJsonObject &previous,
         refreshTree();
         return say(QStringLiteral("Riconosco il materiale appena finisce il lavoro in corso."));
     }
-    if (limited(QStringLiteral("Riconosco il materiale"), [this, sources, previous, replaces] { sortJob(sources, previous, replaces); }))
+    if (limited(QStringLiteral("Riconosco il materiale"), [this, sources, previous, replaces] { sortJob(sources, previous, replaces); }, "smista:" + sources.join('|')))
         return;
     for (const QString &source : sources)
         m_unrecognized.remove(source);
@@ -2455,22 +2465,23 @@ void Workspace::restartJob(const QString &title, std::function<std::function<voi
     startJob(title, work, forRun);
 }
 
-bool Workspace::limited(const QString &title, std::function<void()> again)
+bool Workspace::limited(const QString &title, std::function<void()> again, const QString &key)
 {
     const QDateTime until = tx::usage::current().blockedUntil();
     if (!until.isValid())
         return false;
-    later(title, std::move(again), until);
+    later(title, std::move(again), until, key);
     return true;
 }
 
-void Workspace::later(const QString &title, std::function<void()> again, const QDateTime &until)
+void Workspace::later(const QString &title, std::function<void()> again, const QDateTime &until, const QString &key)
 {
+    const QString same = key.isEmpty() ? title : key;
     for (const Later &l : std::as_const(m_later))      // la stessa azione chiesta due volte aspetta una volta sola
-        if (l.title == title)
+        if (l.key == same)
             return say(QStringLiteral("«%1» aspetta già la ripresa: riparte da sé %2.").arg(title, Model::when(l.until)));
     const QDateTime at = until.isValid() ? until : QDateTime::currentDateTime().addSecs(30 * 60);
-    m_later.append({title, std::move(again), at});
+    m_later.append({title, std::move(again), at, same});
     say(QStringLiteral("Limite di utilizzo di Claude raggiunto: «%1» riparte da sé %2.").arg(title, Model::when(at)));
     emit waitingLimitChanged();
 }
@@ -3186,7 +3197,7 @@ void Workspace::decideDoubts(const QString &lesson, const QStringList &ids)
 {
     if (busy())
         return say(QStringLiteral("C'è già un lavoro in corso."));
-    if (limited(QStringLiteral("Il modello decide i dubbi"), [this, lesson, ids] { decideDoubts(lesson, ids); }))
+    if (limited(QStringLiteral("Il modello decide i dubbi"), [this, lesson, ids] { decideDoubts(lesson, ids); }, "dubbi:" + lesson))
         return;
     QStringList todo = ids;
     if (todo.isEmpty())

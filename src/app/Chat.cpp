@@ -174,7 +174,7 @@ void Chat::send(const QString &typed, const QStringList &attachments)
     if (workspace->busy())
         return workspace->say(QStringLiteral("Aspetta la fine del lavoro in corso."));
     // il limite di utilizzo già raggiunto: il messaggio parte da sé alla ripresa
-    if (workspace->limited(QStringLiteral("Il messaggio all'agente"), [this, typed, attachments] { send(typed, attachments); }))
+    if (workspace->limited(QStringLiteral("Il messaggio all'agente"), [this, typed, attachments] { send(typed, attachments); }, "chat:" + typed))
         return add("note", QStringLiteral("Limite di utilizzo di Claude raggiunto: il messaggio parte da sé %1 (in Attività: «Adesso» o «Lascia stare»).")
                                .arg(Model::when(tx::usage::current().blockedUntil())));
     workspace->checkpoint(QStringLiteral("Modifiche a mano"));
