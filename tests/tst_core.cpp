@@ -2837,6 +2837,57 @@ private slots:
         QCOMPARE(files::read(p.path("src/src1.tex")), "\\section{Limiti}\n\\lezione{1}{01/10/2026}\n\nIl limite.\n");   // niente scritto
     }
 
+    // «Ferma» a metà di un compito dell'agente è una pausa: il compito tiene la sua conversazione e la lezione com'è;
+    // «Riprendi» la continua (prima la lezione tornava com'era e il compito si rifaceva da capo).
+    void runPauseKeepsConversation()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        files::write(p.path("src/src1.tex"), "\\section{Limiti}\n\\lezione{1}{01/10/2026}\n\nIl limite.\n");
+        files::write(p.path("fonti/coda/B.md"), "Un esempio di limite.\n");
+        const QJsonObject plan{{"titolo", "Aggiungi materiale"}, {"stato", "piano"}, {"tipo", "materiale"}, {"formato", "concetti"},
+                               {"file", QJsonArray{"fonti/coda/B.md"}},
+                               {"fonti", QJsonArray{QJsonObject{{"key", "B"}, {"name", "B"}, {"source", "fonti/coda/B.md"}, {"file", "B"}, {"pagine", false}}}},
+                               {"corso", QJsonArray{QJsonObject{{"key", "L1"}, {"name", "Lezione 1 · Limiti"}, {"source", "src/src1.tex"}}}},
+                               {"concetti", QJsonObject{{"B.1", QJsonObject{{"title", "Esempio"}, {"from", 1}, {"to", 1}}}}},
+                               {"destinazioni", QJsonArray{QJsonObject{{"into", "L1"}, {"concepts", QJsonArray{"B.1"}}, {"fare", true}, {"nota", ""}}}}};
+        QVERIFY(plans::save(p, "20261123-120000", plan));
+        auto line = [](const QJsonObject &o) { return QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)) + '\n'; };
+        files::write(dir.filePath("inizio.json"), line({{"type", "system"}, {"subtype", "init"}, {"session_id", "s1"}}));
+        files::write(dir.filePath("fine.json"), line({{"type", "result"}, {"result", "- Aggiunto l'esempio."}, {"total_cost_usd", 0.1}, {"session_id", "s1"}}));
+        // la prima volta comincia e resta a lavorare; ripreso (--resume) finisce
+        files::write(dir.filePath("claude"), QString("#!/bin/sh\ncat > /dev/null\ncase \"$*\" in *--resume*) printf '%s\\n' \"$*\" > '%1/ripreso.txt'; cat '%1/fine.json'; exit 0;; esac\n"
+                                                     "cat '%1/inizio.json'\nsleep 30\n").arg(dir.path()));
+        QFile(dir.filePath("claude")).setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
+        JobControl control;
+        auto running = std::async(std::launch::async, [&] { return run::execute(p, Settings::load(p), Style::classic(), "20261123-120000", &control); });
+        QElapsedTimer waited;
+        waited.start();
+        while (waited.elapsed() < 20000 && run::load(p, "20261123-120000").value("compiti").toArray().at(0).toObject().value("stato").toString() != "in_corso")
+            QThread::msleep(100);
+        QThread::msleep(1500);                                                          // la conversazione è cominciata
+        files::write(p.path("src/src1.tex"), "\\section{Limiti}\n\\lezione{1}{01/10/2026}\n\nIl limite.\n\nMezzo esempio.\n");   // l'agente, a metà
+        control.stop();
+        const run::Result first = running.get();
+        QVERIFY(first.stopped);
+        QJsonObject task = run::load(p, "20261123-120000").value("compiti").toArray()[0].toObject();
+        QCOMPARE(task.value("stato").toString(), "pausa");
+        QCOMPARE(task.value("sessione").toString(), "s1");
+
+        JobControl again;
+        const run::Result second = run::execute(p, Settings::load(p), Style::classic(), "20261123-120000", &again);
+        qunsetenv("TEXFIX_CLAUDE");
+        QVERIFY2(!second.stopped, qPrintable(second.failure));
+        QVERIFY(files::read(dir.filePath("ripreso.txt")).contains("--resume s1"));
+        QVERIFY(files::read(p.path("src/src1.tex")).contains("Mezzo esempio."));          // la lezione è rimasta com'era a metà
+        QCOMPARE(run::load(p, "20261123-120000").value("compiti").toArray()[0].toObject().value("stato").toString(), "fatta");
+    }
+
     // «Avvia» è un lavoro solo: la conversione scrive la lezione nuova e, insieme, l'agente completa la lezione del corso
     // (senza chat). Il piano resta con l'esito; «Ferma» e la ripresa non rifanno ciò che è fatto; «Annulla tutto il
     // lavoro» riporta il progetto com'era e il piano da avviare.

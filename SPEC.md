@@ -178,7 +178,10 @@ sua analisi, un esempio, un esercizio) va dove serve, anche se il file da cui vi
   di ognuno che cosa fa ora, o che aspetta il suo turno); le chiamate ai sottoagenti, con che cosa hanno ricevuto, fatto e
   risposto, e insieme a loro i passi senza modello (compilazioni con l'esito, prove di errori e righe e d'impaginazione, la
   preparazione: niente di ciò che il lavoro fa resta nascosto; decisione del 19/11/2026); alla fine l'esito, con «Chiudi e archivia» (i registri delle chiamate si
-  buttano) e «Annulla tutto il lavoro» (il progetto torna com'era prima di «Avvia», il piano da avviare).
+  buttano) e «Annulla tutto il lavoro» (il progetto torna com'era prima di «Avvia», il piano da avviare). **«Metti in pausa»
+  è una pausa, non un annullamento**: ciò che è fatto resta, anche a metà (l'agente tiene la sua conversazione e la
+  lezione com'è); in pausa si sceglie fra «Riprendi», che continua da lì, e «Annulla tutto il lavoro» (decisione del
+  23/11/2026).
 - **[S]** **Il limite di utilizzo non è un errore.** Quando una chiamata lo trova, il lavoro finisce ciò che è in corso,
   non fa partire niente di nuovo e si ferma da sé, come se il programma fosse stato chiuso e riaperto; dice quando si
   può riprendere («alle 02:21», «domani alle 02:21», «il 21/11 alle 09:00», letto dal messaggio; se non si legge, fra

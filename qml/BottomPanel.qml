@@ -25,7 +25,7 @@ Rectangle {
         if (Chat.running)
             out.push({ title: "Agente" + (Chat.title !== "" ? ": " + Chat.title : ""), detail: Chat.waiting ? "aspetta la tua conferma" : "sta lavorando", progress: -1, state: "run", agent: true })
         if (run.id && !Workspace.jobRunning && run.state !== "finito")      // il lavoro di «Avvia» fermato o interrotto
-            out.push({ title: "Aggiungi materiale", detail: (run.state === "fermato" ? (run.connection ? "fermato perché mancava la connessione" : run.until !== "" ? "fermato dal limite di utilizzo" : "fermato") : "interrotto")
+            out.push({ title: "Aggiungi materiale", detail: (run.state === "fermato" ? (run.connection ? "in pausa perché mancava la connessione" : run.until !== "" ? "in pausa per il limite di utilizzo" : "in pausa") : "interrotto")
                                + (run.until !== "" && !run.untilPassed && !run.connection ? ": si può riprendere " + run.until : ": riprende senza rifare ciò che è già fatto"),
                        progress: -1, state: "wait", resume: true, open: "lavoro:" + run.id })
         else if (run.id && run.state === "finito")

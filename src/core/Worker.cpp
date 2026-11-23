@@ -130,7 +130,7 @@ Result run(const Project &project, const Settings &settings, const Style &style,
         }
     };
 
-    QString message = session.isEmpty() ? task : QStringLiteral("Eri stato interrotto (il limite di utilizzo, o la connessione): continua il compito da dove eri rimasto. Il compito era:\n\n") + task;
+    QString message = session.isEmpty() ? task : QStringLiteral("Eri stato interrotto (una pausa dell'utente, il limite di utilizzo o la connessione): continua il compito da dove eri rimasto. Il compito era:\n\n") + task;
     int failures = 0, drops = 0;
     report(QStringLiteral("in_corso"));
     while (true) {
@@ -195,7 +195,12 @@ Result run(const Project &project, const Settings &settings, const Style &style,
             control->untrack(pid);
             if (control->stopped()) {
                 report(QStringLiteral("fermata"));
-                throw Stopped();
+                if (out.session.isEmpty())             // non era ancora cominciato: si rifà da capo
+                    throw Stopped();
+                // in pausa: la lezione resta com'è, e alla ripresa l'agente continua la stessa conversazione
+                out.cost += result.value("total_cost_usd").toDouble();
+                out.paused = true;
+                return out;
             }
         }
         out.cost += result.value("total_cost_usd").toDouble();

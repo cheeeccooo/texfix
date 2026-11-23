@@ -71,7 +71,8 @@ Rectangle {
                                                              : "Si può riprendere " + run.until + ".") : ""
         const why = run.connection ? "perché mancava la connessione" : "dal limite di utilizzo di Claude"
         if (runState === "fermato")
-            return limited !== "" ? "Fermato " + why + ". " + limited : "Fermato."
+            return limited !== "" ? "In pausa " + why + ". " + limited
+                                  : "In pausa: ciò che è fatto resta, anche a metà. «Riprendi» continua da lì; «Annulla tutto il lavoro» riporta il progetto a prima di «Avvia»."
         if (runState === "interrotto")
             return "Interrotto dalla chiusura del programma." + (limited !== "" ? " Era fermo " + why + ". " + limited : "")
         return "Finito"
@@ -111,14 +112,14 @@ Rectangle {
                     Text {
                         id: stateLabel
                         anchors.centerIn: parent
-                        text: root.runState === "in_corso" ? "in corso" : root.runState === "in_pausa" ? "in pausa" : root.runState
+                        text: root.runState === "in_corso" ? "in corso" : root.runState === "in_pausa" ? "si sta fermando" : root.runState === "fermato" ? "in pausa" : root.runState
                         color: Theme.text
                         font.pixelSize: Theme.smallSize
                         font.weight: Font.DemiBold
                     }
                 }
                 Item { Layout.fillWidth: true }
-                TxButton { visible: root.working; text: "Ferma"; hint: "Ciò che è fatto resta; si riprende da lì"; onClicked: Workspace.stop() }
+                TxButton { visible: root.working; text: "Metti in pausa"; hint: "Ciò che è fatto resta, anche a metà: «Riprendi» continua da lì"; onClicked: Workspace.stop() }
                 TxButton {
                     visible: root.runState === "fermato" || root.runState === "interrotto"
                     text: "Riprendi"

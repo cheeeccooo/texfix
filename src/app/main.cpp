@@ -78,10 +78,16 @@ void runHandsFree(QQuickWindow *window, QStringList gestures, const QString &pho
     timer->setInterval(350);
     qint64 waitUntil = 0;
     QObject::connect(timer, &QTimer::timeout, window, [=]() mutable {
-        // «aspetta N» e «foto-ora FILE» non aspettano che il programma sia fermo: per vedere un lavoro mentre gira
+        // «aspetta N», «foto-ora FILE» e «ferma» non aspettano che il programma sia fermo: per vedere (e mettere in pausa)
+        // un lavoro mentre gira
         if (QDateTime::currentMSecsSinceEpoch() < waitUntil)
             return;
         const QString next = gestures.isEmpty() ? QString() : gestures.first().trimmed();
+        if (next == "ferma") {
+            gestures.takeFirst();
+            Workspace::instance()->stop();
+            return;
+        }
         if (next.startsWith("aspetta ")) {
             gestures.takeFirst();
             waitUntil = QDateTime::currentMSecsSinceEpoch() + qint64(next.section(' ', 1, 1).toDouble() * 1000);

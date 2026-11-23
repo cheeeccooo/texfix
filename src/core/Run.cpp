@@ -240,8 +240,8 @@ Result execute(const Project &project, const Settings &settings, const Style &st
         }
         if (control)
             control->checkLimit();                     // il limite è già stato raggiunto: il compito aspetta la ripresa
-        // fermato dal limite a metà: l'agente continua la sua conversazione, la lezione resta com'è
-        const QString session = t.value("stato").toString() == "limite" ? t.value("sessione").toString() : QString();
+        // fermato a metà dal limite o messo in pausa: l'agente continua la sua conversazione, la lezione resta com'è
+        const QString session = t.value("stato").toString() == "limite" || t.value("stato").toString() == "pausa" ? t.value("sessione").toString() : QString();
         change([&](QJsonObject &s) {
             QJsonArray all = s.value("compiti").toArray();
             QJsonObject now = all[index].toObject();
@@ -265,6 +265,19 @@ Result execute(const Project &project, const Settings &settings, const Style &st
             });
             site({{"chiave", key}, {"fase", "Agente"}, {"stato", "da_fare"}});
             throw LimitPause();
+        }
+        if (r.paused) {                                // «Ferma»: in pausa, con la conversazione; niente si rimette com'era
+            change([&](QJsonObject &s) {
+                QJsonArray all = s.value("compiti").toArray();
+                QJsonObject now = all[index].toObject();
+                now["stato"] = "pausa";
+                now["sessione"] = r.session;
+                now["costo"] = now.value("costo").toDouble() + r.cost;
+                all[index] = now;
+                s["compiti"] = all;
+            });
+            site({{"chiave", key}, {"fase", "Agente"}, {"stato", "fermata"}});
+            throw Stopped();
         }
         // se l'agente non ha chiuso la lezione, la chiude Texfix: marcatori, fonti fra le usate, il posto nel documento
         if (r.ok && QFileInfo::exists(project.path(lesson))

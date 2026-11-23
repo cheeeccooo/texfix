@@ -27,6 +27,7 @@ struct Result {
     QString failure;                       // perché non è andata
     QString session;                       // la conversazione: un compito interrotto la riprende
     bool limited = false;                  // fermato dal limite di utilizzo: si riprende con session
+    bool paused = false;                   // messo in pausa («Ferma», o il programma chiuso) a conversazione cominciata: idem
     double cost = 0;
 };
 // title: come si chiama il compito per chi guarda («Aggiunte alla lezione 3»).

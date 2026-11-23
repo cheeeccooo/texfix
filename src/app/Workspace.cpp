@@ -2340,13 +2340,13 @@ void Workspace::runFinished(const run::Result &result)
         }
         lines += result.lines;
         if (result.stopped && !m_closing)
-            lines << QStringLiteral("Lavoro fermato: ciò che è fatto resta, e si riprende da lì con «Riprendi».");
+            lines << QStringLiteral("In pausa: ciò che è fatto resta, anche a metà, e si riprende da lì con «Riprendi».");
         if (!result.failure.isEmpty())
             lines << result.failure;
         m_runOutcome = QVariantMap{{"lines", lines}, {"cost", italian.toString(state.value("costo").toDouble(), 'f', 2)},
                                    {"minutes", italian.toString(result.minutes, 'f', 1)}};
         if (!m_closing)
-            say(result.stopped ? QStringLiteral("Aggiungi materiale: fermato.")
+            say(result.stopped ? QStringLiteral("Aggiungi materiale: in pausa. «Riprendi» continua da lì.")
                                : QStringLiteral("Aggiungi materiale: %1, %2.").arg(plural(result.converted.written(), "lezione scritta", "lezioni scritte"),
                                                                                     plural(result.tasksDone, "lezione completata dall'agente", "lezioni completate dall'agente")));
     }
