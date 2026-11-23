@@ -68,6 +68,8 @@ private:
     void finished();
     void add(const QString &role, const QString &text, const QString &detail = {});
     void launch(const QString &text);
+    // il messaggio che il limite ha fermato, di nuovo, nella stessa chat (id): senza ripeterlo fra i messaggi
+    void resend(const QString &id, const QString &text);
     void appendToAssistant(const QString &text);
     void save() const;
     void load();

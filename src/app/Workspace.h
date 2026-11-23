@@ -71,6 +71,7 @@ class Workspace : public QObject {
     // status}; ago (minuti dall'ultima chiamata); blocked (fino a quando, se il limite è raggiunto); e mentre si lavora
     // runsOut: a questo ritmo quando arriva al limite («fra circa 25 minuti»), vuoto se non si sa o se si azzera prima.
     Q_PROPERTY(QVariantMap usage READ usage NOTIFY usageChanged)
+    Q_PROPERTY(QVariantList waitingLimit READ waitingLimit NOTIFY waitingLimitChanged)   // [{title, until}]: aspettano il limite
     // La connessione: offline, le chiamate del lavoro aspettano che torni; pausedForConnection, il lavoro si ferma perché
     // non è tornata (pausedUntil è allora adesso: si riprende quando c'è).
     Q_PROPERTY(bool offline READ offline NOTIFY jobProgressChanged)
@@ -369,6 +370,14 @@ public:
     // interrotto senza rifare ciò che è fatto.
     void convert(const QStringList &sources, const QHash<QString, tx::Convert::Wanted> &wanted);
     Q_INVOKABLE void resume();
+    // Il limite di utilizzo in ogni azione: un'azione con il modello chiesta quando il limite è raggiunto (limited), o
+    // un lavoro che il limite ha fermato, aspetta la ripresa e riparte da sé (later). Attività la mostra con «Adesso»
+    // (retryLater) e «Lascia stare» (dropLater). limited: vero se l'azione aspetta, e allora chi chiama non parte.
+    bool limited(const QString &title, std::function<void()> again);
+    void later(const QString &title, std::function<void()> again, const QDateTime &until);
+    QVariantList waitingLimit() const;
+    Q_INVOKABLE void retryLater(int index);
+    Q_INVOKABLE void dropLater(int index);
 
     // Le impostazioni del progetto: le voci sono scrittura, qualita, figure_scansioni, figure_tex, impaginazione.
     // Ogni scelta è salvata subito.
@@ -431,6 +440,7 @@ signals:
     void jobLogChanged();
     void busyChanged();
     void usageChanged();
+    void waitingLimitChanged();
     void outcomeReady(const QVariantMap &outcome);
     void planReady(const QString &id);
     void planEdited(const QString &id);                // una modifica dell'utente al piano, già salvata
@@ -464,11 +474,15 @@ private:
     void moved(const tx::History::Outcome &outcome);
     // forRun: il lavoro di «Avvia», i suoi eventi vanno nella sua finestra
     void startJob(const QString &title, std::function<std::function<void()>(tx::JobControl *)> work, bool forRun = false);
+    // un lavoro che il limite ha fermato, di nuovo: se il limite c'è ancora aspetta, altrimenti riparte (le cache dei lavori
+    // fanno sì che ciò che era fatto non si rifaccia)
+    void restartJob(const QString &title, std::function<std::function<void()>(tx::JobControl *)> work, bool forRun);
     void paginateLessons(const QStringList &lessons, const QString &title);
     void convertFinished(const tx::Convert::Result &result);
     void decided(const QString &lesson, const QString &title, const QString &error);
     void sortJob(const QStringList &sources, const QJsonObject &previous, const QString &replaces);
     void nextSort();                                   // il riconoscimento che aspettava la fine di un lavoro
+    void nextLater();                                  // ciò che aspettava il limite, quando si è azzerato e niente lavora
     void saveUnrecognized();                           // ciò che non si è riconosciuto, e perché: build/lavori/smistamento/
     // il lavoro di «Avvia»: gli eventi dal thread del lavoro, la fine, ciò che la finestra mostra (e build/…/vista.json)
     void startRun(const QString &id);
@@ -523,6 +537,13 @@ private:
     QTimer m_refresh;                                  // più cambiamenti vicini, un aggiornamento solo
     QTimer m_usageTick;                                // la barra dell'utilizzo: «di N minuti fa», il ritmo
     QDateTime m_workStarted;                           // da quando si lavora (un lavoro, l'agente): il ritmo dell'utilizzo
+    // ciò che aspetta il limite di Claude: riparte da sé quando la finestra si azzera
+    struct Later {
+        QString title;
+        std::function<void()> again;
+        QDateTime until;
+    };
+    QList<Later> m_later;
     QVariantList m_recent, m_outcomes, m_strays, m_jobs, m_lessons, m_documentFiles, m_queue, m_documents, m_images, m_issues;
     QHash<QString, QString> m_states;                  // lezione → stato dell'ultima compilazione
     QHash<QString, QString> m_details;

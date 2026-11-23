@@ -188,6 +188,11 @@ sua analisi, un esempio, un esercizio) va dove serve, anche se il file da cui vi
   mezz'ora) e si riprende con un clic. Ciò che è fatto resta, anche una trascrizione non ancora verificata; l'agente
   riprende la sua conversazione. Sotto la barra: il tempo lavorato (senza le soste) e quanto manca, dal ritmo fin qui
   (decisioni del 19/11/2026).
+- **[S]** **Il limite in ogni azione** (decisione del 23/11/2026). Ogni azione con il modello (riconoscere, «Avvia», scrivere,
+  figure, errori e righe, dubbi, argomenti, stile, la chat e le procedure dell'agente) chiesta quando il limite è già
+  raggiunto non parte: aspetta la ripresa e parte da sé quando la finestra si azzera. Lo stesso un lavoro che il limite
+  ferma a metà (le cache fanno sì che ciò che era fatto non si rifaccia) e un messaggio della chat, nella stessa chat.
+  In Attività ognuno ha una riga con l'ora e «Adesso» o «Lascia stare».
 - **[S]** **Nemmeno la connessione che salta.** Una chiamata (o l'agente) che non raggiunge il modello per la rete lo
   riconosce dal messaggio o provando a raggiungere il servizio; aspetta lì che la connessione torni, guardando ogni 15
   secondi, e si rifà senza contarla fra i tentativi (l'agente continua la sua conversazione). Intanto la barra, le

@@ -33,6 +33,10 @@ Rectangle {
             out.push({ title: "Aggiungi materiale", detail: "finito: l'esito è da leggere", progress: -1, state: "done", open: "lavoro:" + run.id })
         else if (Workspace.resumable)
             out.push({ title: "Scrittura delle lezioni interrotta", detail: "riprende senza rifare ciò che è già fatto", progress: -1, state: "wait", resume: true })
+        // ciò che aspetta il limite di Claude: riparte da sé quando la finestra si azzera
+        const waiting = Workspace.waitingLimit
+        for (let i = 0; i < waiting.length; ++i)
+            out.push({ title: waiting[i].title, detail: "aspetta il limite di utilizzo di Claude: riparte da sé " + waiting[i].until, progress: -1, state: "wait", later: i })
         const unread = Workspace.queue.filter(q => q.state === "errore").length
         if (unread > 0)
             out.push({ title: "Materiale non riconosciuto", detail: (unread === 1 ? "un file" : unread + " file") + " in arrivo: il perché accanto, poi «Riprova»", progress: -1, state: "wait" })
@@ -123,6 +127,8 @@ Rectangle {
                     TxButton { visible: activity.modelData.stop === true; text: "Ferma"; implicitHeight: Theme.rowHeight - 4; onClicked: Workspace.stop() }
                     TxButton { visible: activity.modelData.agent === true; text: "Ferma"; implicitHeight: Theme.rowHeight - 4; onClicked: Chat.stop() }
                     TxButton { visible: activity.modelData.resume === true; text: "Riprendi"; implicitHeight: Theme.rowHeight - 4; enabled: !Workspace.busy; onClicked: Workspace.resume() }
+                    TxButton { visible: activity.modelData.later !== undefined; text: "Adesso"; implicitHeight: Theme.rowHeight - 4; enabled: !Workspace.busy; hint: "Prova subito: se il limite c'è ancora, torna ad aspettare"; onClicked: Workspace.retryLater(activity.modelData.later) }
+                    TxButton { visible: activity.modelData.later !== undefined; text: "Lascia stare"; implicitHeight: Theme.rowHeight - 4; onClicked: Workspace.dropLater(activity.modelData.later) }
                 }
             }
         }

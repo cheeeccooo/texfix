@@ -69,6 +69,7 @@ Workspace::Workspace()
     tx::usage::onChange([this] { QMetaObject::invokeMethod(this, [this] { emit usageChanged(); }); });
     m_usageTick.setInterval(30000);
     connect(&m_usageTick, &QTimer::timeout, this, &Workspace::usageChanged);
+    connect(&m_usageTick, &QTimer::timeout, this, &Workspace::nextLater);   // ciò che aspettava il limite
     m_usageTick.start();
     connect(this, &Workspace::busyChanged, this, [this] {   // da quando si lavora: il ritmo si misura da lì
         const bool working = jobRunning() || m_agentRunning;
@@ -82,6 +83,7 @@ Workspace::Workspace()
     connect(this, &Workspace::compilingChanged, this, &Workspace::busyChanged);
     connect(this, &Workspace::jobChanged, this, &Workspace::busyChanged);
     connect(this, &Workspace::busyChanged, this, &Workspace::nextSort, Qt::QueuedConnection);   // prima il materiale che aspetta
+    connect(this, &Workspace::busyChanged, this, &Workspace::nextLater, Qt::QueuedConnection);
     m_runTimer.setSingleShot(true);
     m_runTimer.setInterval(250);
     connect(&m_runTimer, &QTimer::timeout, this, [this] {
@@ -340,6 +342,8 @@ void Workspace::closeProject()
     emit runChanged();
     m_unrecognized.clear();
     m_sortWaiting.clear();
+    m_later.clear();                                   // aspettavano il limite nel progetto di prima
+    emit waitingLimitChanged();
     m_converting.clear();
     m_project = Project();
     m_compiler.setProject(m_project);
@@ -1090,6 +1094,8 @@ void Workspace::proposeStyle(const QString &name)
         return;
     if (busy())
         return say(QStringLiteral("Aspetta la fine del lavoro in corso."));
+    if (limited(QStringLiteral("Leggo lo stile"), [this, name] { proposeStyle(name); }))
+        return;
     startJob(QStringLiteral("Leggo lo stile"), [this, name, project = m_project, quality = m_settings.quality](JobControl *control) {
         QString note;
         try {
@@ -1145,6 +1151,8 @@ void Workspace::convert(const QStringList &sources, const QHash<QString, Convert
         return say(QStringLiteral("Non c'è niente da scrivere."));
     if (busy())
         return say(QStringLiteral("C'è già un lavoro in corso."));
+    if (limited(QStringLiteral("Scrivo le lezioni"), [this, sources, wanted] { convert(sources, wanted); }))
+        return;
     checkpoint(QStringLiteral("Modifiche a mano"));
     m_converting = sources;
     startJob(QStringLiteral("Scrivo le lezioni"), [this, project = m_project, settings = m_settings, style = m_style, sources, wanted](JobControl *control) {
@@ -1201,14 +1209,14 @@ void Workspace::startJob(const QString &title, std::function<std::function<void(
     m_jobLabel.clear();
     m_jobLog.clear();
     emit jobLogChanged();
-    m_jobThread = QThread::create([this, work = std::move(work), control = m_jobControl.get()] {
+    m_jobThread = QThread::create([this, work = std::move(work), control = m_jobControl.get(), forRun] {
         std::function<void()> finish;
         try {                                          // niente che esca dal lavoro può chiudere il programma
             finish = work(control);
         } catch (const LimitPause &) {
             finish = [this, connection = control->pausedForConnection()] {     // il controllo non c'è più, quando gira
-                say(connection ? QStringLiteral("Lavoro fermato: manca la connessione. Ciò che è fatto resta: rifallo quando torna.")
-                                                   : QStringLiteral("Lavoro fermato: limite di utilizzo di Claude raggiunto. Si può riprendere %1.").arg(pausedUntil()));
+                if (connection)                        // il limite lo dice later, alla fine: il lavoro riparte da sé
+                    say(QStringLiteral("Lavoro fermato: manca la connessione. Ciò che è fatto resta: rifallo quando torna."));
             };
         } catch (const Stopped &) {
             finish = [this] { say(QStringLiteral("Lavoro fermato.")); };
@@ -1216,16 +1224,25 @@ void Workspace::startJob(const QString &title, std::function<std::function<void(
             const QString why = QString::fromUtf8(e.what());
             finish = [this, why] { say(QStringLiteral("Il lavoro si è interrotto: %1").arg(why)); };
         }
-        QMetaObject::invokeMethod(this, [this, finish] {
+        QMetaObject::invokeMethod(this, [this, finish, work, forRun] {
             m_jobThread->wait();
             m_jobThread->deleteLater();
             m_jobThread = nullptr;
             const bool stopped = m_jobControl && (m_jobControl->stopped() || m_jobControl->pausedUntil().isValid());
+            // fermato dal limite (non dalla rete): riparte da sé quando la finestra si azzera
+            QDateTime limit = m_jobControl && !m_jobControl->pausedForConnection() ? m_jobControl->pausedUntil() : QDateTime();
+            if (const QDateTime known = tx::usage::current().blockedUntil(); limit.isValid() && known.isValid())
+                limit = known;                         // l'ora detta dal CLI, più esatta di quella letta dal messaggio
+            const QString title = m_jobTitle;
             m_jobControl.reset();
             m_recent.prepend(QVariantMap{{"title", m_jobTitle}, {"when", QTime::currentTime().toString("HH:mm")}, {"stopped", stopped}});
             while (m_recent.size() > 12)
                 m_recent.removeLast();
             finish();
+            if (limit.isValid())
+                later(title, forRun ? std::function<void()>([this] { resumeRun(); })
+                           : title == QLatin1String("Scrivo le lezioni") ? std::function<void()>([this] { resume(); })
+                           : std::function<void()>([this, title, work, forRun] { restartJob(title, work, forRun); }), limit);
             m_pausedUntil = {};
             m_pauseConnection = m_offline = false;
             emit jobChanged();
@@ -1466,6 +1483,8 @@ void Workspace::redoFigure(const QString &id, const QString &how, const QString 
         return;
     if (busy())
         return say(QStringLiteral("C'è già un lavoro in corso."));
+    if (how != "ritaglia" && limited(QStringLiteral("Ridisegno la figura"), [this, id, how, instruction] { redoFigure(id, how, instruction); }))
+        return;
     checkpoint(QStringLiteral("Modifiche a mano"));
     const bool crop = how == "ritaglia";
     startJob(crop ? QStringLiteral("Ritaglio la figura") : QStringLiteral("Ridisegno la figura"),
@@ -1635,6 +1654,8 @@ void Workspace::fixAll(const QString &only, bool errorsOnly)
         return;
     if (busy())
         return say(QStringLiteral("C'è già un lavoro in corso."));
+    if (limited(QStringLiteral("Sistemo errori e righe"), [this, only, errorsOnly] { fixAll(only, errorsOnly); }))
+        return;
     // le lezioni con errori o righe fuori misura nell'ultima compilazione; quelle fatte si saltano
     QStringList lessons;
     for (const QString &file : m_project.inputs())
@@ -2191,6 +2212,8 @@ void Workspace::sortJob(const QStringList &sources, const QJsonObject &previous,
         refreshTree();
         return say(QStringLiteral("Riconosco il materiale appena finisce il lavoro in corso."));
     }
+    if (limited(QStringLiteral("Riconosco il materiale"), [this, sources, previous, replaces] { sortJob(sources, previous, replaces); }))
+        return;
     for (const QString &source : sources)
         m_unrecognized.remove(source);
     startJob(QStringLiteral("Riconosco il materiale"), [this, sources, previous, replaces, project = m_project, settings = m_settings](JobControl *control) {
@@ -2224,6 +2247,8 @@ void Workspace::conceptSurvey(const QStringList &sources)
         return;
     if (busy())
         return say(QStringLiteral("C'è già un lavoro in corso."));
+    if (limited(QStringLiteral("Leggo i concetti"), [this, sources] { conceptSurvey(sources); }))
+        return;
     startJob(QStringLiteral("Leggo i concetti"), [sources, project = m_project, quality = m_settings.quality, this](JobControl *control) {
         const concepts::Survey s = concepts::survey(project, quality, sources, control);
         return std::function<void()>([this, s] {
@@ -2258,6 +2283,8 @@ void Workspace::startSortPlan(const QString &id)
 {
     if (busy())
         return say(QStringLiteral("C'è già un lavoro in corso."));
+    if (limited(QStringLiteral("Aggiungi materiale"), [this, id] { startSortPlan(id); }))
+        return;
     checkpoint(QStringLiteral("Modifiche a mano"));
     // un lavoro nuovo: la finestra comincia vuota; quello di prima, se c'era e non era archiviato, va fra gli esiti
     if (!m_runId.isEmpty() && m_runId != id && m_runState == "finito")
@@ -2379,6 +2406,8 @@ void Workspace::resumeRun()
         return;
     if (busy())
         return say(QStringLiteral("C'è già un lavoro in corso."));
+    if (limited(QStringLiteral("Aggiungi materiale"), [this] { resumeRun(); }))
+        return;
     checkpoint(QStringLiteral("Modifiche a mano"));
     startRun(m_runId);
 }
@@ -2411,6 +2440,69 @@ void Workspace::closeRun()
 }
 
 QString Workspace::pausedUntil() const { return m_pausedUntil.isValid() ? Model::when(m_pausedUntil) : QString(); }
+
+void Workspace::restartJob(const QString &title, std::function<std::function<void()>(JobControl *)> work, bool forRun)
+{
+    if (limited(title, [this, title, work, forRun] { restartJob(title, work, forRun); }))
+        return;
+    if (busy())
+        return say(QStringLiteral("Aspetta la fine del lavoro in corso."));
+    startJob(title, work, forRun);
+}
+
+bool Workspace::limited(const QString &title, std::function<void()> again)
+{
+    const QDateTime until = tx::usage::current().blockedUntil();
+    if (!until.isValid())
+        return false;
+    later(title, std::move(again), until);
+    return true;
+}
+
+void Workspace::later(const QString &title, std::function<void()> again, const QDateTime &until)
+{
+    for (const Later &l : std::as_const(m_later))      // la stessa azione chiesta due volte aspetta una volta sola
+        if (l.title == title)
+            return say(QStringLiteral("«%1» aspetta già la ripresa: riparte da sé %2.").arg(title, Model::when(l.until)));
+    const QDateTime at = until.isValid() ? until : QDateTime::currentDateTime().addSecs(30 * 60);
+    m_later.append({title, std::move(again), at});
+    say(QStringLiteral("Limite di utilizzo di Claude raggiunto: «%1» riparte da sé %2.").arg(title, Model::when(at)));
+    emit waitingLimitChanged();
+}
+
+QVariantList Workspace::waitingLimit() const
+{
+    QVariantList out;
+    for (const Later &l : m_later)
+        out << QVariantMap{{"title", l.title}, {"until", Model::when(l.until)}};
+    return out;
+}
+
+void Workspace::retryLater(int index)
+{
+    if (index < 0 || index >= m_later.size())
+        return;
+    if (busy())
+        return say(QStringLiteral("Aspetta la fine del lavoro in corso."));
+    const Later l = m_later.takeAt(index);
+    emit waitingLimitChanged();
+    l.again();                                         // se il limite c'è ancora, torna ad aspettare
+}
+
+void Workspace::dropLater(int index)
+{
+    if (index < 0 || index >= m_later.size())
+        return;
+    m_later.removeAt(index);
+    emit waitingLimitChanged();
+}
+
+void Workspace::nextLater()
+{
+    if (m_later.isEmpty() || busy() || !hasProject() || m_later.first().until > QDateTime::currentDateTime())
+        return;
+    retryLater(0);
+}
 
 QVariantMap Workspace::usage() const
 {
@@ -2944,6 +3036,8 @@ void Workspace::proposeTopics()
         return;
     if (busy())
         return say(QStringLiteral("C'è già un lavoro in corso."));
+    if (limited(QStringLiteral("Propongo gli argomenti"), [this] { proposeTopics(); }))
+        return;
     if (byTopic())
         return say(QStringLiteral("Il progetto è già per argomenti."));
     startJob(QStringLiteral("Propongo gli argomenti"), [this, project = m_project, settings = m_settings](JobControl *control) {
@@ -3087,6 +3181,8 @@ void Workspace::decideDoubts(const QString &lesson, const QStringList &ids)
 {
     if (busy())
         return say(QStringLiteral("C'è già un lavoro in corso."));
+    if (limited(QStringLiteral("Il modello decide i dubbi"), [this, lesson, ids] { decideDoubts(lesson, ids); }))
+        return;
     QStringList todo = ids;
     if (todo.isEmpty())
         for (const review::Doubt &d : review::doubts(m_project, lesson))

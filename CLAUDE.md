@@ -320,7 +320,10 @@ chiuso nel progetto in tutti e tre i modi: ogni richiesta di permesso passa da `
 fuori dalla cartella (provato con il modello vero); «Autonomo» consente da sé ciò che sta dentro.
 
 **§3.17 Attività.** Nel pannello in basso, accanto ad Avvisi e Console: una riga per la compilazione, il lavoro, l'agente,
-il lavoro di «Avvia» (con la pausa e «Apri»), il lavoro da riprendere, i lavori finiti da poco.
+il lavoro di «Avvia» (con la pausa e «Apri»), il lavoro da riprendere, i lavori finiti da poco. Ciò che aspetta il limite di utilizzo
+(`Workspace::limited` prima di ogni azione con il modello, `later` per un lavoro che il limite ha fermato, con `restartJob`;
+la chat con `Chat::resend`, solo nella stessa chat): riparte da sé quando la finestra si azzera (`nextLater`, ogni mezzo
+minuto e a ogni fine lavoro), con «Adesso» e «Lascia stare».
 
 **§3.18 Tag di provenienza.** Li disegna la vista del PDF, dai marcatori dei blocchi; non sono nel PDF su disco (scelta
 confermata dall'utente il 15/11/2026).

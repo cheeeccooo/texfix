@@ -173,6 +173,10 @@ void Chat::send(const QString &typed, const QStringList &attachments)
         return;
     if (workspace->busy())
         return workspace->say(QStringLiteral("Aspetta la fine del lavoro in corso."));
+    // il limite di utilizzo già raggiunto: il messaggio parte da sé alla ripresa
+    if (workspace->limited(QStringLiteral("Il messaggio all'agente"), [this, typed, attachments] { send(typed, attachments); }))
+        return add("note", QStringLiteral("Limite di utilizzo di Claude raggiunto: il messaggio parte da sé %1 (in Attività: «Adesso» o «Lascia stare»).")
+                               .arg(Model::when(tx::usage::current().blockedUntil())));
     workspace->checkpoint(QStringLiteral("Modifiche a mano"));
     if (m_id.isEmpty())
         m_id = QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss");
@@ -193,6 +197,20 @@ void Chat::send(const QString &typed, const QStringList &attachments)
         m_title = typed.simplified().left(48);
     m_messages << QVariantMap{{"role", "user"}, {"text", typed.trimmed()}, {"attachments", kept}};
     emit messagesChanged();
+    m_retried = false;
+    launch(text);
+}
+
+void Chat::resend(const QString &id, const QString &text)
+{
+    Workspace *workspace = Workspace::instance();
+    if (id != m_id || !workspace->hasProject())
+        return workspace->say(QStringLiteral("Il messaggio fermato dal limite era di un'altra chat: non lo rimando."));
+    if (running() || workspace->busy())
+        return workspace->say(QStringLiteral("Aspetta la fine del lavoro in corso."));
+    if (workspace->limited(QStringLiteral("Il messaggio all'agente"), [this, id, text] { resend(id, text); }))
+        return;
+    add("note", QStringLiteral("Riprendo il messaggio fermato dal limite."));
     m_retried = false;
     launch(text);
 }
@@ -277,8 +295,12 @@ void Chat::readOutput()
                     && m_messages.last().toMap().value("text").toString().trimmed() == said.trimmed())
                     m_messages.removeLast();
                 m_answered = true;                     // ha risposto: non è una chat da riprendere da capo
-                add("note", QStringLiteral("Limite di utilizzo di Claude raggiunto: si può riprendere %1. Il messaggio non è stato eseguito: "
-                                           "rimandalo dopo.").arg(Model::when(until)));
+                if (const QDateTime known = tx::usage::current().blockedUntil(); known.isValid())
+                    until = known;                     // l'ora detta dal CLI, più esatta di quella letta dal messaggio
+                // non è stato eseguito: riparte da sé alla ripresa, in questa stessa chat
+                Workspace::instance()->later(QStringLiteral("Il messaggio all'agente"), [this, id = m_id, text = m_lastText] { resend(id, text); }, until);
+                add("note", QStringLiteral("Limite di utilizzo di Claude raggiunto: il messaggio non è stato eseguito, e riparte da sé %1 "
+                                           "(in Attività: «Adesso» o «Lascia stare»).").arg(Model::when(until)));
             } else if (Model::offline(said)) {
                 add("note", QStringLiteral("Manca la connessione a internet: il messaggio non è stato eseguito. Rimandalo quando torna."));
             } else {
