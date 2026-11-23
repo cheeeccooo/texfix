@@ -513,12 +513,18 @@ void Workspace::refreshTree()
         inMain << lesson.file;
         const QString text = files::read(m_project.path(lesson.file));
         texts << text;
-        QSet<QString> named;
-        for (auto it = marker.globalMatch(text); it.hasNext();)
-            named << files::bare(it.next().captured(1));
+        QSet<QString> named, pieces;                   // pieces: gli originali dei pezzi («derivate · Derivate.tex» → derivate)
+        for (auto it = marker.globalMatch(text); it.hasNext();) {
+            const QString source = it.next().captured(1);
+            named << files::bare(source);
+            if (source.contains(QStringLiteral(" · ")))
+                pieces << files::bare(source.section(QStringLiteral(" · "), 0, 0));
+        }
         QVariantList sources;
         for (Used &u : used) {
-            if (named.contains(u.bare) || (!byTopic && lesson.number > 0 && u.folder == QStringLiteral("lezione %1").arg(lesson.number))) {
+            // un originale smistato appartiene alle lezioni che hanno i suoi pezzi
+            const bool sorted = u.folder == QStringLiteral("smistate") && pieces.contains(files::bare(QFileInfo(u.name).completeBaseName()));
+            if (named.contains(u.bare) || sorted || (!byTopic && lesson.number > 0 && u.folder == QStringLiteral("lezione %1").arg(lesson.number))) {
                 u.taken = true;
                 sources << QVariantMap{{"file", u.file}, {"name", u.name}};
             }

@@ -177,7 +177,7 @@ lezione, Da consultare (ci si trascinano file: `Workspace::addDocuments`), Esiti
 Una lezione si apre con la freccia: dentro solo le sue fonti. Ciò che si rivede sta nel menu del tasto destro, «Rivedi ›
 Dubbi, Correzioni, Impaginazione, Figure» con il conto (apre il pannello su quella lezione: `showLesson`). Il pallino
 della lezione resta; il suggerimento dice lo stato a parole (`status` in `refreshTree`: la compilazione e ciò che resta). Le fonti di una lezione sono quelle che i suoi
-marcatori nominano, più la cartella `fonti/usate/lezione N/`; i nomi si confrontano con `files::bare`, l'unico posto
+marcatori nominano, più la cartella `fonti/usate/lezione N/`, più gli originali in `fonti/usate/smistate/` dei suoi pezzi («derivate · Derivate.tex» è un pezzo di derivate.md); i nomi si confrontano con `files::bare`, l'unico posto
 con quella regola. Il doppio clic apre con un'altra app ciò che non è testo.
 
 **§3.4 Aggiungi materiale, §3.5 Per data o per argomento.** Una porta sola (decisioni del 18/11/2026): «＋ Aggiungi
