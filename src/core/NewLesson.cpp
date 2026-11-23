@@ -56,6 +56,7 @@ QStringList toQueue(const Project &project, const QStringList &paths, const QStr
     // le cartelle: tutto ciò che c'è sotto, in ordine, senza i nascosti; un file scelto da solo entra comunque
     QStringList wanted;
     int left = 0;
+    const QString root = QFileInfo(project.root()).canonicalFilePath(), queued = QFileInfo(queue).canonicalFilePath();
     for (const QString &path : paths) {
         if (!QFileInfo(path).isDir()) {
             wanted << path;
@@ -67,6 +68,11 @@ QStringList toQueue(const Project &project, const QStringList &paths, const QStr
             const QStringList parts = QDir(path).relativeFilePath(file).split('/');
             if (std::any_of(parts.begin(), parts.end(), [](const QString &p) { return p.startsWith('.'); }))
                 continue;                              // un file nascosto, o dentro una cartella nascosta
+            // una cartella del progetto stesso (o il progetto intero, trascinato per sbaglio): delle sue parti solo i
+            // documenti da consultare sono materiale; le lezioni, le fonti, ciò che Texfix rifà no
+            const QString real = QFileInfo(file).canonicalFilePath();
+            if (real.startsWith(root + '/') && !real.startsWith(root + "/docs/") && !real.startsWith(queued + '/'))
+                continue;
             if (Pages::kindOf(file) == "altro")
                 ++left;
             else

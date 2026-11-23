@@ -308,6 +308,8 @@ Item {
                 editor.showCall(parseInt(argument) || 0)
             } else if (name === "riprendi") {
                 Workspace.resume()
+            } else if (name === "adesso") {              // ciò che aspetta il limite: il primo, subito
+                Workspace.retryLater(0)
             } else if (name === "versioni") {
                 root.leftTab = 1
             } else if (name === "rinomina") {

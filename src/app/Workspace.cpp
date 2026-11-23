@@ -2467,6 +2467,10 @@ void Workspace::restartJob(const QString &title, std::function<std::function<voi
 
 bool Workspace::limited(const QString &title, std::function<void()> again, const QString &key)
 {
+    if (m_tryAnyway) {
+        m_tryAnyway = false;
+        return false;
+    }
     const QDateTime until = tx::usage::current().blockedUntil();
     if (!until.isValid())
         return false;
@@ -2502,7 +2506,11 @@ void Workspace::retryLater(int index)
         return say(QStringLiteral("Aspetta la fine del lavoro in corso."));
     const Later l = m_later.takeAt(index);
     emit waitingLimitChanged();
-    l.again();                                         // se il limite c'è ancora, torna ad aspettare
+    // si prova davvero, anche se il limite ricordato non è ancora passato (l'utilizzo può essere stato comprato): se
+    // c'è ancora, la chiamata lo dice e l'azione torna ad aspettare
+    m_tryAnyway = true;
+    l.again();
+    m_tryAnyway = false;
 }
 
 void Workspace::dropLater(int index)

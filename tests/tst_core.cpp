@@ -1227,6 +1227,15 @@ private slots:
                  (QStringList{"fonti/coda/a.pdf", "fonti/coda/a (2).pdf", "fonti/coda/b.md"}));
         QCOMPARE(skipped, 1);                                                             // note.xyz
 
+        // il progetto stesso trascinato sul pannello: le lezioni e ciò che Texfix rifà non sono materiale, i documenti sì
+        files::write(p.path("src/src9.tex"), "\\section{Una lezione}\n");
+        files::write(p.path("build/main.log"), "log");
+        files::write(p.path("docs/dispensa.pdf"), "%PDF");
+        const QStringList again = newlesson::toQueue(p, {p.root()});
+        QVERIFY2(again.contains("fonti/coda/dispensa.pdf") && again.contains("fonti/coda/a.pdf"), qPrintable(again.join(", ")));
+        QVERIFY(std::none_of(again.begin(), again.end(), [](const QString &f) { return f.contains("src9") || f.contains("main.log"); }));
+        QVERIFY(!QFileInfo::exists(p.path("fonti/coda/a (3).pdf")));                      // ciò che era già in arrivo resta com'è
+
         // l'agente ha scritto una lezione: chiuderla la mette nel documento, marca i blocchi, archivia le fonti
         files::write(p.path("src/src1.tex"), "\\section{S}\n\\lezione{3}{}\n\nTesto.\n\\begin{theorem}\nx\n\\end{theorem}\n");
         bool error = false;

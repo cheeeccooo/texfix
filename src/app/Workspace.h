@@ -548,6 +548,7 @@ private:
         QString key;
     };
     QList<Later> m_later;
+    bool m_tryAnyway = false;                          // «Adesso»: si prova una volta senza guardare il limite ricordato
     QVariantList m_recent, m_outcomes, m_strays, m_jobs, m_lessons, m_documentFiles, m_queue, m_documents, m_images, m_issues;
     QHash<QString, QString> m_states;                  // lezione → stato dell'ultima compilazione
     QHash<QString, QString> m_details;
