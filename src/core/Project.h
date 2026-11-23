@@ -1,4 +1,5 @@
 #pragma once
+#include <QHash>
 #include <QList>
 #include <QString>
 #include <QStringList>
@@ -44,11 +45,15 @@ public:
     QString relative(const QString &absolute) const;
 
     static bool isProject(const QString &dir);
-    // Una cartella vuota (o che ancora non c'è) diventa un progetto intero. Vuoto se è andata; altrimenti il perché.
-    static QString create(const QString &dir);
-    // Una cartella qualunque diventa un progetto: ciò che c'era va in docs/ (un nome già preso diventa «nome (2)»),
-    // i file nascosti restano dove sono. Restituisce che cosa ha spostato.
-    static QStringList adopt(const QString &dir);
+    // I file di una cartella che sta per diventare un progetto (relativi, senza i nascosti, in ordine), ognuno con dove
+    // lo si propone: «coda» ciò che Texfix sa leggere (Pages::kindOf), «docs» il resto; ciò che è già in docs/ o in
+    // fonti/coda/ resta lì.
+    static QList<std::pair<QString, QString>> loose(const QString &dir);
+    // Una cartella diventa un progetto intero. Vuota (o che ancora non c'è), o con dei file: placement dice dove va
+    // ognuno, «coda» (in arrivo: fonti/coda/, un nome già preso diventa «nome (2)»), «docs» (da consultare, con le sue
+    // cartelle) o «lascia»; senza placement una cartella con dei file non si tocca. I file nascosti restano dove sono, e
+    // le cartelle che restano vuote si tolgono. Vuoto se è andata; altrimenti il perché. moved: che cosa ha spostato.
+    static QString create(const QString &dir, const QHash<QString, QString> &placement = {}, QStringList *moved = nullptr);
     // Aggiunge ciò che manca (cartelle, main.tex, texfix.sty, .latexmkrc, il repository) senza toccare ciò che c'è.
     // Restituisce che cosa ha aggiunto.
     QStringList complete() const;

@@ -3,12 +3,14 @@ import QtQuick.Dialogs
 import QtQuick.Layouts
 import Texfix
 
-// Un progetto nuovo. Per data o per argomento (e per argomento il programma del corso, se c'è); poi il profilo, come si
-// scrive (uno di Texfix, uno dei miei, uno da creare con l'agente o da caricare); poi lo stile, allo stesso modo, con
-// proposto quello che va con il profilo. Tutto si cambia dopo, dalle Impostazioni.
+// Il foglio dell'inizio, per un progetto nuovo e per una cartella che lo diventa. Per data o per argomento (e per
+// argomento il programma del corso, se c'è); poi il profilo, come si scrive (uno di Texfix, uno dei miei, uno da creare
+// con l'agente o da caricare); poi lo stile, allo stesso modo, con proposto quello che va con il profilo; se la cartella
+// ha dei file, dove va ognuno: in arrivo (da smistare), da consultare, o dov'è. Tutto il resto si cambia dopo, dalle
+// Impostazioni.
 TxSheet {
     id: root
-    title: "Il progetto nuovo"
+    title: root.files.length > 0 ? "La cartella diventa un progetto" : "Il progetto nuovo"
     wantedWidth: 620
     property string path
     property bool byTopic: true                       // un progetto nuovo parte per argomento
@@ -17,13 +19,23 @@ TxSheet {
     property string style: "default"
     property var profiles: []
     property var styles: []
-    signal chosen(string path, string profile, bool byTopic, string program, string style)
+    // i file che la cartella ha già (Workspace.folderFiles), e dove va ognuno: file → «coda», «docs», «lascia»
+    property var files: []
+    property var placement: ({})
+    property int revision: 0                           // cambia a ogni scelta: le righe rileggono, l'elenco resta dov'è
+    signal chosen(string path, string profile, bool byTopic, string program, string style, var placement)
     function ask(path) {
         root.path = path
         byTopic = true
         program = ""
         profiles = Workspace.profiles()
         styles = Workspace.styleLibrary()
+        files = Workspace.folderFiles(path)
+        const proposed = {}
+        for (const f of files)
+            proposed[f.file] = f.dove
+        placement = proposed
+        revision++
         pickProfile("Neutro")
         open()
     }
@@ -110,6 +122,100 @@ TxSheet {
                  current: root.style; onPicked: styleDialog.open() }
     }
 
+    // i file che la cartella ha già: una riga per cartella (sceglie per tutti i suoi file), poi i file, rientrati
+    readonly property var rows: {
+        const out = []
+        const seen = {}
+        for (const f of root.files) {
+            const parts = f.file.split("/")
+            for (let d = 1; d < parts.length; ++d) {
+                const folder = parts.slice(0, d).join("/")
+                if (!seen[folder]) {
+                    seen[folder] = true
+                    out.push({ folder: folder, name: parts[d - 1] + "/", depth: d - 1 })
+                }
+            }
+            out.push({ file: f.file, name: parts[parts.length - 1], depth: parts.length - 1 })
+        }
+        return root.files.length > 1 ? [{ folder: "", name: "Tutti i file", depth: 0 }].concat(out) : out
+    }
+    function covers(row, file) { return row.file !== undefined ? file === row.file : row.folder === "" || file.startsWith(row.folder + "/") }
+    function whereOf(row) {                            // di una cartella: la scelta comune, o niente se i suoi file sono divisi
+        const inside = root.files.filter(f => root.covers(row, f.file)).map(f => root.placement[f.file])
+        return inside.every(v => v === inside[0]) ? inside[0] : ""
+    }
+    function create() {
+        root.close()
+        root.chosen(root.path, root.profile, root.byTopic, root.program, root.style, root.placement)
+    }
+    function place(row, value) {
+        const next = Object.assign({}, root.placement)
+        for (const f of root.files)
+            if (root.covers(row, f.file))
+                next[f.file] = value
+        root.placement = next
+        root.revision++
+    }
+    readonly property var counts: {
+        root.revision
+        const out = { coda: 0, docs: 0, lascia: 0 }
+        for (const f of root.files)
+            out[root.placement[f.file]]++
+        return out
+    }
+    TxLabel { visible: root.files.length > 0; Layout.fillWidth: true; Layout.topMargin: Theme.gap; text: "I file che ci sono già"; font.weight: Font.Medium }
+    TxLabel {
+        visible: root.files.length > 0
+        Layout.fillWidth: true
+        wrapMode: Text.WordWrap
+        elide: Text.ElideNone
+        color: Theme.textMuted
+        font.pixelSize: Theme.smallSize
+        text: (root.files.length === 1 ? "Un file" : root.files.length + " file") + ": " + root.counts.coda + " in arrivo, " + root.counts.docs + " da consultare, "
+              + root.counts.lascia + " dove sono. In arrivo è il materiale da smistare: non parte niente finché non premi «Smista». "
+              + "Da consultare resta nel progetto com'è, con le sue cartelle."
+    }
+    Rectangle {
+        visible: root.files.length > 0
+        Layout.fillWidth: true
+        implicitHeight: Math.min(fileList.contentHeight, 8 * (Theme.rowHeight + 6)) + 2
+        radius: Theme.radius
+        color: Theme.window
+        border.width: 1
+        border.color: Theme.border
+        ListView {
+            id: fileList
+            anchors.fill: parent
+            anchors.margins: 1
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            model: root.rows
+            delegate: Item {
+                required property var modelData
+                width: fileList.width
+                height: Theme.rowHeight + 6
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: Theme.gap + 14 * modelData.depth
+                    anchors.rightMargin: Theme.gap
+                    spacing: Theme.gap
+                    TxLabel {
+                        Layout.fillWidth: true
+                        text: modelData.name
+                        elide: Text.ElideMiddle
+                        color: modelData.file === undefined ? Theme.textMuted : Theme.text
+                        font.weight: modelData.file === undefined ? Font.Medium : Font.Normal
+                    }
+                    TxSegmented {
+                        choices: [{ value: "coda", label: "In arrivo" }, { value: "docs", label: "Da consultare" }, { value: "lascia", label: "Dov'è" }]
+                        value: { root.revision; return root.whereOf(modelData) }
+                        onChosen: value => root.place(modelData, value)
+                    }
+                }
+            }
+        }
+    }
+
     FileDialog {
         id: programDialog
         title: "Il programma, l'indice o la scaletta del corso"
@@ -129,6 +235,6 @@ TxSheet {
     }
     buttons: [
         TxButton { text: "Annulla"; onClicked: root.close() },
-        TxButton { text: "Crea il progetto"; primary: true; onClicked: { root.close(); root.chosen(root.path, root.profile, root.byTopic, root.program, root.style) } }
+        TxButton { text: "Crea il progetto"; primary: true; onClicked: root.create() }
     ]
 }

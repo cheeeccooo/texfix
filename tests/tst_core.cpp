@@ -2464,15 +2464,32 @@ private slots:
         files::write(root + "/appunti.pdf", "a");
         files::write(root + "/docs/appunti.pdf", "già qui");
         files::write(root + "/vecchi/uno.txt", "1");
+        files::write(root + "/vecchi/sotto/foto.png", "p");
+        files::write(root + "/vecchi/conti.xlsx", "x");
+        files::write(root + "/tieni.md", "t");
         files::write(root + "/.nascosto", "n");
-        const QStringList moved = Project::adopt(root);
-        QCOMPARE(moved, (QStringList{"appunti.pdf → docs/appunti (2).pdf", "vecchi → docs/vecchi"}));
+        files::write(root + "/.git/config", "g");
+        // la proposta: in arrivo ciò che Texfix sa leggere, da consultare il resto; ciò che è in docs/ resta lì
+        QCOMPARE(Project::loose(root), (QList<std::pair<QString, QString>>{{"appunti.pdf", "coda"}, {"docs/appunti.pdf", "docs"}, {"tieni.md", "coda"},
+                                                                            {"vecchi/conti.xlsx", "docs"}, {"vecchi/sotto/foto.png", "coda"}, {"vecchi/uno.txt", "coda"}}));
+        QVERIFY(!Project::create(root).isEmpty());                                     // senza dire dove va niente: non si tocca
+        QVERIFY(!Project::isProject(root));
+
+        QStringList moved;
+        QCOMPARE(Project::create(root, {{"appunti.pdf", "docs"}, {"docs/appunti.pdf", "docs"}, {"vecchi/uno.txt", "coda"}, {"vecchi/sotto/foto.png", "coda"},
+                                        {"vecchi/conti.xlsx", "docs"}, {"tieni.md", "lascia"}}, &moved), QString());
+        QCOMPARE(moved, (QStringList{"appunti.pdf → docs/appunti (2).pdf", "vecchi/conti.xlsx → docs/vecchi/conti.xlsx",
+                                     "vecchi/sotto/foto.png → fonti/coda/foto.png", "vecchi/uno.txt → fonti/coda/uno.txt"}));
         QCOMPARE(files::read(root + "/docs/appunti.pdf"), "già qui");
         QCOMPARE(files::read(root + "/docs/appunti (2).pdf"), "a");
-        QCOMPARE(files::read(root + "/docs/vecchi/uno.txt"), "1");
+        QCOMPARE(files::read(root + "/fonti/coda/uno.txt"), "1");
+        QVERIFY(!QFileInfo::exists(root + "/vecchi"));                                  // rimasta vuota: tolta
+        QCOMPARE(files::read(root + "/tieni.md"), "t");
         QVERIFY(QFileInfo::exists(root + "/.nascosto"));
+        QVERIFY(QFileInfo::exists(root + "/.git/config"));
         QVERIFY(Project::isProject(root));
         QVERIFY(QFileInfo::exists(root + "/main.tex"));
+        QVERIFY(QFileInfo::exists(root + "/salvataggi/profilo.md"));                    // come un progetto nuovo
     }
 
     void reducedMain()

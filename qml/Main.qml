@@ -33,9 +33,9 @@ ApplicationWindow {
     // Un progetto nuovo: il profilo e lo stile scelti (un nome; «@file:<percorso>» da caricare; «@agente» da creare con
     // l'agente, prima il profilo poi lo stile), e per argomento il programma del corso.
     property bool styleAgentNext: false
-    function createProject(path, profile, byTopic, program, style) {
+    function createProject(path, profile, byTopic, program, style, placement) {
         const named = profile && !profile.startsWith("@") ? profile : ""
-        const error = Workspace.newProject(path, named, byTopic === true)
+        const error = Workspace.newProject(path, named, byTopic === true, placement || {})
         if (error === "" && program)
             Workspace.setProgram(program)
         if (error === "") {
@@ -52,7 +52,7 @@ ApplicationWindow {
                 Qt.callLater(() => Workspace.askAgent("crea-stile"))
         }
         if (error !== "") {
-            notice.text = error + " Per un progetto nuovo serve una cartella vuota; una cartella con dei file si apre con «Apri cartella»."
+            notice.text = error
             notice.open()
         }
     }
@@ -60,8 +60,7 @@ ApplicationWindow {
     function openFolder(path) {
         const answer = Workspace.openFolder(path)
         if (answer === "prepara") {
-            prepare.path = path
-            prepare.open()
+            profileSheet.ask(path)                     // il foglio dell'inizio: come, e dove vanno i file che ci sono
         } else if (answer !== "") {
             notice.text = answer
             notice.open()
@@ -191,7 +190,7 @@ ApplicationWindow {
 
     Connections {
         target: Workspace
-        function onPrepareAsked(path) { prepare.path = path; prepare.open() }
+        function onPrepareAsked(path) { profileSheet.ask(path) }
         function onSettingsAsked() { settingsSheet.open() }
     }
 
@@ -202,10 +201,10 @@ ApplicationWindow {
     }
     FolderDialog {
         id: newDialog
-        title: "Nuovo progetto: scegli o crea una cartella vuota"
+        title: "Nuovo progetto: una cartella vuota, o con il materiale del corso"
         acceptLabel: "Crea qui"
         onAccepted: {
-            profileSheet.ask(Workspace.localPath(selectedFolder))   // per data o per argomento, e da quale profilo
+            window.openFolder(Workspace.localPath(selectedFolder))   // un progetto si apre; altrimenti il foglio dell'inizio
         }
     }
 
@@ -217,15 +216,6 @@ ApplicationWindow {
         onAccepted: Workspace.newVersion(used, Workspace.localPaths([selectedFile])[0])
     }
     TxSheet {
-        id: prepare
-        property string path
-        TxLabel { Layout.fillWidth: true; wrapMode: Text.WordWrap; elide: Text.ElideNone; text: "Questa cartella non è ancora un progetto di Texfix. La preparo? Ciò che contiene va in «docs», fra i documenti da consultare; i file nascosti restano dove sono." }
-        buttons: [
-            TxButton { text: "Annulla"; onClicked: prepare.close() },
-            TxButton { text: "Prepara"; primary: true; onClicked: { prepare.close(); Workspace.prepareFolder(prepare.path) } }
-        ]
-    }
-    TxSheet {
         id: notice
         property string text
         TxLabel { Layout.fillWidth: true; wrapMode: Text.WordWrap; elide: Text.ElideNone; text: notice.text }
@@ -233,7 +223,7 @@ ApplicationWindow {
     }
     OutcomeSheet { id: outcomeSheet; onLogAsked: project.showConsole() }
     RenameSheet { id: renameSheet }
-    ProfileSheet { id: profileSheet; onChosen: (path, profile, byTopic, program, style) => window.createProject(path, profile, byTopic, program, style) }
+    ProfileSheet { id: profileSheet; onChosen: (path, profile, byTopic, program, style, placement) => window.createProject(path, profile, byTopic, program, style, placement) }
     // ciò che l'agente propone per il profilo o lo stile: accanto a ciò che c'è, e decide l'utente
     TxSheet {
         id: proposalSheet
@@ -368,6 +358,12 @@ ApplicationWindow {
                 Workspace.setProgram(argument)
             } else if (name === "scheda-nuovo") {
                 profileSheet.ask(argument)
+            } else if (name === "inizio-file") {             // nel foglio dell'inizio: dove va un file (o una cartella, con «/» in fondo)
+                const a = argument.split(" ")
+                const target = a.slice(0, -1).join(" ")
+                profileSheet.place(target.endsWith("/") ? { folder: target.slice(0, -1) } : { file: target }, a[a.length - 1])
+            } else if (name === "crea-progetto") {
+                profileSheet.create()
             } else if (name === "profilo-usa") {
                 Workspace.say(Workspace.useProfile(argument))
             } else if (name === "profilo-salva") {

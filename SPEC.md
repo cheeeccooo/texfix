@@ -96,9 +96,14 @@ nome, `fatta` dentro `salvataggi/lezioni/<srcN>.json`, dubbi come stringhe «P1:
 ## 3. Funzioni
 
 ### 3.1 Progetti
-- **[S]** Alla creazione si sceglie se il progetto è per data o per argomento (§3.5).
+- **[S]** Il foglio dell'inizio, uno solo per «Nuovo progetto» e per «Apri cartella» su una cartella che non è un progetto: per
+  data o per argomento (§3.5, con il programma del corso), il profilo, lo stile e, se la cartella ha dei file, dove va
+  ognuno (decisione del 23/11/2026).
 - **[S]** Nuovo progetto: nasce intero, con `styles.sty`, `main.tex`, le cartelle, `generated.tex`, `.latexmkrc` e il repository git.
-- **[S]** Apri cartella. Una cartella che non è un progetto si prepara con il sì dell'utente: ciò che c'era va in `docs/`, un nome già preso diventa «nome (2)» e i file nascosti restano dove sono. Un progetto senza `main.tex` si completa da sé.
+- **[S]** Una cartella con dei file diventa un progetto con il foglio dell'inizio: di ogni file (o di una cartella intera) si
+  sceglie «In arrivo» (il materiale da smistare: proposto per ciò che Texfix sa leggere), «Da consultare» (in `docs/`, con
+  le sue cartelle: proposto per il resto) o «Dov'è». Un nome già preso diventa «nome (2)», i file nascosti restano dove
+  sono, le cartelle rimaste vuote si tolgono; non parte niente finché non si preme «Smista». Un progetto senza `main.tex` si completa da sé.
 - **[S]** Pagina di benvenuto con i progetti recenti.
 - **[S]** Un'istanza sola. Un secondo avvio passa la cartella a quella già aperta.
 - **[S]** Le lezioni sono una regola sola: gli `\input{src/…}` non commentati dopo `\begin{document}` di `main.tex`, in ordine. Quelle che mancano su disco si saltano.

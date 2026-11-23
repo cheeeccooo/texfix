@@ -126,13 +126,15 @@ public:
     void agentTurnDone();
     const tx::Settings &settings_() const { return m_settings; }
 
-    // Apre una cartella. «» se è aperta; «prepara» se non è ancora un progetto (serve il sì dell'utente, poi
-    // prepareFolder); altrimenti il perché non si apre.
+    // Apre una cartella. «» se è aperta; «prepara» se non è ancora un progetto: allora il foglio dell'inizio
+    // (ProfileSheet) chiede come, e newProject la prepara; altrimenti il perché non si apre.
     Q_INVOKABLE QString openFolder(const QString &path);
-    Q_INVOKABLE void prepareFolder(const QString &path);
-    // Un progetto nuovo, per data o per argomento, anche da un profilo di partenza (vuoto: nessuno). I profili: i nomi;
-    // saveProfile salva le scelte del progetto aperto (vuoto se è andata).
-    Q_INVOKABLE QString newProject(const QString &path, const QString &profile = {}, bool byTopic = false);
+    // I file di una cartella che sta per diventare un progetto, con la proposta: [{file, dove}], dove «coda», «docs».
+    Q_INVOKABLE QVariantList folderFiles(const QString &path) const;
+    // Un progetto nuovo, per data o per argomento, anche da un profilo di partenza (vuoto: nessuno), in una cartella
+    // vuota o con dei file: placement dice dove va ognuno (file → «coda», «docs», «lascia»; Project::create). I
+    // profili: i nomi; saveProfile salva le scelte del progetto aperto (vuoto se è andata).
+    Q_INVOKABLE QString newProject(const QString &path, const QString &profile = {}, bool byTopic = false, const QVariantMap &placement = {});
     Q_INVOKABLE QStringList profiles() const;                              // i predefiniti, poi la libreria
     Q_INVOKABLE QStringList builtinProfiles() const;
     Q_INVOKABLE QStringList libraryProfiles() const;

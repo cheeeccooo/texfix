@@ -1,16 +1,20 @@
 #include "core/Project.h"
 
 #include "core/Files.h"
+#include "core/Pages.h"
 #include "core/Rules.h"
 #include "core/Tools.h"
 
 #include <QDir>
+#include <QDirIterator>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
 #include <QRegularExpression>
+
+#include <algorithm>
 
 namespace tx {
 
@@ -129,38 +133,62 @@ QString Project::relative(const QString &absolute) const { return QDir(m_root).r
 
 bool Project::isProject(const QString &dir) { return QFileInfo::exists(dir + '/' + STATE); }
 
-QString Project::create(const QString &dir)
+QList<std::pair<QString, QString>> Project::loose(const QString &dir)
+{
+    QList<std::pair<QString, QString>> out;
+    if (!QFileInfo(dir).isDir())
+        return out;
+    QStringList found;
+    for (QDirIterator it(dir, QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories); it.hasNext();) {
+        const QString rel = QDir(dir).relativeFilePath(it.next());
+        const QStringList parts = rel.split('/');
+        if (std::none_of(parts.begin(), parts.end(), [](const QString &p) { return p.startsWith('.'); }))   // anche su Windows
+            found << rel;
+    }
+    std::sort(found.begin(), found.end(), [](const QString &a, const QString &b) { return a.compare(b, Qt::CaseInsensitive) < 0; });
+    for (const QString &rel : std::as_const(found))
+        out.append({rel, rel.startsWith("docs/") ? QStringLiteral("docs") : rel.startsWith("fonti/coda/") ? QStringLiteral("coda")
+                         : Pages::kindOf(rel) == "altro" ? QStringLiteral("docs") : QStringLiteral("coda")});
+    return out;
+}
+
+QString Project::create(const QString &dir, const QHash<QString, QString> &placement, QStringList *moved)
 {
     const QDir d(dir);
-    if (d.exists() && !d.isEmpty(QDir::AllEntries | QDir::NoDotAndDotDot))
+    if (d.exists() && !d.isEmpty(QDir::AllEntries | QDir::NoDotAndDotDot) && placement.isEmpty())
         return QStringLiteral("La cartella non è vuota.");
     if (!QDir().mkpath(dir))
         return QStringLiteral("Non riesco a creare la cartella.");
+    // i file che c'erano: in arrivo, da consultare (con le loro cartelle) o dove sono
+    QStringList left;
+    for (const auto &[rel, proposed] : loose(dir)) {
+        const QString where = placement.value(rel, QStringLiteral("lascia"));
+        if ((where == "docs" && rel.startsWith("docs/")) || (where == "coda" && rel.startsWith("fonti/coda/")) || where == "lascia")
+            continue;                                  // è già dove va
+        const QString to = where == "coda" ? files::freeName(d.filePath("fonti/coda/" + QFileInfo(rel).fileName()))
+                                           : files::freeName(d.filePath("docs/" + rel));
+        QDir().mkpath(QFileInfo(to).absolutePath());
+        if (!QDir().rename(d.filePath(rel), to)) {
+            left << rel;
+            continue;
+        }
+        if (moved)
+            *moved << QStringLiteral("%1 → %2").arg(rel, d.relativeFilePath(to));
+        // le cartelle rimaste vuote, risalendo fino alla radice
+        for (QString folder = QFileInfo(rel).path(); folder != "." && !folder.isEmpty(); folder = QFileInfo(folder).path())
+            if (!d.rmdir(folder))
+                break;
+    }
     const Project project(dir);
     QDir().mkpath(project.path("salvataggi"));
-    QFile::copy(":/profili/neutro.profilo.md", project.path(PROFILE));
-    QFile::setPermissions(project.path(PROFILE), QFile::ReadOwner | QFile::WriteOwner | QFile::ReadGroup | QFile::ReadOther);
-    project.complete();
-    return isProject(dir) ? QString() : QStringLiteral("Non riesco a scrivere nella cartella.");
-}
-
-QStringList Project::adopt(const QString &dir)
-{
-    QStringList moved;
-    const QDir d(dir);
-    const QStringList entries = d.entryList(QDir::AllEntries | QDir::NoDotAndDotDot, QDir::Name);   // senza i nascosti
-    QDir().mkpath(dir + "/docs");
-    for (const QString &entry : entries) {
-        if (entry.startsWith('.'))
-            continue;                                   // su Windows un file col punto davanti non è nascosto
-        if (entry == "docs")
-            continue;                                   // ciò che era già in docs/ resta lì
-        const QString to = files::freeName(dir + "/docs/" + entry);
-        if (QDir().rename(d.filePath(entry), to))
-            moved << QStringLiteral("%1 → docs/%2").arg(entry, QFileInfo(to).fileName());
+    if (!QFileInfo::exists(project.path(PROFILE))) {
+        QFile::copy(":/profili/neutro.profilo.md", project.path(PROFILE));
+        QFile::setPermissions(project.path(PROFILE), QFile::ReadOwner | QFile::WriteOwner | QFile::ReadGroup | QFile::ReadOther);
     }
-    Project(dir).complete();
-    return moved;
+    project.complete();
+    if (!isProject(dir))
+        return QStringLiteral("Non riesco a scrivere nella cartella.");
+    return left.isEmpty() ? QString() : QStringLiteral("Non sono riuscito a spostare %1: sono rimasti dov'erano.").arg(left.join(", "));
 }
 
 QStringList Project::complete() const

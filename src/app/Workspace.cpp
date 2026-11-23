@@ -144,24 +144,32 @@ QString Workspace::openFolder(const QString &path)
     return {};
 }
 
-void Workspace::prepareFolder(const QString &path)
+QVariantList Workspace::folderFiles(const QString &path) const
 {
-    const QStringList moved = Project::adopt(path);
-    open(path);
-    if (!moved.isEmpty())
-        say(QStringLiteral("Cartella preparata: ciò che c'era è in «Da consultare» (%1).").arg(plural(moved.size(), "elemento", "elementi")));
+    QVariantList out;
+    for (const auto &[file, where] : Project::loose(path))
+        out << QVariantMap{{"file", file}, {"dove", where}};
+    return out;
 }
 
-QString Workspace::newProject(const QString &path, const QString &profile, bool byTopic)
+QString Workspace::newProject(const QString &path, const QString &profile, bool byTopic, const QVariantMap &placement)
 {
-    if (const QString error = Project::create(path); !error.isEmpty())
-        return error;
-    QString problem;
+    QHash<QString, QString> where;
+    for (auto it = placement.begin(); it != placement.end(); ++it)
+        where.insert(it.key(), it.value().toString());
+    QStringList moved;
+    QString problem = Project::create(path, where, &moved);
+    if (!Project::isProject(path))                     // non è nato: il perché
+        return problem;
     if (!profile.isEmpty())
-        problem = profiles::setForProject(Project(path), profile);
+        if (const QString p = profiles::setForProject(Project(path), profile); !p.isEmpty())
+            problem = problem.isEmpty() ? p : problem + ' ' + p;
     if (byTopic)
         reorganize::startByTopic(Project(path));
     open(path);
+    const int queued = int(std::count_if(moved.begin(), moved.end(), [](const QString &m) { return m.contains(QLatin1String("→ fonti/coda/")); }));
+    if (queued > 0)                                    // in arrivo, da smistare: non parte niente da sé
+        say(QStringLiteral("Progetto pronto: %1 in arrivo, «Smista» %2 riconosce e fa il piano.").arg(plural(queued, "file", "file"), queued == 1 ? "lo" : "li"));
     if (!problem.isEmpty())
         say(problem);
     return {};
