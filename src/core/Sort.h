@@ -55,4 +55,17 @@ Prepared prepare(const Project &project, const QJsonObject &planDocument);
 // Le decisioni e le istruzioni del piano come le legge il modello che rifà la mappa.
 QString previousPlan(const QJsonObject &planDocument);
 
+// Quanto costerà «Avvia», in dollari, per ciò che il piano farà davvero (le voci con la spunta, le decisioni sui
+// concetti in comune e sulle versioni): le lezioni nuove scritte dalla conversione e il lavoro dell'agente (aggiunte,
+// fusioni, versioni). Dalle righe (o pagine) dei concetti, con le medie per qualità corrette da ciò che sono costati
+// davvero i lavori di prima (learn, in stime.json fra i dati del programma).
+struct Estimate {
+    double lessons = 0;                                // le lezioni nuove della conversione
+    double agent = 0;                                  // i compiti dell'agente
+    double total() const { return lessons + agent; }
+};
+Estimate estimate(const Project &project, const QJsonObject &planDocument, const QString &quality);
+// Alla fine di un lavoro: quanto era stimato e quanto è costato davvero, per parte; le stime dopo si correggono.
+void learn(const QString &quality, const Estimate &estimated, const Estimate &spent);
+
 }

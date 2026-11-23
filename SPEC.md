@@ -162,7 +162,10 @@ sua analisi, un esempio, un esercizio) va dove serve, anche se il file da cui vi
   3. *Tutto nuovo*: ciò che non si interseca con niente.
   In fondo: versioni nuove, già nel corso, parti da saltare (ognuna si può tenere: «Non saltarla», e il piano si rivede), impostazioni del progetto con «Cambia», costo stimato e
   costo della mappa. Una destinazione si toglie con la spunta (i suoi pezzi restano in arrivo) o si corregge con
-  un'istruzione; un'istruzione o un commento fanno «Rivedi piano»: si rifà solo la mappa.
+  un'istruzione; un'istruzione o un commento fanno «Rivedi piano»: si rifà solo la mappa. Il costo stimato è di tutto
+  ciò che «Avvia» farà (le lezioni nuove e il lavoro dell'agente, detti a parte), segue ogni spunta e ogni decisione, e
+  si corregge da ciò che sono costati davvero i lavori di prima; durante il lavoro si vede quanto ne resta (decisione
+  del 23/11/2026).
 - **[S]** **Date.** La data è un indizio fra gli altri. Ciò che non ha data in un progetto per data diventa una lezione
   senza data, in fondo.
 - **[S]** **«Avvia»**: di ogni fonte si prendono le righe (o le pagine) dei concetti che vanno in un posto, allargate al

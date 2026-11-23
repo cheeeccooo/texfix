@@ -32,6 +32,18 @@ QString pieceTitle(const QString &source)
     const QString name = QFileInfo(texsource::parseSpec(source).path).completeBaseName();
     return name.contains(" · ") ? name.section(" · ", 1) : name;
 }
+
+// quanto è costato davvero, dai registri delle chiamate (restano da una ripresa all'altra): i compiti dell'agente
+// (fase «integrate») e il resto, che è la scrittura delle lezioni nuove
+sort::Estimate spentOf(const QString &records)
+{
+    sort::Estimate out;
+    for (const QString &name : QDir(records).entryList({"*.json"}, QDir::Files)) {
+        const QJsonObject call = QJsonDocument::fromJson(files::read(records + '/' + name).toUtf8()).object();
+        (call.value("fase").toString() == "integrate" ? out.agent : out.lessons) += call.value("costo").toDouble();
+    }
+    return out;
+}
 }
 
 QString folder(const Project &project, const QString &id) { return project.path("build/lavori/esecuzione/" + id); }
@@ -105,6 +117,7 @@ Result execute(const Project &project, const Settings &settings, const Style &st
             tasks.append(QJsonObject{{"id", QString::number(tasks.size() + 1)}, {"tipo", t.kind}, {"lezione", t.lesson}, {"titolo", t.title},
                                      {"fonti", QJsonArray::fromStringList(t.sources)}, {"messaggio", t.message}, {"stato", "da_fare"}});
         state = QJsonObject{{"preparato", true}, {"inizio", QDateTime::currentDateTime().toString(Qt::ISODate)},
+                            {"stima_parti", plan.value("stima_parti")},
                             {"fatto", QJsonArray::fromStringList(prepared.done)}, {"fonti", QJsonArray::fromStringList(prepared.sources)},
                             {"scelte", chosen}, {"compiti", tasks}, {"stima", plan.value("stima").toDouble()},
                             {"ordine", QJsonArray::fromStringList(prepared.order)}};
@@ -381,13 +394,14 @@ Result execute(const Project &project, const Settings &settings, const Style &st
     // l'esito
     out.stopped = stopped || out.converted.stopped || (control && (control->stopped() || control->pausedUntil().isValid()));
     out.failure = halted.isEmpty() ? out.converted.failure : halted;
-    out.cost = out.converted.cost;
+    // il costo vero dai registri: sommare qui contava due volte le sessioni di prima di una ripresa
+    const sort::Estimate spent = spentOf(recordsDir(project, id));
+    out.cost = spent.total();
     QStringList outcome;
     for (const QJsonValue &v : state.value("fatto").toArray())
         outcome << v.toString();
     for (const QJsonValue &v : state.value("compiti").toArray()) {
         const QJsonObject t = v.toObject();
-        out.cost += t.value("costo").toDouble();
         if (t.value("stato").toString() == "fatta")
             ++out.tasksDone;
         else if (t.value("stato").toString() == "fallita") {
@@ -400,8 +414,12 @@ Result execute(const Project &project, const Settings &settings, const Style &st
         s["stato"] = out.stopped ? "fermato" : "finito";
         if (!out.stopped)
             s["fine"] = QDateTime::currentDateTime().toString(Qt::ISODate);
-        s["costo"] = s.value("costo").toDouble() + out.cost;
+        s["costo"] = out.cost;
     });
+    if (!out.stopped) {                                // le stime dopo imparano da questa
+        const QJsonObject guessed = state.value("stima_parti").toObject();
+        sort::learn(settings.quality, {guessed.value("lezioni").toDouble(), guessed.value("agente").toDouble()}, spent);
+    }
     if (!out.stopped) {                                // l'esito resta nel piano: si legge, poi si archivia
         QStringList text;
         for (const QString &line : std::as_const(outcome))

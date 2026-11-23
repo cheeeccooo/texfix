@@ -14,5 +14,7 @@ QString freeName(const QString &path);
 // Il nome di una fonte per ritrovarla: senza maiuscole, punteggiatura, estensione e « (2)». «notes_LabSS (1).pdf» e
 // «notes_LabSS_1.pdf» sono la stessa. La regola sta solo qui.
 QString bare(const QString &name);
+// La cartella dei dati del programma (librerie, utilizzo, stime): `TEXFIX_DATI` nelle prove dell'interfaccia.
+QString dataDir();
 
 }

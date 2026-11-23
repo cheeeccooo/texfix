@@ -138,18 +138,12 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
             if (needed.contains(c.id))
                 concepts.insert(c.id, QJsonObject{{"title", c.title}, {"what", c.what}});
     }
-    QHash<QString, int> lines;                         // concetto → righe (o pagine), per la stima
-    QSet<QString> pageHolders;
     for (const concepts::Holder &h : std::as_const(s.fresh)) {
         const texsource::Ref ref = texsource::parseSpec(h.source);
         const bool pages = Pages::kindOf(ref.path) == "pagine";
-        if (pages)
-            pageHolders.insert(h.key);
         sources.append(QJsonObject{{"key", h.key}, {"name", h.name}, {"source", h.source}, {"file", QFileInfo(ref.path).completeBaseName()}, {"pagine", pages}});
-        for (const concepts::Concept &c : h.concepts) {
+        for (const concepts::Concept &c : h.concepts)     // da dove a dove: anche per la stima
             concepts.insert(c.id, QJsonObject{{"title", c.title}, {"what", c.what}, {"from", c.from}, {"to", c.to}});
-            lines.insert(c.id, qMax(1, c.to - c.from + 1));
-        }
     }
     // le sigle dei concetti sono del modello: in ciò che legge l'utente diventano il nome della lezione o della fonte
     QHash<QString, QString> spoken;
@@ -199,17 +193,8 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
                                   {"proposta", proposal}, {"valore", decided.value(sorted.join(','), proposal)}, {"ospite", host}});
     }
     QJsonArray destinations;
-    QList<Convert::Source> estimated;
     for (const QJsonValue &v : s.map.value("place").toArray()) {
         const QJsonObject p = v.toObject();
-        int size = 0;
-        bool pages = false;
-        for (const QJsonValue &id : p.value("concepts").toArray()) {
-            size += lines.value(id.toString());
-            pages = pages || pageHolders.contains(holderOf(id.toString()));
-        }
-        if (p.value("into").toString() == "new")
-            estimated << Convert::Source{QString(), pages ? QStringLiteral("pagine") : QStringLiteral("tex"), size};
         destinations.append(QJsonObject{{"into", p.value("into")}, {"title", p.value("title")}, {"date", p.value("date")}, {"after", p.value("after")}, {"concepts", p.value("concepts")},
                                         {"why", plain(p.value("why"))}, {"fare", true}, {"nota", ""}});
     }
@@ -257,8 +242,11 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
                          }()}, {"gia", QJsonArray::fromStringList(known)}, {"versioni", versions},
                          {"illeggibili", QJsonArray::fromStringList(unread)}, {"commento", ""}, {"nota_scaletta", ""}, {"programma", settings.program}, {"impostazioni", settingsLine(settings)},
                          {"ordine", QJsonObject{{"proposta", order}, {"valore", !order.isEmpty()}}},
-                         {"stima", Convert::estimate(settings.quality, estimated)}, {"costo", out.cost}, {"sezioni", QJsonArray()},
+                         {"costo", out.cost}, {"sezioni", QJsonArray()},
                          {"domande", QJsonArray()}};
+    const Estimate guess = estimate(project, document, settings.quality);   // ciò che il piano farà, con le medie imparate
+    document["stima"] = guess.total();
+    document["stima_parti"] = QJsonObject{{"lezioni", guess.lessons}, {"agente", guess.agent}};
     out.plan = plans::create(project, QJsonObject{{"titolo", "Aggiungi materiale"}, {"sezioni", QJsonArray{QJsonObject{{"titolo", "-"}, {"voci", QJsonArray{"-"}}}}}}, &out.failure);
     if (!out.plan.isEmpty())
         plans::save(project, out.plan, document);
@@ -623,6 +611,101 @@ Prepared prepare(const Project &project, const QJsonObject &document)
         out.done << QStringLiteral("%1 smistato per concetti: l'originale va fra le fonti usate").arg(QFileInfo(file).fileName());
     }
     return out;
+}
+
+
+namespace {
+// le medie (in dollari, a qualità normale) delle conversioni della vecchia app: una pagina, cento righe di LaTeX, cento
+// di testo; un compito dell'agente costa quanto la conversione di ciò che legge, più una base (legge la lezione, compila)
+constexpr double PAGE = 0.12, TEX_LINES = 0.23, TEXT_LINES = 0.08, AGENT_BASE = 0.35;
+
+QString estimatesFile() { return files::dataDir() + "/stime.json"; }
+
+// le correzioni imparate dai lavori di prima, per qualità: {"normale": {"lessons": 1.3, "agent": 0.8}}
+QJsonObject learned() { return QJsonDocument::fromJson(files::read(estimatesFile()).toUtf8()).object(); }
+}
+
+Estimate estimate(const Project &project, const QJsonObject &plan, const QString &quality)
+{
+    const double factor = quality == "veloce" ? 0.45 : quality == "massima" ? 2.5 : 1.0;
+    QHash<QString, QJsonObject> sources;
+    for (const QJsonValue &v : plan.value("fonti").toArray())
+        sources.insert(v.toObject().value("key").toString(), v.toObject());
+    QSet<QString> course;
+    for (const QJsonValue &v : plan.value("corso").toArray())
+        course.insert(v.toObject().value("key").toString());
+    const QJsonObject concepts = plan.value("concetti").toObject();
+    // quanto costa scrivere un concetto del materiale nuovo: dalle sue pagine, o dalle sue righe
+    auto cost = [&](const QString &id) {
+        const QJsonObject c = concepts.value(id).toObject();
+        const QJsonObject source = sources.value(holderOf(id));
+        if (source.isEmpty())                          // un concetto del corso: non si riscrive
+            return 0.0;
+        const int size = qMax(1, c.value("to").toInt() - c.value("from").toInt() + 1);
+        if (source.value("pagine").toBool())
+            return PAGE * size;
+        return (Pages::kindOf(source.value("source").toString()) == "tex" ? TEX_LINES : TEXT_LINES) * size / 100.0;
+    };
+    auto sum = [&](const QJsonArray &ids) {
+        double out = 0;
+        for (const QJsonValue &id : ids)
+            out += cost(id.toString());
+        return out;
+    };
+    Estimate e;
+    QSet<QString> touched;                             // le lezioni del corso che l'agente tocca: un compito ciascuna
+    for (const QJsonValue &v : plan.value("destinazioni").toArray()) {
+        const QJsonObject d = v.toObject();
+        if (!d.value("fare").toBool(true))
+            continue;
+        if (d.value("into").toString() == "new") {
+            e.lessons += sum(d.value("concepts").toArray());
+        } else {
+            e.agent += sum(d.value("concepts").toArray());
+            touched.insert(d.value("into").toString());
+        }
+    }
+    for (const QJsonValue &v : plan.value("comuni").toArray()) {        // una versione sola, in una lezione del corso
+        const QJsonObject g = v.toObject();
+        const QString host = holderOf(g.value("ospite").toString());
+        if (g.value("valore").toString() == "one" && course.contains(host)) {
+            e.agent += sum(g.value("items").toArray());
+            touched.insert(host);
+        }
+    }
+    for (const QJsonValue &v : plan.value("versioni").toArray()) {      // le differenze di una versione nuova
+        const QJsonObject version = v.toObject();
+        if (version.value("valore").toString() != "porta")
+            continue;
+        const QString file = version.value("fonte").toString();
+        const int size = Pages::size(project.path(file));
+        e.agent += Pages::kindOf(file) == "pagine" ? PAGE * size : (Pages::kindOf(file) == "tex" ? TEX_LINES : TEXT_LINES) * size / 100.0;
+        touched.insert(version.value("file").toString());
+    }
+    e.agent += AGENT_BASE * touched.size();
+    const QJsonObject correction = learned().value(quality.isEmpty() ? QStringLiteral("normale") : quality).toObject();
+    e.lessons *= factor * correction.value("lessons").toDouble(1.0);
+    e.agent *= factor * correction.value("agent").toDouble(1.0);
+    return e;
+}
+
+void learn(const QString &quality, const Estimate &estimated, const Estimate &spent)
+{
+    QJsonObject all = learned();
+    const QString key = quality.isEmpty() ? QStringLiteral("normale") : quality;
+    QJsonObject mine = all.value(key).toObject();
+    // a metà strada fra la correzione di prima e quella che questo lavoro chiede: un lavoro strano non sposta tutto
+    auto adjust = [&](const char *part, double guessed, double real) {
+        if (guessed < 0.02 || real <= 0)
+            return;
+        const double before = mine.value(QLatin1String(part)).toDouble(1.0);
+        const double ratio = qBound(0.2, real / guessed, 5.0);
+        mine[QLatin1String(part)] = qBound(0.1, before * (0.5 + 0.5 * ratio), 10.0);
+    };
+    adjust("lessons", estimated.lessons, spent.lessons);
+    adjust("agent", estimated.agent, spent.agent);
+    all[key] = mine;
+    files::write(estimatesFile(), QString::fromUtf8(QJsonDocument(all).toJson()));
 }
 
 }

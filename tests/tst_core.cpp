@@ -66,11 +66,14 @@ class CoreTests : public QObject {
         return done.first().first().value<BuildResult>();
     }
 
+    QTemporaryDir m_data;                              // i dati del programma delle prove (stime, utilizzo): mai quelli veri
+
 private slots:
     void initTestCase()
     {
         tools::adoptPath();
         qputenv("TEXFIX_RETE", "presente");            // le prove non guardano la rete vera: un finto modello che sbaglia non è una rete che manca
+        qputenv("TEXFIX_DATI", m_data.path().toUtf8());
     }
 
     void freeName()
@@ -1459,6 +1462,35 @@ private slots:
 
     // L'utilizzo di Claude: lo dice ogni chiamata (rate_limit_event, con le due finestre); si ricorda fra un avvio e
     // l'altro, e un limite raggiunto dice fino a quando.
+    void sortEstimate()
+    {
+        QTemporaryDir dir;
+        QCOMPARE(Project::create(dir.filePath("prova")), QString());
+        const Project p(dir.filePath("prova"));
+        // una fonte di pagine (S) e un testo (T); una lezione nuova, un'aggiunta alla lezione 1, una voce senza spunta,
+        // un concetto in comune tenuto nella lezione 1
+        QJsonObject plan{{"fonti", QJsonArray{QJsonObject{{"key", "S"}, {"source", "fonti/coda/S.pdf"}, {"pagine", true}},
+                                              QJsonObject{{"key", "T"}, {"source", "fonti/coda/T.md"}, {"pagine", false}}}},
+                         {"corso", QJsonArray{QJsonObject{{"key", "L1"}}}},
+                         {"concetti", QJsonObject{{"S.1", QJsonObject{{"from", 1}, {"to", 5}}}, {"T.1", QJsonObject{{"from", 1}, {"to", 200}}},
+                                                  {"T.2", QJsonObject{{"from", 201}, {"to", 300}}}, {"T.3", QJsonObject{{"from", 301}, {"to", 400}}}}},
+                         {"destinazioni", QJsonArray{QJsonObject{{"into", "new"}, {"concepts", QJsonArray{"S.1"}}, {"fare", true}},
+                                                     QJsonObject{{"into", "L1"}, {"concepts", QJsonArray{"T.1"}}, {"fare", true}},
+                                                     QJsonObject{{"into", "new"}, {"concepts", QJsonArray{"T.2"}}, {"fare", false}}}},
+                         {"comuni", QJsonArray{QJsonObject{{"items", QJsonArray{"L1.4", "T.3"}}, {"valore", "one"}, {"ospite", "L1.4"}}}}};
+        sort::Estimate e = sort::estimate(p, plan, "normale");
+        QVERIFY(qAbs(e.lessons - 5 * 0.12) < 1e-9);                                       // cinque pagine
+        QVERIFY(qAbs(e.agent - (2 * 0.08 + 0.08 + 0.35)) < 1e-9);                         // duecento righe, cento, un compito sulla lezione 1
+        QVERIFY(qAbs(sort::estimate(p, plan, "veloce").total() - 0.45 * e.total()) < 1e-9);
+
+        // un lavoro costato il doppio per le lezioni: la stima dopo si sposta a metà strada
+        sort::learn("normale", e, {e.lessons * 2, e.agent});
+        const sort::Estimate after = sort::estimate(p, plan, "normale");
+        QVERIFY(qAbs(after.lessons - e.lessons * 1.5) < 1e-9);
+        QVERIFY(qAbs(after.agent - e.agent) < 1e-9);
+        QFile::remove(files::dataDir() + "/stime.json");
+    }
+
     void usageEvents()
     {
         QTemporaryDir dir;

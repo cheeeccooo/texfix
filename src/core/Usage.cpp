@@ -5,7 +5,6 @@
 #include <QJsonDocument>
 #include <QList>
 #include <QMutex>
-#include <QStandardPaths>
 
 namespace tx::usage {
 
@@ -21,8 +20,7 @@ QString file()
 {
     if (!g_file.isEmpty())
         return g_file;
-    const QString data = qEnvironmentVariable("TEXFIX_DATI");          // per le prove dell'interfaccia: dati a parte
-    return (data.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) : data) + "/utilizzo.json";
+    return files::dataDir() + "/utilizzo.json";
 }
 
 Window windowOf(const QJsonObject &o)

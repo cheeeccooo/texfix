@@ -183,7 +183,8 @@ Rectangle {
                 text: [root.stateText,
                        "Tempo: " + root.minutes(root.worked),
                        root.remaining > 0 ? "Manca: " + (root.remaining < 60000 ? "meno di un minuto" : "circa " + root.minutes(root.remaining)) : root.working ? "Manca: lo stimo appena qualcosa è fatto" : "",
-                       "Costo: " + root.money(root.run.cost) + (root.run.estimate > 0 ? " (stima " + root.money(root.run.estimate) + ")" : ""),
+                       "Costo: " + root.money(root.run.cost) + (root.run.estimate > 0 ? " (stima " + root.money(root.run.estimate)
+                           + (root.runState !== "finito" && root.run.estimate > root.run.cost ? ", ne resta circa " + root.money(root.run.estimate - root.run.cost) : "") + ")" : ""),
                        root.working ? "Sottoagenti al lavoro: " + root.run.active : ""].filter(s => s !== "").join("   ·   ")
                 color: root.runState === "in_pausa" ? Theme.warn : Theme.textMuted
                 font.pixelSize: Theme.smallSize

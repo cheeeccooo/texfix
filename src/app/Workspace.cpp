@@ -2065,6 +2065,11 @@ void Workspace::setPlanField(const QString &id, const QString &list, int index, 
     item[key] = QJsonValue::fromVariant(value);
     items[index] = item;
     plan[list] = items;
+    if (key != "nota") {                               // ciò che «Avvia» farà è cambiato: la stima lo segue
+        const sort::Estimate guess = sort::estimate(m_project, plan, m_settings.quality);
+        plan["stima"] = guess.total();
+        plan["stima_parti"] = QJsonObject{{"lezioni", guess.lessons}, {"agente", guess.agent}};
+    }
     plans::save(m_project, id, plan);
     if (key != "nota")                                 // un'istruzione si scrive: rileggere a ogni tasto toglierebbe il cursore
         emit planEdited(id);

@@ -4,6 +4,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSaveFile>
+#include <QStandardPaths>
 
 namespace tx::files {
 
@@ -56,5 +57,13 @@ QString bare(const QString &name)
         if (c.isLetterOrNumber())
             out += c;
     return out;
+}
+}
+
+namespace tx::files {
+QString dataDir()
+{
+    const QString data = qEnvironmentVariable("TEXFIX_DATI");          // per le prove dell'interfaccia: dati a parte
+    return data.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) : data;
 }
 }

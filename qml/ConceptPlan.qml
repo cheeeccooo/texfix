@@ -922,8 +922,12 @@ Rectangle {
                     elide: Text.ElideNone
                     color: Theme.textMuted
                     font.pixelSize: Theme.smallSize
-                    text: (root.plan.impostazioni || "") + (root.plan.stima >= 0.01 ? "\nCosto stimato per scrivere le lezioni nuove: circa "
-                          + Number(root.plan.stima).toLocaleString(Qt.locale("it_IT"), "f", 2) + " $, più il lavoro dell'agente dove si fonde." : "")
+                    readonly property var parts: root.plan.stima_parti || ({})
+                    function money(v) { return Number(v).toLocaleString(Qt.locale("it_IT"), "f", 2) + " $" }
+                    text: (root.plan.impostazioni || "") + (root.plan.stima >= 0.01 ? "\nCosto stimato di «Avvia»: circa " + money(root.plan.stima)
+                          + (parts.lezioni !== undefined && parts.agente >= 0.01 && parts.lezioni >= 0.01
+                             ? " (le lezioni nuove " + money(parts.lezioni) + ", il lavoro dell'agente " + money(parts.agente) + ")"
+                             : parts.agente >= 0.01 ? ", tutto lavoro dell'agente" : "") + "; si corregge da ciò che sono costati i lavori di prima." : "")
                           + (root.plan.costo >= 0.01 ? "\nQuesta mappa è costata " + Number(root.plan.costo).toLocaleString(Qt.locale("it_IT"), "f", 2) + " $." : "")
                 }
                 TxButton { text: "Cambia"; hint: "Le impostazioni del progetto (⌘,)"; onClicked: Workspace.askSettings() }
