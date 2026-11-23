@@ -1450,6 +1450,15 @@ private slots:
         QCOMPARE(Pages::size(p.path("fonti/coda/S · Uno e due.pdf")), 2);
         QCOMPARE(Pages::size(p.path("fonti/coda/S · Tre.pdf")), 2);
         QVERIFY(prepared.tasks.first().message.contains("fonti/coda/S · Tre.pdf"));
+        // l'agente non apre il PDF (il suo strumento un PDF lungo lo legge solo a pezzi, e a pezzi non riesce): ne legge le pagine
+        const QStringList made = QDir(p.path("build/lavori/leggibili")).entryList({"pagine-*"}, QDir::Dirs);
+        QCOMPARE(made.size(), 2);                                                         // una cartella per PDF dato all'agente
+        const auto named = [&](const QString &folder) {
+            return QStringLiteral("`fonti/coda/S · Tre.pdf` (non aprire il PDF: leggi le sue 2 pagine, le immagini da "
+                                  "`build/lavori/leggibili/%1/full-1.png` a `build/lavori/leggibili/%1/full-2.png`, tutte)").arg(folder);
+        };
+        QVERIFY2(prepared.tasks.first().message.contains(named(made[0])) || prepared.tasks.first().message.contains(named(made[1])),
+                 qPrintable(prepared.tasks.first().message));
         QVERIFY(QFileInfo::exists(p.path("fonti/usate/smistate/S.pdf")));
     }
 

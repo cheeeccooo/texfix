@@ -33,19 +33,19 @@ QStringList rendered(const QString &dir, const QString &prefix)
     return out;
 }
 
-// Una pagina bianca: nessun segno scuro (ne basta uno su duemila punti guardati).
+// Una pagina bianca: nessun segno scuro, al più qualche punto sporco (una pagina con una parola sola non è bianca).
 bool blank(const QString &png)
 {
     const QImage image = QImage(png).convertToFormat(QImage::Format_Grayscale8);
     if (image.isNull())
         return false;
-    qint64 dark = 0, seen = 0;
+    qint64 dark = 0;
     for (int y = 0; y < image.height(); y += 2) {
         const uchar *row = image.constScanLine(y);
-        for (int x = 0; x < image.width(); x += 2, ++seen)
+        for (int x = 0; x < image.width(); x += 2)
             dark += row[x] < 160;
     }
-    return dark * 2000 < seen;
+    return dark < 8;
 }
 
 // Le pagine disegnate da Qt (pdfium), con i nomi di pdftoppm: per i PDF che poppler disegna bianchi (caratteri
