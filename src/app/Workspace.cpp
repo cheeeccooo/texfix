@@ -106,7 +106,9 @@ Workspace *Workspace::create(QQmlEngine *, QJSEngine *)
 QSettings Workspace::settings()
 {
     const QString file = qEnvironmentVariable("TEXFIX_PREFERENZE");
-    return file.isEmpty() ? QSettings() : QSettings(file, QSettings::IniFormat);
+    if (file.isEmpty())
+        return QSettings();
+    return QSettings(file, QSettings::IniFormat);   // niente ?: : MSVC vuole copiare QSettings, che non si copia
 }
 
 QString Workspace::localPath(const QUrl &url) { return url.isLocalFile() ? url.toLocalFile() : url.toString(); }
