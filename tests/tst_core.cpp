@@ -31,6 +31,7 @@
 #include "core/TexSource.h"
 #include "core/TexLog.h"
 #include "core/Tools.h"
+#include "core/Usage.h"
 
 #include <QCryptographicHash>
 #include <QJsonArray>
@@ -1442,6 +1443,41 @@ private slots:
         QCOMPARE(plan.value("fonti").toArray().size(), 1);
         QVERIFY(plan.value("illeggibili").toArray()[0].toString().startsWith("vuoto.md"));
         QCOMPARE(plan.value("destinazioni").toArray().size(), 1);
+    }
+
+    // L'utilizzo di Claude: lo dice ogni chiamata (rate_limit_event, con le due finestre); si ricorda fra un avvio e
+    // l'altro, e un limite raggiunto dice fino a quando.
+    void usageEvents()
+    {
+        QTemporaryDir dir;
+        usage::setFile(dir.filePath("utilizzo.json"));
+        QVERIFY(!usage::current().known());
+        int changes = 0;
+        usage::onChange([&] { ++changes; });
+        const qint64 hours = QDateTime::currentSecsSinceEpoch() + 3600, week = QDateTime::currentSecsSinceEpoch() + 5 * 86400;
+        usage::record(QJsonObject{{"type", "assistant"}});                              // non è un evento dell'utilizzo
+        QCOMPARE(changes, 0);
+        usage::record(QJsonObject{{"type", "rate_limit_event"}, {"rate_limit_info", QJsonObject{{"status", "allowed"}, {"unifiedWindows", QJsonObject{
+            {"five_hour", QJsonObject{{"utilization", 0.36}, {"resetsAt", double(hours)}, {"status", "allowed"}}},
+            {"seven_day", QJsonObject{{"utilization", 0.05}, {"resetsAt", double(week)}, {"status", "allowed"}}}}}}}});
+        QCOMPARE(changes, 1);
+        usage::State s = usage::current();
+        QCOMPARE(s.hours.used, 0.36);
+        QCOMPARE(s.week.used, 0.05);
+        QCOMPARE(s.hours.resets.toSecsSinceEpoch(), hours);
+        QVERIFY(!s.blockedUntil().isValid());
+        QVERIFY(!usage::runsOutAt(QDateTime::currentDateTime().addSecs(-60)).isValid());   // un campione solo: nessun ritmo
+
+        usage::setFile(dir.filePath("utilizzo.json"));                                  // come a un nuovo avvio
+        QCOMPARE(usage::current().hours.used, 0.36);
+
+        // il limite raggiunto: fino a quando si azzera la finestra che rifiuta
+        usage::record(QJsonObject{{"type", "rate_limit_event"}, {"rate_limit_info", QJsonObject{{"status", "rejected"}, {"unifiedWindows", QJsonObject{
+            {"five_hour", QJsonObject{{"utilization", 1.0}, {"resetsAt", double(hours)}, {"status", "rejected"}}},
+            {"seven_day", QJsonObject{{"utilization", 0.4}, {"resetsAt", double(week)}, {"status", "allowed"}}}}}}}});
+        QCOMPARE(usage::current().blockedUntil().toSecsSinceEpoch(), hours);
+        usage::onChange({});
+        usage::setFile({});
     }
 
     // «Aggiungi materiale a questa lezione…» mette solo in arrivo e ricorda la lezione, finché il file è lì; «Smista» la

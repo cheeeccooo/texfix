@@ -190,6 +190,22 @@ Rectangle {
                 wrapMode: Text.WordWrap
                 elide: Text.ElideNone
             }
+            // l'utilizzo di Claude mentre il lavoro gira: a questo ritmo quando arriva il limite, e se prima della fine
+            TxLabel {
+                readonly property var u: Workspace.usage
+                readonly property bool before: u.runsOutMinutes !== undefined && root.remaining > 0 && u.runsOutMinutes * 60000 < root.remaining
+                Layout.fillWidth: true
+                visible: root.mine && root.working && u.known === true
+                text: u.runsOut !== undefined
+                      ? "Claude: " + u.hours.used + "% delle cinque ore; a questo ritmo il limite arriva " + u.runsOut
+                        + (before ? ", prima della fine del lavoro: lì il lavoro va in pausa da sé e riprende con un clic."
+                                  : root.remaining > 0 ? ", dopo la fine del lavoro." : ".")
+                      : "Claude: " + u.hours.used + "% delle cinque ore" + (u.hours.resets !== "" ? ", si azzera " + u.hours.resets : "") + "."
+                color: before ? Theme.warn : Theme.textMuted
+                font.pixelSize: Theme.smallSize
+                wrapMode: Text.WordWrap
+                elide: Text.ElideNone
+            }
             // adesso: che cosa fa ogni cantiere al lavoro (un clic mostra solo il suo)
             ColumnLayout {
                 Layout.fillWidth: true

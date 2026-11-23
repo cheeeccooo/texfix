@@ -28,6 +28,7 @@ qt_add_library(texfix_core STATIC
     src/core/Style.cpp
     src/core/StyleSwitch.cpp
     src/core/Model.cpp
+    src/core/Usage.cpp
     src/core/Pages.cpp
     src/core/Blocks.cpp
     src/core/Prompts.cpp

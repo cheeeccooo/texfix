@@ -22,6 +22,7 @@
 #include "core/TexSource.h"
 #include "core/StyleSwitch.h"
 #include "core/SyncTex.h"
+#include "core/Usage.h"
 
 #include <QCoreApplication>
 #include <QClipboard>
@@ -63,6 +64,20 @@ Workspace::Workspace()
     });
     connect(&m_watcher, &QFileSystemWatcher::directoryChanged, &m_refresh, qOverload<>(&QTimer::start));
     connect(&m_watcher, &QFileSystemWatcher::fileChanged, &m_refresh, qOverload<>(&QTimer::start));
+
+    // l'utilizzo di Claude: lo dicono le chiamate, da qualunque thread; ogni mezzo minuto si rilegge («di N minuti fa»)
+    tx::usage::onChange([this] { QMetaObject::invokeMethod(this, [this] { emit usageChanged(); }); });
+    m_usageTick.setInterval(30000);
+    connect(&m_usageTick, &QTimer::timeout, this, &Workspace::usageChanged);
+    m_usageTick.start();
+    connect(this, &Workspace::busyChanged, this, [this] {   // da quando si lavora: il ritmo si misura da lì
+        const bool working = jobRunning() || m_agentRunning;
+        if (working && !m_workStarted.isValid())
+            m_workStarted = QDateTime::currentDateTime();
+        else if (!working)
+            m_workStarted = {};
+        emit usageChanged();
+    });
 
     connect(this, &Workspace::compilingChanged, this, &Workspace::busyChanged);
     connect(this, &Workspace::jobChanged, this, &Workspace::busyChanged);
@@ -2396,6 +2411,34 @@ void Workspace::closeRun()
 }
 
 QString Workspace::pausedUntil() const { return m_pausedUntil.isValid() ? Model::when(m_pausedUntil) : QString(); }
+
+QVariantMap Workspace::usage() const
+{
+    const tx::usage::State s = tx::usage::current();
+    if (!s.known())
+        return {{"known", false}};
+    const QDateTime now = QDateTime::currentDateTime();
+    auto window = [&](const tx::usage::Window &w) {
+        // passata l'ora in cui si azzera, ciò che diceva l'ultima chiamata non vale più
+        const bool reset = w.resets.isValid() && w.resets <= now;
+        return QVariantMap{{"known", w.known()}, {"used", reset ? 0 : qRound(w.used * 100)}, {"resets", w.resets.isValid() && !reset ? Model::when(w.resets) : QString()},
+                           {"status", reset ? QStringLiteral("allowed") : w.status}};
+    };
+    QVariantMap out{{"known", true}, {"hours", window(s.hours)}, {"week", window(s.week)},
+                    {"ago", s.seen.isValid() ? int(s.seen.secsTo(now) / 60) : -1}};
+    if (const QDateTime until = s.blockedUntil(); until.isValid())
+        out["blocked"] = Model::when(until);
+    // mentre si lavora: a questo ritmo, quando si arriva al limite (se prima che la finestra si azzeri)
+    if (m_workStarted.isValid()) {
+        const QDateTime end = tx::usage::runsOutAt(m_workStarted);
+        if (end.isValid() && (!s.hours.resets.isValid() || end < s.hours.resets)) {
+            const qint64 minutes = qMax<qint64>(1, now.secsTo(end) / 60);
+            out["runsOut"] = minutes < 90 ? QStringLiteral("fra circa %1 minuti").arg(minutes) : Model::when(end);
+            out["runsOutMinutes"] = double(minutes);
+        }
+    }
+    return out;
+}
 
 bool Workspace::resumable() const
 {

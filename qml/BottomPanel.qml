@@ -19,7 +19,8 @@ Rectangle {
         if (Workspace.jobRunning)
             out.push({ title: Workspace.jobTitle, detail: Workspace.pausedForConnection ? "la connessione non è tornata: finisco ciò che è in corso e mi fermo"
                                                         : Workspace.pausedUntil !== "" ? "limite di utilizzo raggiunto: finisco ciò che è in corso e mi fermo"
-                                                        : Workspace.offline ? "manca la connessione: aspetto che torni" : Workspace.jobLabel,
+                                                        : Workspace.offline ? "manca la connessione: aspetto che torni"
+                                                        : Workspace.jobLabel + (Workspace.usage.runsOut !== undefined ? " · a questo ritmo il limite di Claude arriva " + Workspace.usage.runsOut : ""),
                        progress: run.id && Workspace.jobTitle === "Aggiungi materiale" ? run.progress : Workspace.jobProgress, state: Workspace.pausedUntil !== "" || Workspace.offline ? "wait" : "run", stop: true,
                        open: run.id && Workspace.jobTitle === "Aggiungi materiale" ? "lavoro:" + run.id : "" })
         if (Chat.running)

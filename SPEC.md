@@ -363,6 +363,10 @@ Le mosse e le misure sono regole strutturali (§4.1); quanto essere severi è un
   - «Ferma».
 - **[S]** «Ferma» per ogni lavoro: subito, senza lasciare l'app «in corso».
 - **[S]** «Riprendi» compare quando un lavoro lungo si è interrotto.
+- **[S]** L'utilizzo di Claude, in alto: quanto della finestra di cinque ore (e, nel suggerimento, della settimana) e quando
+  si azzera, come lo dicono le chiamate fatte (niente chiamate in più); mentre si lavora, a questo ritmo quando arriverebbe
+  il limite, anche nella finestra del lavoro di «Avvia» e in Attività, con un avviso se prima della fine del lavoro
+  (decisione del 23/11/2026).
 - **[O]** La pausa manda SIGSTOP ai processi e ai figli. *→ Decisione D6: la pausa sparisce; bastano «Ferma» e «Riprendi».*
 
 ### 3.18 Blocchi e tag di provenienza

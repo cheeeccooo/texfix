@@ -4,6 +4,7 @@
 #include "core/Files.h"
 #include "core/Model.h"
 #include "core/Tools.h"
+#include "core/Usage.h"
 
 #include <QRegularExpression>
 #include <QCoreApplication>
@@ -166,6 +167,7 @@ Result run(const Project &project, const Settings &settings, const Style &style,
             for (qsizetype end; (end = buffer.indexOf('\n')) >= 0;) {
                 const QJsonObject line = QJsonDocument::fromJson(buffer.left(end)).object();
                 buffer.remove(0, end + 1);
+                usage::record(line);                   // la barra dell'utilizzo
                 if (!line.value("session_id").toString().isEmpty())
                     out.session = line.value("session_id").toString();
                 if (line.value("type").toString() == "result")

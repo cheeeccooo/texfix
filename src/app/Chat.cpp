@@ -6,6 +6,7 @@
 #include "core/Model.h"
 #include "core/NewLesson.h"
 #include "core/Tools.h"
+#include "core/Usage.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -239,6 +240,7 @@ void Chat::readOutput()
     while ((end = m_buffer.indexOf('\n')) >= 0) {
         const QJsonObject line = QJsonDocument::fromJson(m_buffer.left(end)).object();
         m_buffer.remove(0, end + 1);
+        tx::usage::record(line);                       // la barra dell'utilizzo
         const QString type = line.value("type").toString();
         if (!line.value("session_id").toString().isEmpty())
             m_session = line.value("session_id").toString();

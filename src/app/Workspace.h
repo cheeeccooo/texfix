@@ -67,6 +67,10 @@ class Workspace : public QObject {
     Q_PROPERTY(QVariantList recentJobs READ recentJobs NOTIFY jobChanged)
     // Il lavoro in pausa per il limite di utilizzo: fino a quando («HH:mm», o con il giorno); vuoto se non è in pausa.
     Q_PROPERTY(QString pausedUntil READ pausedUntil NOTIFY jobProgressChanged)
+    // L'utilizzo di Claude (core/Usage, dalle chiamate fatte): known; hours e week {used (0-100), resets («alle 18:40»),
+    // status}; ago (minuti dall'ultima chiamata); blocked (fino a quando, se il limite è raggiunto); e mentre si lavora
+    // runsOut: a questo ritmo quando arriva al limite («fra circa 25 minuti»), vuoto se non si sa o se si azzera prima.
+    Q_PROPERTY(QVariantMap usage READ usage NOTIFY usageChanged)
     // La connessione: offline, le chiamate del lavoro aspettano che torni; pausedForConnection, il lavoro si ferma perché
     // non è tornata (pausedUntil è allora adesso: si riprende quando c'è).
     Q_PROPERTY(bool offline READ offline NOTIFY jobProgressChanged)
@@ -113,6 +117,7 @@ public:
     QStringList jobLog() const { return m_jobLog; }
     QVariantList recentJobs() const { return m_recent; }
     QString pausedUntil() const;
+    QVariantMap usage() const;
     bool offline() const { return m_offline; }
     bool pausedForConnection() const { return m_pauseConnection; }
     QStringList projectRules() const { return m_settings.profile.extra; }
@@ -425,6 +430,7 @@ signals:
     void jobProgressChanged();
     void jobLogChanged();
     void busyChanged();
+    void usageChanged();
     void outcomeReady(const QVariantMap &outcome);
     void planReady(const QString &id);
     void planEdited(const QString &id);                // una modifica dell'utente al piano, già salvata
@@ -515,6 +521,8 @@ private:
     void computeTags();
     QFileSystemWatcher m_watcher;
     QTimer m_refresh;                                  // più cambiamenti vicini, un aggiornamento solo
+    QTimer m_usageTick;                                // la barra dell'utilizzo: «di N minuti fa», il ritmo
+    QDateTime m_workStarted;                           // da quando si lavora (un lavoro, l'agente): il ritmo dell'utilizzo
     QVariantList m_recent, m_outcomes, m_strays, m_jobs, m_lessons, m_documentFiles, m_queue, m_documents, m_images, m_issues;
     QHash<QString, QString> m_states;                  // lezione → stato dell'ultima compilazione
     QHash<QString, QString> m_details;

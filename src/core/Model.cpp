@@ -2,6 +2,7 @@
 
 #include "core/Files.h"
 #include "core/Tools.h"
+#include "core/Usage.h"
 
 #include <QDir>
 #include <QElapsedTimer>
@@ -390,6 +391,7 @@ QString Model::ask(const QString &stage, const QString &system, const QStringLis
         got = false;
         for (const QByteArray &line : process.readAllStandardOutput().split('\n')) {
             const QJsonObject object = QJsonDocument::fromJson(line).object();
+            usage::record(object);                     // la barra dell'utilizzo
             if (object.value("type").toString() == "result") {
                 result = object;
                 got = true;

@@ -435,6 +435,51 @@ Item {
                 TxButton { visible: Workspace.openFigures > 0; text: "Rivedi figure  " + Workspace.openFigures; hint: "⇧⌘F"; onClicked: root.openFile("rivedi:figure") }
                 TxButton { visible: Workspace.openLayout > 0; text: "Rivedi impaginazione  " + Workspace.openLayout; hint: "⇧⌘R"; onClicked: root.reviewLayout() }
                 Item { Layout.fillWidth: true }
+                // l'utilizzo di Claude (le chiamate lo dicono): la finestra di cinque ore, e mentre si lavora quando finirebbe
+                Item {
+                    id: usageBar
+                    readonly property var u: Workspace.usage
+                    readonly property int used: u.known === true ? u.hours.used : 0
+                    readonly property bool tight: u.blocked !== undefined || u.runsOut !== undefined
+                    readonly property color tone: u.blocked !== undefined || used >= 90 ? Theme.bad : used >= 70 || u.runsOut !== undefined ? Theme.warn : Theme.good
+                    visible: u.known === true && root.width > 760
+                    implicitWidth: usageRow.implicitWidth
+                    implicitHeight: Theme.rowHeight
+                    Row {
+                        id: usageRow
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 6
+                        TxLabel { text: "Claude"; color: Theme.textMuted; font.pixelSize: Theme.smallSize; anchors.verticalCenter: parent.verticalCenter }
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 64
+                            height: 6
+                            radius: 3
+                            color: Theme.border
+                            Rectangle { width: parent.width * Math.min(1, usageBar.used / 100); height: parent.height; radius: 3; color: usageBar.tone }
+                        }
+                        TxLabel {
+                            anchors.verticalCenter: parent.verticalCenter
+                            font.pixelSize: Theme.smallSize
+                            color: usageBar.tight ? usageBar.tone : Theme.textMuted
+                            text: usageBar.u.blocked !== undefined ? "limite raggiunto, riprende " + usageBar.u.blocked
+                                  : usageBar.used + "%" + (usageBar.u.runsOut !== undefined ? " · a questo ritmo finisce " + usageBar.u.runsOut : "")
+                        }
+                    }
+                    MouseArea { id: usageArea; anchors.fill: parent; hoverEnabled: true }
+                    ToolTip.visible: usageArea.containsMouse
+                    ToolTip.delay: 400
+                    ToolTip.text: {
+                        const u = usageBar.u
+                        if (u.known !== true)
+                            return ""
+                        const line = (name, w) => w.known ? name + ": " + w.used + "%" + (w.resets !== "" ? ", si azzera " + w.resets : "") : ""
+                        return [line("Le cinque ore", u.hours), line("La settimana", u.week),
+                                u.runsOut !== undefined ? "Al ritmo di questo lavoro il limite arriva " + u.runsOut + ", prima che si azzeri." : "",
+                                u.ago < 1 ? "Detto dall'ultima chiamata, adesso." : "Detto dall'ultima chiamata, " + (u.ago === 1 ? "un minuto" : u.ago < 60 ? u.ago + " minuti" : "più di un'ora") + " fa."]
+                               .filter(s => s !== "").join("\n")
+                    }
+                }
                 TxLabel {
                     Layout.maximumWidth: Math.max(60, root.width / 3)
                     text: Workspace.name
