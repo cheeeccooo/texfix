@@ -619,7 +619,9 @@ namespace {
 // di testo; un compito dell'agente costa quanto la conversione di ciò che legge, più una base (legge la lezione, compila).
 // Una lezione nuova ha in più un costo fisso, misurato con il modello vero il 23/11/2026 (una fonte di 15 righe: 0,09 $
 // contro 0,01 stimati): il prompt della trascrizione con regole e stile, la verifica, la scaletta e il titolo, un giro sulle righe
-constexpr double PAGE = 0.12, TEX_LINES = 0.23, TEXT_LINES = 0.08, AGENT_BASE = 0.35, LESSON_BASE = 0.08;
+// Una parte di un piano dell'agente (un ritocco a una lezione), misurata lo stesso giorno: 0,10 $ per una sezione di cinque
+// voci (stimata 0,95 con la base dei compiti e una pagina per voce); qui con un po' di margine.
+constexpr double PAGE = 0.12, TEX_LINES = 0.23, TEXT_LINES = 0.08, AGENT_BASE = 0.35, LESSON_BASE = 0.08, PLAN_PART = 0.10, PLAN_ENTRY = 0.02;
 
 QString estimatesFile() { return files::dataDir() + "/stime.json"; }
 
@@ -691,7 +693,7 @@ Estimate estimate(const Project &project, const QJsonObject &plan, const QString
             for (const QJsonValue &v : s.toObject().value("voci").toArray())
                 entries += v.toObject().value("fare").toBool() ? 1 : 0;
             if (entries > 0)
-                e.agent += AGENT_BASE + PAGE * entries;
+                e.agent += PLAN_PART + PLAN_ENTRY * entries;
         }
     const QJsonObject correction = learned().value(quality.isEmpty() ? QStringLiteral("normale") : quality).toObject();
     e.lessons *= factor * correction.value("lessons").toDouble(1.0);
