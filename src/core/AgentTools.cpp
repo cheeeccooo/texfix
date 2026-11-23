@@ -59,6 +59,13 @@ QJsonArray tools()
                  QJsonObject{{"lezione", QJsonObject{{"type", "string"}}},
                              {"fonti", QJsonObject{{"type", "array"}, {"items", QJsonObject{{"type", "string"}}}, {"description", "I file di fonti/coda usati"}}}},
                  {"lezione"}),
+            tool("aggiungi_materiale", "Mette del materiale nuovo (file del progetto, o allegati della chat) fra quelli in arrivo, da smistare. "
+                                       "È l'unico modo di portare materiale nuovo nel corso: Texfix lo riconosce per concetti e propone il "
+                                       "piano quando l'utente preme «Smista». Non scrivere tu lezioni da materiale nuovo e non farti un piano tuo.",
+                 QJsonObject{{"file", QJsonObject{{"type", "array"}, {"items", QJsonObject{{"type", "string"}}},
+                                                  {"description", "I file, relativi alla cartella del progetto (anche salvataggi/chat/allegati/…)"}}},
+                             {"lezione", QJsonObject{{"type", "string"}, {"description", "Solo se l'utente vuole il materiale in una lezione precisa: il suo file (src/…)"}}}},
+                 {"file"}),
             tool("consegna_piano", "Consegna all'utente il piano di un lavoro grande (fondere fonti, riorganizzare, toccare più lezioni) PRIMA di "
                                    "eseguirlo. Dopo averlo consegnato fermati: l'utente lo sistema e lo approva. Per rifare un piano già "
                                    "consegnato indica il suo lavoro.",
@@ -162,6 +169,34 @@ QString call(const Project &project, const Style &style, const QString &name, co
         for (const QJsonValue &v : arguments.value("fonti").toArray())
             sources << v.toString();
         return newlesson::settle(project, style.boxes(), style.figureWrapper(), arguments.value("lezione").toString(), sources).join("; ") + '.';
+    }
+    if (name == "aggiungi_materiale") {
+        const QString chosen = arguments.value("lezione").toString();
+        if (!chosen.isEmpty() && !project.inputs().contains(chosen))
+            return fail(QStringLiteral("«%1» non è una lezione del documento. Le lezioni si vedono con stato_progetto.").arg(chosen));
+        QStringList paths, missing;
+        for (const QJsonValue &v : arguments.value("file").toArray()) {
+            const QString given = v.toString();
+            const QString path = QFileInfo(given).isAbsolute() ? QFileInfo(given).absoluteFilePath() : project.path(given);
+            if (outside(project.root(), QJsonObject{{"file_path", path}}))   // solo ciò che è nel progetto
+                return fail(QStringLiteral("«%1» è fuori dal progetto: chiedi all'utente di aggiungerlo con «Aggiungi materiale».").arg(given));
+            if (QFileInfo::exists(path))
+                paths << path;
+            else
+                missing << given;
+        }
+        if (!missing.isEmpty())
+            return fail(QStringLiteral("Non trovo %1.").arg(missing.join(", ")));
+        int skipped = 0;
+        const QStringList added = newlesson::toQueue(project, paths, chosen, &skipped);
+        if (added.isEmpty())
+            return fail(skipped > 0 ? QStringLiteral("Niente che Texfix sappia leggere.") : QStringLiteral("Non riesco a copiare i file fra quelli in arrivo."));
+        QStringList names;
+        for (const QString &a : added)
+            names << QFileInfo(a).fileName();
+        return QStringLiteral("In arrivo, da smistare: %1%2. Ora fermati e di' all'utente di premere «Smista», accanto ad Aggiungi materiale: "
+                              "Texfix lo riconosce per concetti e gli propone il piano.")
+            .arg(names.join(", "), skipped > 0 ? QStringLiteral(" (%1 file lasciati fuori: Texfix non sa leggerli)").arg(skipped) : QString());
     }
     if (name == "consegna_piano") {
         QString why;
@@ -271,7 +306,7 @@ QString systemPrompt(const Settings &settings, const Style &style)
 
 Che cosa hai:
 - i file del progetto: li leggi e li modifichi con gli strumenti per i file. `main.tex` è il documento, le lezioni sono in `src/`, le immagini in `imgs/`, le fonti in `fonti/`, i documenti da consultare in `docs/` (quelli non si cambiano mai);
-- gli strumenti di Texfix (stato_progetto, compila_lezione, compila_documento, dubbi, impagina, chiudi_lezione, consegna_piano, consegna_esito): sono l'unico modo di compilare e di sapere lo stato delle lezioni. Non hai una shell: niente comandi, niente Python, niente git.
+- gli strumenti di Texfix (stato_progetto, compila_lezione, compila_documento, dubbi, impagina, chiudi_lezione, aggiungi_materiale, consegna_piano, consegna_esito): sono l'unico modo di compilare e di sapere lo stato delle lezioni. Non hai una shell: niente comandi, niente Python, niente git.
 
 Regole che valgono sempre:
 - prima di cambiare qualcosa chiama stato_progetto; una lezione FATTA si tocca solo dopo che l'utente ha detto di sì;
@@ -280,7 +315,8 @@ Regole che valgono sempre:
 - lo stile del progetto (il suo `.sty` nella cartella principale, se c'è) è un file del progetto: se l'utente lo chiede puoi aggiungere o cambiare un ambiente, un colore, una macro. Non togliere ciò che le lezioni usano, poi compila il documento. La descrizione dello stile (`<nome>.stile.json`) la aggiorna il programma, che chiede all'utente a che cosa serve un ambiente nuovo: non scriverla tu;
 - le righe `% @L3.7 · fonte p.2` sono i marcatori dei blocchi e `% img src3-01` i segni delle figure: restano con il loro blocco, non si tolgono e non si inventano;
 - le aggiunte tue vanno in `addedtext`, le correzioni alla fonte in `correction`;
-- un lavoro grande (fondere più fonti in una lezione, integrare fonti nuove, riorganizzare, toccare più lezioni) comincia sempre da un piano: consegnalo con consegna_piano e fermati; lo esegui solo quando l'utente lo approva, e alla fine consegni l'esito con consegna_esito;
+- il materiale nuovo (un file che l'utente ti dà o allega, appunti, dispense, una versione nuova di una fonte) passa sempre da aggiungi_materiale: Texfix lo riconosce per concetti e propone lui il piano quando l'utente preme «Smista». Non leggerlo per scriverne tu una lezione o un'aggiunta, e non farne un piano tuo;
+- un altro lavoro grande (riorganizzare, rifare o fondere lezioni che ci sono già, toccare più lezioni) comincia sempre da un piano: consegnalo con consegna_piano e fermati; lo esegui solo quando l'utente lo approva, e alla fine consegni l'esito con consegna_esito;
 - di' sempre che cosa hai cambiato, in quali file, e che cosa resta da decidere all'utente.
 )") + "\nREGOLE EDITORIALI\n\n" + rules::forPrompt(rules::allIds(), settings.profile) + "\n\nSTILE DEL DOCUMENTO\n\n" + style.forPrompt();
 }

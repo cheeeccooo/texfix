@@ -330,6 +330,9 @@ Le mosse e le misure sono regole strutturali (§4.1); quanto essere severi è un
 - **[O]** L'agente scrive `piano.json` e stampa la riga `TEXFIX: piano pronto` / `TEXFIX: esito pronto`; l'app la legge dall'output. *→ Da ripensare: un'app nativa può dare all'agente uno strumento per consegnare il piano invece di un protocollo a righe.*
 
 ### 3.13 Agente e chat
+- **[S]** Il materiale nuovo che l'utente dà all'agente (un file, un allegato) l'agente non lo lavora da sé e non ne fa un piano
+  suo: lo mette in arrivo (`aggiungi_materiale`, con la lezione se l'utente l'ha detta), e il piano lo fa «Smista»
+  (decisione del 23/11/2026).
 - **[S]** Un pannello chat:
   - messaggi in streaming, con markdown e righe degli strumenti apribili;
   - modello per chat (Opus ↔ Sonnet) e permessi con nomi chiari;

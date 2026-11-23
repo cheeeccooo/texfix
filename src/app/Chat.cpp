@@ -228,7 +228,7 @@ void Chat::launch(const QString &text)
                           "--tools", "Read,Edit,Write,Grep,Glob", "--mcp-config",
                           QString::fromUtf8(QJsonDocument(QJsonObject{{"mcpServers", QJsonObject{{"texfix", server}}}}).toJson(QJsonDocument::Compact)),
                           "--strict-mcp-config", "--allowedTools",
-                          "mcp__texfix__stato_progetto,mcp__texfix__compila_lezione,mcp__texfix__compila_documento,mcp__texfix__dubbi,mcp__texfix__impagina,mcp__texfix__chiudi_lezione,mcp__texfix__consegna_piano,mcp__texfix__consegna_esito,mcp__texfix__proponi_profilo,mcp__texfix__proponi_stile",
+                          "mcp__texfix__stato_progetto,mcp__texfix__compila_lezione,mcp__texfix__compila_documento,mcp__texfix__dubbi,mcp__texfix__impagina,mcp__texfix__chiudi_lezione,mcp__texfix__aggiungi_materiale,mcp__texfix__consegna_piano,mcp__texfix__consegna_esito,mcp__texfix__proponi_profilo,mcp__texfix__proponi_stile",
                           // il profilo e lo stile non si scrivono: si propongono, e decide l'utente
                           "--disallowedTools", agent::guardedRules(),
                           "--setting-sources", "", "--disable-slash-commands"};

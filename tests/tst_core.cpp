@@ -1133,7 +1133,7 @@ private slots:
         QCOMPARE(ask({{"id", 1}, {"method", "initialize"}, {"params", QJsonObject{{"protocolVersion", "2025-06-18"}}}})
                      .value("result").toObject().value("protocolVersion").toString(), "2025-06-18");
         const QJsonArray list = ask({{"id", 2}, {"method", "tools/list"}}).value("result").toObject().value("tools").toArray();
-        QCOMPARE(list.size(), 11);                                                      // con proponi_profilo e proponi_stile
+        QCOMPARE(list.size(), 12);                                                      // con proponi_profilo, proponi_stile e aggiungi_materiale
         QCOMPARE(list[0].toObject().value("name").toString(), "stato_progetto");
         QVERIFY(ask({{"id", 3}, {"method", "boh"}}).contains("error"));
 
@@ -1235,6 +1235,18 @@ private slots:
         QCOMPARE(newlesson::nextNumber(p), 4);
         QVERIFY(agent::call(p, Style::classic(), "chiudi_lezione", {{"lezione", "src/src1.tex"}}, nullptr, &error).contains("già tutto a posto"));
         QVERIFY(newlesson::fuseMessage("src/src2.tex", 4, "02/10/2026", {"fonti/coda/a.pdf", "fonti/coda/b.md"}).contains("\\lezione{4}{02/10/2026}"));
+
+        // l'agente porta il materiale nuovo solo fra quelli in arrivo, con la lezione se l'utente l'ha detta; mai da fuori
+        files::write(p.path("salvataggi/chat/allegati/c1/esercizi.md"), "e");
+        const QString queued = agent::call(p, Style::classic(), "aggiungi_materiale",
+                                           {{"file", QJsonArray{"salvataggi/chat/allegati/c1/esercizi.md"}}, {"lezione", "src/src1.tex"}}, nullptr, &error);
+        QVERIFY2(!error && queued.contains("In arrivo, da smistare: esercizi.md") && queued.contains("«Smista»"), qPrintable(queued));
+        QVERIFY(QFileInfo::exists(p.path("fonti/coda/esercizi.md")));
+        QCOMPARE(newlesson::chosenLessons(p).value("fonti/coda/esercizi.md"), "src/src1.tex");
+        agent::call(p, Style::classic(), "aggiungi_materiale", {{"file", QJsonArray{outside.filePath("lez_5.md")}}}, nullptr, &error);
+        QVERIFY(error);                                                                   // fuori dal progetto
+        agent::call(p, Style::classic(), "aggiungi_materiale", {{"file", QJsonArray{"salvataggi/chat/allegati/c1/esercizi.md"}}, {"lezione", "src/src9.tex"}}, nullptr, &error);
+        QVERIFY(error);                                                                   // una lezione che non c'è
     }
 
     // Aggiungi materiale per concetti: il modello (qui finto) legge i concetti di ogni lezione e di ogni fonte e fa la mappa;
