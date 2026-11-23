@@ -205,7 +205,7 @@ Rectangle {
         TxButton {
             text: "＋ Aggiungi materiale"
             width: entries.toSort.length > 0 ? Math.round((entries.room - entries.spacing) * 0.6) : entries.room
-            hint: "Porta dei file fra quelli in arrivo, senza far partire niente: poi «Smista» (⇧⌘K)"
+            hint: "Porta dei file fra quelli in arrivo, senza far partire niente: poi «Smista» (⇧⌘K). Una cartella intera, con le sottocartelle: trascinala qui, o File › Aggiungi una cartella di materiale…"
             onClicked: root.materialAsked()
         }
         TxButton {

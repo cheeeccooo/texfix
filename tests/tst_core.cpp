@@ -1210,6 +1210,19 @@ private slots:
         QCOMPARE(newlesson::toQueue(p, {outside.filePath("Lezione_3.md"), p.path("fonti/coda/Lezione_3.md")}),
                  (QStringList{"fonti/coda/Lezione_3 (2).md", "fonti/coda/Lezione_3.md"}));
 
+        // una cartella: tutto ciò che c'è sotto e che Texfix sa leggere, senza i nascosti; i nomi uguali non si pestano
+        QDir().mkpath(outside.filePath("corso/parte 2/.vecchi"));
+        files::write(outside.filePath("corso/a.pdf"), "%PDF");
+        files::write(outside.filePath("corso/note.xyz"), "?");
+        files::write(outside.filePath("corso/.nascosto.md"), "no");
+        files::write(outside.filePath("corso/parte 2/b.md"), "b");
+        files::write(outside.filePath("corso/parte 2/a.pdf"), "%PDF 2");
+        files::write(outside.filePath("corso/parte 2/.vecchi/c.md"), "no");
+        int skipped = -1;
+        QCOMPARE(newlesson::toQueue(p, {outside.filePath("corso")}, {}, &skipped),
+                 (QStringList{"fonti/coda/a.pdf", "fonti/coda/a (2).pdf", "fonti/coda/b.md"}));
+        QCOMPARE(skipped, 1);                                                             // note.xyz
+
         // l'agente ha scritto una lezione: chiuderla la mette nel documento, marca i blocchi, archivia le fonti
         files::write(p.path("src/src1.tex"), "\\section{S}\n\\lezione{3}{}\n\nTesto.\n\\begin{theorem}\nx\n\\end{theorem}\n");
         bool error = false;

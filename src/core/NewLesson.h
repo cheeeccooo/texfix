@@ -15,9 +15,11 @@ int nextNumber(const Project &project);
 // argomento ricorda per il ritorno per data): il prossimo file nuovo è quello dopo.
 int lastFile(const Project &project);
 // Porta dei file fra le fonti da convertire (un nome già preso diventa «nome (2)»). Restituisce dove sono finiti,
-// relativi alla radice; ciò che è già in fonti/coda resta dov'è. Non riconosce niente: lo fa «Smista». lesson: la
-// lezione a cui l'utente li ha aggiunti («Aggiungi materiale a questa lezione…»), ricordata finché sono in arrivo.
-QStringList toQueue(const Project &project, const QStringList &paths, const QString &lesson = {});
+// relativi alla radice; ciò che è già in fonti/coda resta dov'è. Una cartella si scende fino in fondo, senza i nascosti, e
+// se ne prende ciò che Texfix sa leggere (Pages::kindOf); skipped: quanti file ha lasciato. Non riconosce niente: lo
+// fa «Smista». lesson: la lezione a cui l'utente li ha aggiunti («Aggiungi materiale a questa lezione…»), ricordata
+// finché sono in arrivo.
+QStringList toQueue(const Project &project, const QStringList &paths, const QString &lesson = {}, int *skipped = nullptr);
 // La lezione scelta per i file in arrivo (file → lezione, relativi alla radice), in salvataggi/in-arrivo.json: solo
 // quelli che ci sono ancora. Smista la dice al modello.
 constexpr const char *CHOSEN = "salvataggi/in-arrivo.json";

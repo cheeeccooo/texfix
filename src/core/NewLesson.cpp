@@ -9,6 +9,7 @@
 #include "core/TexSource.h"
 #include "core/Tools.h"
 #include <QCryptographicHash>
+#include <algorithm>
 #include <QDirIterator>
 #include <QFile>
 #include <QJsonArray>
@@ -47,12 +48,36 @@ int lastFile(const Project &project)
     return last;
 }
 
-QStringList toQueue(const Project &project, const QStringList &paths, const QString &lesson)
+QStringList toQueue(const Project &project, const QStringList &paths, const QString &lesson, int *skipped)
 {
     QStringList out;
     const QString queue = project.path("fonti/coda");
     QDir().mkpath(queue);
+    // le cartelle: tutto ciò che c'è sotto, in ordine, senza i nascosti; un file scelto da solo entra comunque
+    QStringList wanted;
+    int left = 0;
     for (const QString &path : paths) {
+        if (!QFileInfo(path).isDir()) {
+            wanted << path;
+            continue;
+        }
+        QStringList found;
+        for (QDirIterator it(path, QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories); it.hasNext();) {
+            const QString file = it.next();
+            const QStringList parts = QDir(path).relativeFilePath(file).split('/');
+            if (std::any_of(parts.begin(), parts.end(), [](const QString &p) { return p.startsWith('.'); }))
+                continue;                              // un file nascosto, o dentro una cartella nascosta
+            if (Pages::kindOf(file) == "altro")
+                ++left;
+            else
+                found << file;
+        }
+        found.sort(Qt::CaseInsensitive);
+        wanted += found;
+    }
+    if (skipped)
+        *skipped = left;
+    for (const QString &path : std::as_const(wanted)) {
         const QFileInfo info(path);
         if (!info.isFile())
             continue;

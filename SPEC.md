@@ -133,7 +133,8 @@ Una porta sola per il materiale nuovo. Non ci sono più Nuova lezione, il tasto 
 si smista **per concetti**, non per date o per file: un concetto (una definizione, una derivazione, un circuito con la
 sua analisi, un esempio, un esercizio) va dove serve, anche se il file da cui viene ne porta altri altrove.
 
-- **[S]** **Il materiale entra in qualunque modo**: il tasto, file trascinati sul pannello, «Aggiungi materiale a questa
+- **[S]** **Il materiale entra in qualunque modo**: il tasto, file e cartelle trascinati sul pannello (di una cartella,
+  con le sue sottocartelle, ciò che Texfix sa leggere), «Aggiungi materiale a questa
   lezione…» dal menu di una lezione (i concetti vanno lì, se uno non sta chiaramente altrove), «Carica una versione
   nuova…» sul menu di una fonte usata. Il materiale **va solo in arrivo**: lo riconosce **«Smista»**,
   accanto ad Aggiungi materiale, quando l'utente vuole, e ne esce **sempre un piano** (decisione del 23/11/2026; prima

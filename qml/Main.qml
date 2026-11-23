@@ -75,6 +75,9 @@ ApplicationWindow {
             Action { text: "Nuovo progetto…"; shortcut: StandardKey.New; onTriggered: newDialog.open() }
             Action { text: "Apri cartella…"; shortcut: StandardKey.Open; onTriggered: openDialog.open() }
             MenuSeparator {}
+            // i file uno per uno con ⇧⌘K; una cartella intera, con le sottocartelle, da qui (o trascinata sul pannello)
+            Action { text: "Aggiungi una cartella di materiale…"; enabled: Workspace.hasProject; onTriggered: materialFolderDialog.open() }
+            MenuSeparator {}
             Action { text: "Salva"; shortcut: StandardKey.Save; enabled: Workspace.hasProject; onTriggered: project.save() }
             Action { text: "Chiudi progetto"; enabled: Workspace.hasProject; onTriggered: Workspace.closeProject() }
             MenuSeparator {}
@@ -304,6 +307,11 @@ ApplicationWindow {
         title: "Aggiungi materiale"
         fileMode: FileDialog.OpenFiles
         onAccepted: Workspace.addMaterial(Workspace.localPaths(selectedFiles))
+    }
+    FolderDialog {
+        id: materialFolderDialog
+        title: "Aggiungi materiale: una cartella, con le sottocartelle"
+        onAccepted: Workspace.addMaterial([Workspace.localPath(selectedFolder)])
     }
     FileDialog {
         id: sourcesDialog

@@ -2101,12 +2101,17 @@ void Workspace::addMaterial(const QStringList &paths, const QString &lesson)
     if (!hasProject() || paths.isEmpty())
         return;
     checkpoint(QStringLiteral("Modifiche a mano"));
-    const QStringList added = newlesson::toQueue(m_project, paths, lesson);
+    int skipped = 0;
+    const QStringList added = newlesson::toQueue(m_project, paths, lesson, &skipped);
+    // nella prima frase: la barra mostra solo quella
+    const QString left = skipped == 0 ? QString()
+                       : skipped == 1 ? QStringLiteral(" (uno lasciato fuori: Texfix non sa leggerlo)")
+                       : QStringLiteral(" (%1 lasciati fuori: Texfix non sa leggerli)").arg(skipped);
     if (added.isEmpty())
-        return say(QStringLiteral("Non riesco a copiare i file nel progetto."));
+        return say(skipped > 0 ? QStringLiteral("Niente da aggiungere%1.").arg(left) : QStringLiteral("Non riesco a copiare i file nel progetto."));
     checkpoint(QStringLiteral("Materiale aggiunto"));
     refreshTree();                                     // resta in arrivo: lo riconosce «Smista», quando l'utente vuole
-    say(QStringLiteral("%1 in arrivo: «Smista» %2 riconosce e fa il piano.").arg(plural(added.size(), "file", "file"), added.size() == 1 ? "lo" : "li"));
+    say(QStringLiteral("%1 in arrivo%2: «Smista» %3 riconosce e fa il piano.").arg(plural(added.size(), "file", "file"), left, added.size() == 1 ? "lo" : "li"));
 }
 
 void Workspace::newVersion(const QString &used, const QString &path)
