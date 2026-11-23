@@ -17,6 +17,7 @@ Rectangle {
     readonly property string activity: Workspace.compiling
         ? "Compilazione" + (Workspace.progressLabel !== "" ? ": " + Workspace.progressLabel : "")
         : Workspace.pausedForConnection ? Workspace.jobTitle + ": la connessione non è tornata, finisco ciò che è in corso e mi fermo"
+        : Workspace.pausedForCap ? Workspace.jobTitle + ": utilizzo al tetto dei lavori (" + Workspace.capPercent + "%), finisco ciò che è in corso e mi fermo"
         : Workspace.pausedUntil !== "" ? Workspace.jobTitle + ": limite di utilizzo raggiunto, finisco ciò che è in corso e mi fermo"
         : Workspace.offline ? Workspace.jobTitle + ": manca la connessione, aspetto che torni"
         : Workspace.jobTitle + (Workspace.jobLabel !== "" ? ": " + Workspace.jobLabel : "")

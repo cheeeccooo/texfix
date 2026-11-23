@@ -231,6 +231,17 @@ Rectangle {
                 Component.onCompleted: text = root.plan.commento || ""
                 onEdited: { Workspace.setPlanComment(root.planId, text); root.instructions = Workspace.planHasInstructions(root.planId) }
             }
+            // quanto costerà «Avvia», in dollari e in finestre di utilizzo (segue le spunte: si rilegge con il piano)
+            TxLabel {
+                readonly property var cost: { root.plan; Workspace.usage; return Workspace.planCost(root.planId) }
+                Layout.fillWidth: true
+                visible: root.editable && cost.dollars !== undefined
+                text: "Costo stimato di «Avvia»: circa " + cost.dollars + " $" + ((cost.windows || {}).known === true ? ". " + cost.windows.text : ".")
+                color: Theme.textMuted
+                font.pixelSize: Theme.smallSize
+                wrapMode: Text.WordWrap
+                elide: Text.ElideNone
+            }
 
             RowLayout {
                 Layout.fillWidth: true

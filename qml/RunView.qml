@@ -66,11 +66,12 @@ Rectangle {
             return run.offline ? "Manca la connessione: le chiamate aspettano che torni, poi si rifanno. Se non torna entro dieci minuti mi fermo." : "In corso"
         if (runState === "in_pausa")
             return run.connection ? "La connessione non è tornata: finisco ciò che è in corso, poi mi fermo. Si riprende quando c'è."
-                                  : "Limite di utilizzo di Claude raggiunto: finisco ciò che è in corso, poi mi fermo. Si potrà riprendere " + run.until + "."
+                 : run.cap ? "L'utilizzo è arrivato al tetto dei lavori (" + Workspace.capPercent + "%): finisco ciò che è in corso, poi mi fermo. Riprendo da solo " + run.until + "."
+                 : "Limite di utilizzo di Claude raggiunto: finisco ciò che è in corso, poi mi fermo. Si potrà riprendere " + run.until + "."
         const limited = run.connection ? "Quando la connessione c'è, si riprende."
-                      : run.until !== "" ? (run.untilPassed ? "Il limite di utilizzo è passato: si può riprendere."
-                                                             : "Si può riprendere " + run.until + ".") : ""
-        const why = run.connection ? "perché mancava la connessione" : "dal limite di utilizzo di Claude"
+                      : run.until !== "" ? (run.untilPassed ? "La finestra di utilizzo si è azzerata: si può riprendere."
+                                                             : "Riprende da solo " + run.until + ", o con «Riprendi»" + (run.cap ? " se togli o alzi il tetto." : " quando si può.")) : ""
+        const why = run.connection ? "perché mancava la connessione" : run.cap ? "al tetto dei lavori" : "dal limite di utilizzo di Claude"
         if (runState === "fermato")
             return limited !== "" ? "In pausa " + why + ". " + limited
                                   : "In pausa: ciò che è fatto resta, anche a metà. «Riprendi» continua da lì; «Annulla tutto il lavoro» riporta il progetto a prima di «Avvia»."
@@ -207,6 +208,22 @@ Rectangle {
                 font.pixelSize: Theme.smallSize
                 wrapMode: Text.WordWrap
                 elide: Text.ElideNone
+            }
+            // quanto resta, in finestre di utilizzo (da ciò che Texfix ha imparato), e la velocità e il tetto, che si cambiano qui
+            TxLabel {
+                readonly property var w: root.run.estimate > root.run.cost ? Workspace.windowsFor(root.run.estimate - root.run.cost) : ({})
+                Layout.fillWidth: true
+                visible: root.mine && root.runState !== "finito" && w.known === true
+                text: "Ciò che resta: " + (w.text || "").charAt(0).toLowerCase() + (w.text || "").slice(1)
+                color: Theme.textMuted
+                font.pixelSize: Theme.smallSize
+                wrapMode: Text.WordWrap
+                elide: Text.ElideNone
+            }
+            UsageControls {
+                Layout.fillWidth: true
+                visible: root.mine && root.runState !== "finito"
+                compact: true
             }
             // adesso: che cosa fa ogni cantiere al lavoro (un clic mostra solo il suo)
             ColumnLayout {

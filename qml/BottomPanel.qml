@@ -18,6 +18,7 @@ Rectangle {
         const run = Workspace.run
         if (Workspace.jobRunning)
             out.push({ title: Workspace.jobTitle, detail: Workspace.pausedForConnection ? "la connessione non è tornata: finisco ciò che è in corso e mi fermo"
+                                                        : Workspace.pausedForCap ? "utilizzo al tetto dei lavori (" + Workspace.capPercent + "%): finisco ciò che è in corso e mi fermo"
                                                         : Workspace.pausedUntil !== "" ? "limite di utilizzo raggiunto: finisco ciò che è in corso e mi fermo"
                                                         : Workspace.offline ? "manca la connessione: aspetto che torni"
                                                         : Workspace.jobLabel + (Workspace.usage.runsOut !== undefined ? " · a questo ritmo il limite di Claude arriva " + Workspace.usage.runsOut : ""),
@@ -25,18 +26,22 @@ Rectangle {
                        open: run.id && Workspace.jobTitle === run.title ? "lavoro:" + run.id : "" })
         if (Chat.running)
             out.push({ title: "Agente" + (Chat.title !== "" ? ": " + Chat.title : ""), detail: Chat.waiting ? "aspetta la tua conferma" : "sta lavorando", progress: -1, state: "run", agent: true })
-        if (run.id && !Workspace.jobRunning && run.state !== "finito")      // il lavoro di «Avvia» fermato o interrotto
-            out.push({ title: run.title, detail: (run.state === "fermato" ? (run.connection ? "in pausa perché mancava la connessione" : run.until !== "" ? "in pausa per il limite di utilizzo" : "in pausa") : "interrotto")
-                               + (run.until !== "" && !run.untilPassed && !run.connection ? ": si può riprendere " + run.until : ": riprende senza rifare ciò che è già fatto"),
+        // il lavoro di «Avvia» fermo che aspetta la finestra: una riga sola, quella dell'attesa (riparte da sé, «Adesso», «Apri»)
+        const runWaiting = Workspace.waitingLimit.some(w => w.key === "lavoro:" + run.id)
+        if (run.id && !Workspace.jobRunning && run.state !== "finito" && !runWaiting)      // il lavoro di «Avvia» fermato o interrotto
+            out.push({ title: run.title, detail: (run.state === "fermato" ? (run.connection ? "in pausa perché mancava la connessione" : run.cap ? "in pausa al tetto dei lavori" : run.until !== "" ? "in pausa per il limite di utilizzo" : "in pausa") : "interrotto")
+                               + (run.until !== "" && !run.untilPassed && !run.connection ? ": riprende da solo " + run.until : ": riprende senza rifare ciò che è già fatto"),
                        progress: -1, state: "wait", resume: true, open: "lavoro:" + run.id })
         else if (run.id && run.state === "finito")
             out.push({ title: run.title, detail: "finito: l'esito è da leggere", progress: -1, state: "done", open: "lavoro:" + run.id })
-        else if (Workspace.resumable)
+        else if (Workspace.resumable && !runWaiting)
             out.push({ title: "Scrittura delle lezioni interrotta", detail: "riprende senza rifare ciò che è già fatto", progress: -1, state: "wait", resume: true })
         // ciò che aspetta il limite di Claude: riparte da sé quando la finestra si azzera
         const waiting = Workspace.waitingLimit
         for (let i = 0; i < waiting.length; ++i)
-            out.push({ title: waiting[i].title, detail: "aspetta il limite di utilizzo di Claude: riparte da sé " + waiting[i].until, progress: -1, state: "wait", later: i })
+            out.push({ title: waiting[i].title, detail: (waiting[i].cap ? "l'utilizzo è al tetto dei lavori (" + Workspace.capPercent + "%)" : "aspetta il limite di utilizzo di Claude")
+                                                                + ": riparte da sé " + waiting[i].until, progress: -1, state: "wait", later: i,
+                       open: waiting[i].key.startsWith("lavoro:") ? waiting[i].key : "" })
         const unread = Workspace.queue.filter(q => q.state === "errore").length
         if (unread > 0)
             out.push({ title: "Materiale non riconosciuto", detail: (unread === 1 ? "un file" : unread + " file") + " in arrivo: il perché accanto, poi «Riprova»", progress: -1, state: "wait" })

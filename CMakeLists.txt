@@ -138,6 +138,7 @@ qt_add_qml_module(texfix
         qml/FiguresView.qml
         qml/LayoutView.qml
         qml/RunView.qml
+        qml/UsageControls.qml
         qml/ProfileView.qml
         qml/ChatPane.qml
         qml/PlanView.qml

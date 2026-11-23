@@ -9,10 +9,18 @@
 namespace tx {
 
 // Le chiamate al modello: ognuna è un `claude -p` senza strumenti e senza impostazioni, con il solo contesto che le
-// si dà (Claude Code locale, con l'abbonamento dell'utente). Al più PARALLEL insieme, in tutto il programma.
+// si dà (Claude Code locale, con l'abbonamento dell'utente). Al più `parallelCalls()` insieme, in tutto il programma.
 class Model {
 public:
-    static constexpr int PARALLEL = 6;
+    static constexpr int PARALLEL = 6;                 // il massimo, con la velocità «Veloce»
+
+    // La velocità dei lavori: quante chiamate al modello insieme e quanti agenti di un lavoro insieme (core/Run). Più
+    // piano non costa meno: consuma la finestra di utilizzo più lentamente. Si cambia anche mentre un lavoro gira:
+    // vale per ciò che parte dopo. pace: «piano» (2 chiamate, 1 agente), «normale» (4, 1), «veloce» (6, 2).
+    static void setPace(const QString &pace);
+    static QString pace();
+    static int parallelCalls();
+    static int parallelAgents();
 
     struct Call {                                      // una chiamata fatta: che cosa è costata
         QString stage, tag, model, effort;

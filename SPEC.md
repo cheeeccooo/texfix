@@ -373,6 +373,12 @@ Le mosse e le misure sono regole strutturali (§4.1); quanto essere severi è un
 - **[S]** Una scheda fissa accanto a Progetto, con il numero delle modifiche nel titolo. Inizializza, commit (con conferma), cronologia, differenze affiancate. Nei progetti di appunti git lo usa solo l'utente.
 
 ### 3.17 Attività, barra di stato, Ferma, Riprendi
+- **[S]** L'utilizzo di Claude e i lavori (decisione del 23/11/2026): la velocità dei lavori si sceglie e si cambia anche
+  mentre un lavoro gira (Piano, Normale, Veloce: quante chiamate e agenti insieme; più piano non costa meno, consuma la
+  finestra più lentamente); un tetto facoltativo (una percentuale) ferma i lavori prima del limite, per lasciare margine
+  alla chat, e li fa ripartire da sé quando la finestra si azzera; la stima di «Avvia» si dice anche in finestre di
+  utilizzo. Un compito dell'agente ripreso dopo una pausa lunga non riprende la sua conversazione (rileggerla costerebbe
+  tutto): un agente nuovo guarda la lezione com'è e fa il resto.
 - **[S]** Una riga con la barra per ogni lavoro (Attività), la Console con il registro e gli Avvisi, nel pannello in basso.
 - **[S]** Barra di stato:
   - a sinistra lo stato: spunta, cerchio che gira, × rossa con errori, triangolo con avvisi, pausa;

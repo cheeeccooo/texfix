@@ -462,6 +462,14 @@ Item {
                             radius: 3
                             color: Theme.border
                             Rectangle { width: parent.width * Math.min(1, usageBar.used / 100); height: parent.height; radius: 3; color: usageBar.tone }
+                            Rectangle {                // il tetto dei lavori, se c'è
+                                visible: Workspace.capOn
+                                x: parent.width * Workspace.capPercent / 100 - 1
+                                y: -2
+                                width: 2
+                                height: parent.height + 4
+                                color: Theme.text
+                            }
                         }
                         TxLabel {
                             anchors.verticalCenter: parent.verticalCenter
@@ -471,8 +479,8 @@ Item {
                                   : usageBar.used + "%" + (usageBar.u.runsOut !== undefined ? " · a questo ritmo finisce " + usageBar.u.runsOut : "")
                         }
                     }
-                    MouseArea { id: usageArea; anchors.fill: parent; hoverEnabled: true }
-                    ToolTip.visible: usageArea.containsMouse
+                    MouseArea { id: usageArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: usagePopup.open() }
+                    ToolTip.visible: usageArea.containsMouse && !usagePopup.visible
                     ToolTip.delay: 400
                     ToolTip.text: {
                         const u = usageBar.u
@@ -481,8 +489,33 @@ Item {
                         const line = (name, w) => w.known ? name + ": " + w.used + "%" + (w.resets !== "" ? ", si azzera " + w.resets : "") : ""
                         return [line("Le cinque ore", u.hours), line("La settimana", u.week),
                                 u.runsOut !== undefined ? "Al ritmo di questo lavoro il limite arriva " + u.runsOut + ", prima che si azzeri." : "",
+                                Workspace.capOn ? "Tetto dei lavori: " + Workspace.capPercent + "%." : "",
+                                "Un clic: velocità e tetto dei lavori.",
                                 u.ago < 1 ? "Detto dall'ultima chiamata, adesso." : "Detto dall'ultima chiamata, " + (u.ago === 1 ? "un minuto" : u.ago < 60 ? u.ago + " minuti" : "più di un'ora") + " fa."]
                                .filter(s => s !== "").join("\n")
+                    }
+                }
+                Popup {                                // l'utilizzo per esteso, la velocità e il tetto dei lavori
+                    id: usagePopup
+                    parent: usageBar
+                    y: usageBar.height + 6
+                    x: usageBar.width - width                // allineato a destra con la barra: in alto a destra c'è poco spazio
+                    width: Math.min(460, root.width - 2 * Theme.gap)
+                    padding: 2 * Theme.gap
+                    background: Rectangle { color: Theme.surface; radius: Theme.radius; border.width: 1; border.color: Theme.border }
+                    contentItem: ColumnLayout {
+                        spacing: Theme.gap
+                        TxLabel { Layout.fillWidth: true; text: "L'utilizzo di Claude"; font.weight: Font.DemiBold }
+                        TxLabel {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            elide: Text.ElideNone
+                            font.pixelSize: Theme.smallSize
+                            color: Theme.textMuted
+                            text: usageArea.parent.ToolTip.text.split("\n").filter(l => !l.startsWith("Un clic")).join("\n")
+                        }
+                        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
+                        UsageControls { Layout.fillWidth: true }
                     }
                 }
                 TxLabel {

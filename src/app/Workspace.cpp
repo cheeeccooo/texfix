@@ -33,6 +33,7 @@
 #include <QThreadPool>
 
 #include <QDir>
+#include <cmath>
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QJsonDocument>
@@ -65,6 +66,11 @@ Workspace::Workspace()
     connect(&m_watcher, &QFileSystemWatcher::directoryChanged, &m_refresh, qOverload<>(&QTimer::start));
     connect(&m_watcher, &QFileSystemWatcher::fileChanged, &m_refresh, qOverload<>(&QTimer::start));
 
+    // velocità e tetto dei lavori, come li ha lasciati l'utente
+    tx::Model::setPace(settings().value("lavori/velocita", "veloce").toString());
+    m_capOn = settings().value("lavori/tetto", false).toBool();
+    m_capPercent = qBound(10, settings().value("lavori/tetto_percento", 80).toInt(), 95);
+    tx::usage::setCap(m_capOn ? m_capPercent / 100.0 : 0);
     // l'utilizzo di Claude: lo dicono le chiamate, da qualunque thread; ogni mezzo minuto si rilegge («di N minuti fa»)
     tx::usage::onChange([this] { QMetaObject::invokeMethod(this, [this] { emit usageChanged(); }); });
     m_usageTick.setInterval(30000);
@@ -1193,7 +1199,11 @@ void Workspace::startJob(const QString &title, std::function<std::function<void(
         QMetaObject::invokeMethod(this, [this, until, connection] {
             m_pausedUntil = until;
             m_pauseConnection = connection;
-            if (connection)
+            m_pauseCap = !connection && m_jobControl && m_jobControl->pausedForCap();
+            if (m_pauseCap)
+                say(QStringLiteral("L'utilizzo di Claude è arrivato al tetto dei lavori (%1%): finisco ciò che è in corso e mi fermo. Riprendo da solo %2.")
+                        .arg(m_capPercent).arg(pausedUntil()));
+            else if (connection)
                 say(QStringLiteral("La connessione non è tornata: finisco ciò che è in corso e mi fermo. Si riprende quando c'è."));
             else if (until.isValid())
                 say(QStringLiteral("Limite di utilizzo di Claude raggiunto: finisco ciò che è in corso e mi fermo. Si può riprendere %1.").arg(pausedUntil()));
@@ -1254,6 +1264,7 @@ void Workspace::startJob(const QString &title, std::function<std::function<void(
             const bool stopped = m_jobControl && (m_jobControl->stopped() || m_jobControl->pausedUntil().isValid());
             // fermato dal limite (non dalla rete): riparte da sé quando la finestra si azzera
             QDateTime limit = m_jobControl && !m_jobControl->pausedForConnection() ? m_jobControl->pausedUntil() : QDateTime();
+            const bool byCap = m_jobControl && m_jobControl->pausedForCap();
             if (const QDateTime known = tx::usage::current().blockedUntil(); limit.isValid() && known.isValid())
                 limit = known;                         // l'ora detta dal CLI, più esatta di quella letta dal messaggio
             const QString title = m_jobTitle;
@@ -1265,9 +1276,10 @@ void Workspace::startJob(const QString &title, std::function<std::function<void(
             if (limit.isValid())
                 later(title, forRun ? std::function<void()>([this] { resumeRun(); })
                            : title == QLatin1String("Scrivo le lezioni") ? std::function<void()>([this] { resume(); })
-                           : std::function<void()>([this, title, work, forRun] { restartJob(title, work, forRun); }), limit);
+                           : std::function<void()>([this, title, work, forRun] { restartJob(title, work, forRun); }), limit,
+                      forRun ? QStringLiteral("lavoro:") + m_runId : QString(), byCap);
             m_pausedUntil = {};
-            m_pauseConnection = m_offline = false;
+            m_pauseConnection = m_pauseCap = m_offline = false;
             emit jobChanged();
         });
     });
@@ -2466,6 +2478,7 @@ void Workspace::runFinished(const run::Result &result)
         stillRun();                                    // come alla riapertura: la percentuale non cambia
     m_runUntil = QDateTime::fromString(state.value("pausa").toString(), Qt::ISODate);
     m_runConnection = state.value("pausa_per").toString() == "connessione";
+    m_runCap = state.value("pausa_per").toString() == "tetto";
     if (!m_runState.isEmpty()) {
         const QLocale italian(QLocale::Italian);
         QStringList lines;
@@ -2576,28 +2589,119 @@ void Workspace::restartJob(const QString &title, std::function<std::function<voi
     startJob(title, work, forRun);
 }
 
-bool Workspace::limited(const QString &title, std::function<void()> again, const QString &key)
+bool Workspace::limited(const QString &title, std::function<void()> again, const QString &key, bool capped)
 {
     if (m_tryAnyway) {
         m_tryAnyway = false;
         return false;
     }
-    const QDateTime until = tx::usage::current().blockedUntil();
-    if (!until.isValid())
-        return false;
-    later(title, std::move(again), until, key);
-    return true;
+    if (const QDateTime until = tx::usage::current().blockedUntil(); until.isValid()) {
+        later(title, std::move(again), until, key);
+        return true;
+    }
+    if (const QDateTime until = capped ? tx::usage::cappedUntil() : QDateTime(); until.isValid()) {
+        later(title, std::move(again), until, key, true);
+        return true;
+    }
+    return false;
 }
 
-void Workspace::later(const QString &title, std::function<void()> again, const QDateTime &until, const QString &key)
+QString Workspace::pace() const { return Model::pace(); }
+
+void Workspace::setPace(const QString &pace)
+{
+    if (pace == Model::pace())
+        return;
+    Model::setPace(pace);
+    settings().setValue("lavori/velocita", Model::pace());
+    emit usageChanged();
+    say(QStringLiteral("Velocità dei lavori: %1%2.").arg(pace == "piano" ? QStringLiteral("piano, 2 chiamate e un agente alla volta")
+                                                       : pace == "normale" ? QStringLiteral("normale, 4 chiamate e un agente alla volta")
+                                                       : QStringLiteral("veloce, 6 chiamate e due agenti insieme"),
+                                                       jobRunning() ? QStringLiteral(" (vale per ciò che parte da adesso)") : QString()));
+}
+
+void Workspace::setCapOn(bool on)
+{
+    if (on == m_capOn)
+        return;
+    m_capOn = on;
+    settings().setValue("lavori/tetto", on);
+    tx::usage::setCap(on ? m_capPercent / 100.0 : 0);
+    emit usageChanged();
+    QTimer::singleShot(0, this, &Workspace::nextLater);   // senza tetto, ciò che lo aspettava può partire
+}
+
+void Workspace::setCapPercent(int percent)
+{
+    percent = qBound(10, percent, 95);
+    if (percent == m_capPercent)
+        return;
+    m_capPercent = percent;
+    settings().setValue("lavori/tetto_percento", percent);
+    if (m_capOn)
+        tx::usage::setCap(percent / 100.0);
+    emit usageChanged();
+    QTimer::singleShot(0, this, &Workspace::nextLater);
+}
+
+QVariantMap Workspace::windowsFor(double dollars) const
+{
+    const tx::usage::Rate rate = tx::usage::perDollar();
+    if (!rate.known() || dollars <= 0)
+        return {{"known", false}};
+    const tx::usage::State s = tx::usage::current();
+    const QDateTime now = QDateTime::currentDateTime();
+    const double capacity = m_capOn ? m_capPercent / 100.0 : 1.0;   // quanto di una finestra può usare un lavoro
+    const double need = dollars * rate.hours;           // in finestre intere (1 = una finestra di 5 ore)
+    const bool reset = !s.hours.resets.isValid() || s.hours.resets <= now;
+    const double left = qMax(0.0, capacity - (reset || !s.hours.known() ? 0.0 : s.hours.used));   // quanto resta in questa
+    const int hoursPercent = qMax(1, qRound(need * 100));
+    QString text;
+    int windows = 1;
+    const QString capped = m_capOn ? QStringLiteral(", con il tetto al %1%").arg(m_capPercent) : QString();
+    if (need <= left) {
+        text = QStringLiteral("Ci sta nella finestra di adesso: circa il %1% di una finestra di 5 ore").arg(hoursPercent);
+    } else if (left <= 0.02 && need <= capacity) {
+        text = QStringLiteral("La finestra di adesso è finita%1: basta la prossima, circa il %2% di una finestra di 5 ore")
+                   .arg(m_capOn ? QStringLiteral(" (o è al tetto)") : QString()).arg(hoursPercent);
+    } else {
+        windows = (left > 0.02 ? 1 : 0) + int(std::ceil((need - left) / capacity));
+        text = QStringLiteral("Ci vogliono circa %1 finestre di 5 ore (il %2% di una finestra in tutto%3); il lavoro si ferma quando "
+                              "una finestra finisce e riparte da sé")
+                   .arg(qMax(2, windows)).arg(hoursPercent).arg(capped);
+    }
+    QVariantMap out{{"known", true}, {"windows", windows}, {"hoursPercent", hoursPercent}};
+    if (rate.week > 0) {
+        const int weekPercent = qMax(1, qRound(dollars * rate.week * 100));
+        out["weekPercent"] = weekPercent;
+        const int weekLeft = s.week.known() && s.week.resets.isValid() && s.week.resets > now ? qRound((1 - s.week.used) * 100) : 100;
+        text += weekPercent > weekLeft ? QStringLiteral(", e circa il %1% della settimana: più di quanto ne resta (%2%)").arg(weekPercent).arg(weekLeft)
+                                       : QStringLiteral(", e circa il %1% della settimana").arg(weekPercent);
+    }
+    out["text"] = text + '.';
+    return out;
+}
+
+QVariantMap Workspace::planCost(const QString &id) const
+{
+    const QJsonObject plan = plans::load(m_project, id);
+    if (plan.isEmpty())
+        return {};
+    const double dollars = plan.contains("stima") ? plan.value("stima").toDouble() : sort::estimate(m_project, plan, m_settings.quality).total();
+    return {{"dollars", QLocale(QLocale::Italian).toString(dollars, 'f', 2)}, {"windows", windowsFor(dollars)}};
+}
+
+void Workspace::later(const QString &title, std::function<void()> again, const QDateTime &until, const QString &key, bool byCap)
 {
     const QString same = key.isEmpty() ? title : key;
     for (const Later &l : std::as_const(m_later))      // la stessa azione chiesta due volte aspetta una volta sola
         if (l.key == same)
             return say(QStringLiteral("«%1» aspetta già la ripresa: riparte da sé %2.").arg(title, Model::when(l.until)));
     const QDateTime at = until.isValid() ? until : QDateTime::currentDateTime().addSecs(30 * 60);
-    m_later.append({title, std::move(again), at, same});
-    say(QStringLiteral("Limite di utilizzo di Claude raggiunto: «%1» riparte da sé %2.").arg(title, Model::when(at)));
+    m_later.append({title, std::move(again), at, same, byCap});
+    say(byCap ? QStringLiteral("L'utilizzo di Claude è al tetto dei lavori (%1%): «%2» riparte da sé %3.").arg(m_capPercent).arg(title, Model::when(at))
+              : QStringLiteral("Limite di utilizzo di Claude raggiunto: «%1» riparte da sé %2.").arg(title, Model::when(at)));
     emit waitingLimitChanged();
 }
 
@@ -2605,7 +2709,7 @@ QVariantList Workspace::waitingLimit() const
 {
     QVariantList out;
     for (const Later &l : m_later)
-        out << QVariantMap{{"title", l.title}, {"until", Model::when(l.until)}};
+        out << QVariantMap{{"title", l.title}, {"until", Model::when(l.until)}, {"cap", l.cap}, {"key", l.key}};
     return out;
 }
 
@@ -2687,7 +2791,14 @@ void Workspace::loadRun()
     m_runState = saved == "finito" ? QStringLiteral("finito") : saved == "fermato" ? QStringLiteral("fermato") : QStringLiteral("interrotto");
     m_runUntil = QDateTime::fromString(state.value("pausa").toString(), Qt::ISODate);
     m_runConnection = state.value("pausa_per").toString() == "connessione";
+    m_runCap = state.value("pausa_per").toString() == "tetto";
     m_runEstimate = state.value("stima").toDouble();
+    // fermo per il limite o per il tetto (non per una pausa dell'utente né per la rete): riparte da sé quando la finestra si
+    // azzera, anche se nel frattempo il programma è stato chiuso
+    if (m_runState == "fermato" && m_runUntil.isValid() && !m_runConnection)
+        QTimer::singleShot(0, this, [this, until = m_runUntil, cap = m_runCap] {
+            later(runTitle(m_runId), [this] { resumeRun(); }, until, QStringLiteral("lavoro:") + m_runId, cap);
+        });
     const QJsonObject view = QJsonDocument::fromJson(files::read(run::folder(m_project, m_runId) + "/vista.json").toUtf8()).object();
     m_runStarted = 0;
     m_runWorked = qint64(view.value("lavorato").toDouble());
@@ -3048,6 +3159,7 @@ QVariantMap Workspace::run() const
                        {"until", until.isValid() ? Model::when(until) : QString()},
                        {"untilPassed", until.isValid() && until <= QDateTime::currentDateTime()},
                        {"connection", state == "in_pausa" ? m_pauseConnection : m_runConnection}, {"offline", m_offline && state == "in_corso"},
+                       {"cap", state == "in_pausa" ? m_pauseCap : m_runCap},
                        {"sessionStart", double(m_runStarted)}, {"worked", double(m_runWorked)}, {"cost", cost}, {"estimate", m_runEstimate},
                        {"progress", m_runSites.isEmpty() ? 0.0 : progress / m_runSites.size()}, {"active", active}, {"sites", sites}, {"calls", calls}, {"activity", activity}, {"now", now}, {"steps", int(m_runSteps.size())},
                        {"outcome", m_runOutcome}, {"canUndo", QFileInfo::exists(run::folder(m_project, m_runId) + "/prima/stato.json")}};

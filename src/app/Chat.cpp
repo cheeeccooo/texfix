@@ -211,7 +211,7 @@ void Chat::send(const QString &typed, const QStringList &attachments)
     if (workspace->busy())
         return workspace->say(QStringLiteral("Aspetta la fine del lavoro in corso."));
     // il limite di utilizzo già raggiunto: il messaggio parte da sé alla ripresa
-    if (workspace->limited(QStringLiteral("Il messaggio all'agente"), [this, typed, attachments] { send(typed, attachments); }, "chat:" + typed))
+    if (workspace->limited(QStringLiteral("Il messaggio all'agente"), [this, typed, attachments] { send(typed, attachments); }, "chat:" + typed, false))
         return add("note", QStringLiteral("Limite di utilizzo di Claude raggiunto: il messaggio parte da sé %1 (in Attività: «Adesso» o «Lascia stare»).")
                                .arg(Model::when(tx::usage::current().blockedUntil())));
     workspace->checkpoint(QStringLiteral("Modifiche a mano"));
@@ -245,7 +245,7 @@ void Chat::resend(const QString &id, const QString &text)
         return workspace->say(QStringLiteral("Il messaggio fermato dal limite era di un'altra chat: non lo rimando."));
     if (running() || workspace->busy())
         return workspace->say(QStringLiteral("Aspetta la fine del lavoro in corso."));
-    if (workspace->limited(QStringLiteral("Il messaggio all'agente"), [this, id, text] { resend(id, text); }))
+    if (workspace->limited(QStringLiteral("Il messaggio all'agente"), [this, id, text] { resend(id, text); }, {}, false))
         return;
     add("note", QStringLiteral("Riprendo il messaggio fermato dal limite."));
     m_retried = false;

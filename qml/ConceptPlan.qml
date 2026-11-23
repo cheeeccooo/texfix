@@ -927,7 +927,8 @@ Rectangle {
                     text: (root.plan.impostazioni || "") + (root.plan.stima >= 0.01 ? "\nCosto stimato di «Avvia»: circa " + money(root.plan.stima)
                           + (parts.lezioni !== undefined && parts.agente >= 0.01 && parts.lezioni >= 0.01
                              ? " (le lezioni nuove " + money(parts.lezioni) + ", il lavoro dell'agente " + money(parts.agente) + ")"
-                             : parts.agente >= 0.01 ? ", tutto lavoro dell'agente" : "") + "; si corregge da ciò che sono costati i lavori di prima." : "")
+                             : parts.agente >= 0.01 ? ", tutto lavoro dell'agente" : "") + "; si corregge da ciò che sono costati i lavori di prima."
+                             + (Workspace.windowsFor(root.plan.stima).known === true ? "\n" + Workspace.windowsFor(root.plan.stima).text : "") : "")
                           + (root.plan.costo >= 0.01 ? "\nQuesta mappa è costata " + Number(root.plan.costo).toLocaleString(Qt.locale("it_IT"), "f", 2) + " $." : "")
                 }
                 TxButton { text: "Cambia"; hint: "Le impostazioni del progetto (⌘,)"; onClicked: Workspace.askSettings() }

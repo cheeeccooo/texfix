@@ -3,6 +3,7 @@
 #include "core/Files.h"
 #include "core/History.h"
 #include "core/Reorganize.h"
+#include "core/Model.h"
 #include "core/NewLesson.h"
 #include "core/Plans.h"
 #include "core/Sort.h"
@@ -24,6 +25,10 @@
 namespace tx::run {
 
 namespace {
+// fin quando una conversazione dell'agente si riprende: la memoria temporanea di Claude (la cache del prompt) dura cinque
+// minuti; dopo, riprenderla costa come rileggerla tutta
+constexpr qint64 FRESH_SECONDS = 5 * 60;
+
 QString stateFile(const Project &project, const QString &id) { return project.path("salvataggi/lavori/" + id + "/esecuzione.json"); }
 
 // il nome di un pezzo per chi guarda: «insieme · Amplificatori operazionali ideali.tex» → «Amplificatori operazionali ideali»
@@ -169,6 +174,8 @@ Result execute(const Project &project, const Settings &settings, const Style &st
                     s.remove("pausa");
                 if (connection)
                     s["pausa_per"] = "connessione";
+                else if (control->pausedForCap())
+                    s["pausa_per"] = "tetto";
                 else
                     s.remove("pausa_per");
             });
@@ -252,8 +259,9 @@ Result execute(const Project &project, const Settings &settings, const Style &st
             if (t.value("tipo").toString() == "piano") {
                 // una parte di un piano dell'agente, interrotta senza conversazione: non si sa che lezioni avesse toccato, si
                 // rifà guardando com'è
-                message += QStringLiteral("\n\nUn tentativo di prima di questa parte si è interrotto a metà: guarda com'è ogni lezione "
-                                          "e fai solo ciò che manca.");
+                if (!message.contains(QStringLiteral("Un tentativo di prima")))
+                    message += QStringLiteral("\n\nUn tentativo di prima di questa parte si è interrotto a metà: guarda com'è ogni lezione "
+                                              "e fai solo ciò che manca.");
             } else {
             // interrotto a metà: la lezione torna com'era prima del lavoro, e il compito si rifà da capo
             Step restoring(control, QStringLiteral("Rimetto %1 com'era: il compito interrotto si rifà da capo").arg(lesson));
@@ -274,8 +282,18 @@ Result execute(const Project &project, const Settings &settings, const Style &st
         }
         if (control)
             control->checkLimit();                     // il limite è già stato raggiunto: il compito aspetta la ripresa
-        // fermato a metà dal limite o messo in pausa: l'agente continua la sua conversazione, la lezione resta com'è
-        const QString session = t.value("stato").toString() == "limite" || t.value("stato").toString() == "pausa" ? t.value("sessione").toString() : QString();
+        // fermato a metà dal limite o messo in pausa: la lezione resta com'è. Dopo una pausa breve l'agente continua la sua
+        // conversazione; dopo una lunga no: la memoria temporanea di Claude è scaduta e riprenderla vorrebbe dire rileggere
+        // tutto ciò che si è detto (fonti, lezione, risposte degli strumenti) a prezzo pieno. Allora un agente nuovo guarda
+        // la lezione com'è e fa il resto.
+        const bool halfway = t.value("stato").toString() == "limite" || t.value("stato").toString() == "pausa";
+        const QDateTime stoppedAt = QDateTime::fromString(t.value("fermo_alle").toString(), Qt::ISODate);
+        const bool fresh = halfway && (!stoppedAt.isValid() || stoppedAt.secsTo(QDateTime::currentDateTime()) > FRESH_SECONDS);
+        const QString session = halfway && !fresh ? t.value("sessione").toString() : QString();
+        if (halfway && fresh && !message.contains(QStringLiteral("Un agente prima di te")))   // il messaggio si salva: una volta sola
+            message += QStringLiteral("\n\nUn agente prima di te ha cominciato questo compito e si è fermato a metà. La lezione è com'è adesso, "
+                                      "con ciò che ha già fatto: guardala, confrontala con le fonti e fai solo ciò che manca, senza rifare "
+                                      "o ripetere ciò che c'è.");
         change([&](QJsonObject &s) {
             QJsonArray all = s.value("compiti").toArray();
             QJsonObject now = all[index].toObject();
@@ -293,6 +311,7 @@ Result execute(const Project &project, const Settings &settings, const Style &st
                 QJsonObject now = all[index].toObject();
                 now["stato"] = "limite";
                 now["sessione"] = r.session;
+                now["fermo_alle"] = QDateTime::currentDateTime().toString(Qt::ISODate);
                 now["costo"] = now.value("costo").toDouble() + r.cost;
                 all[index] = now;
                 s["compiti"] = all;
@@ -306,6 +325,7 @@ Result execute(const Project &project, const Settings &settings, const Style &st
                 QJsonObject now = all[index].toObject();
                 now["stato"] = "pausa";
                 now["sessione"] = r.session;
+                now["fermo_alle"] = QDateTime::currentDateTime().toString(Qt::ISODate);
                 now["costo"] = now.value("costo").toDouble() + r.cost;
                 all[index] = now;
                 s["compiti"] = all;
@@ -361,7 +381,8 @@ Result execute(const Project &project, const Settings &settings, const Style &st
                     if (todo.isEmpty())
                         return;
                     for (int i : std::as_const(todo))
-                        if (!busy.contains(tasks[i].toObject().value("lezione").toString())) {
+                        // al più Model::parallelAgents() insieme (la velocità, anche cambiata a metà), mai due sulla stessa lezione
+                        if (busy.size() < Model::parallelAgents() && !busy.contains(tasks[i].toObject().value("lezione").toString())) {
                             index = i;
                             break;
                         }

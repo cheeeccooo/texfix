@@ -71,11 +71,19 @@ class Workspace : public QObject {
     // status}; ago (minuti dall'ultima chiamata); blocked (fino a quando, se il limite è raggiunto); e mentre si lavora
     // runsOut: a questo ritmo quando arriva al limite («fra circa 25 minuti»), vuoto se non si sa o se si azzera prima.
     Q_PROPERTY(QVariantMap usage READ usage NOTIFY usageChanged)
-    Q_PROPERTY(QVariantList waitingLimit READ waitingLimit NOTIFY waitingLimitChanged)   // [{title, until}]: aspettano il limite
+    Q_PROPERTY(QVariantList waitingLimit READ waitingLimit NOTIFY waitingLimitChanged)   // [{title, until, cap}]: aspettano il limite o il tetto
+    // Come lavorano i lavori con l'utilizzo di Claude, per tutto il programma (si ricordano nelle preferenze). pace: la
+    // velocità, «piano», «normale», «veloce» (Model::setPace: quante chiamate e agenti insieme; più piano non costa meno,
+    // consuma la finestra più lentamente). capOn e capPercent: il tetto, nessun lavoro va oltre quella percentuale di una
+    // finestra (la chat sì): arrivato lì il lavoro si mette in pausa e riparte da sé quando la finestra si azzera.
+    Q_PROPERTY(QString pace READ pace WRITE setPace NOTIFY usageChanged)
+    Q_PROPERTY(bool capOn READ capOn WRITE setCapOn NOTIFY usageChanged)
+    Q_PROPERTY(int capPercent READ capPercent WRITE setCapPercent NOTIFY usageChanged)
     // La connessione: offline, le chiamate del lavoro aspettano che torni; pausedForConnection, il lavoro si ferma perché
     // non è tornata (pausedUntil è allora adesso: si riprende quando c'è).
     Q_PROPERTY(bool offline READ offline NOTIFY jobProgressChanged)
     Q_PROPERTY(bool pausedForConnection READ pausedForConnection NOTIFY jobProgressChanged)
+    Q_PROPERTY(bool pausedForCap READ pausedForCap NOTIFY jobProgressChanged)   // la pausa è per il tetto dei lavori
     Q_PROPERTY(QStringList jobLog READ jobLog NOTIFY jobLogChanged)       // il registro del lavoro (Console)
     // Le regole del progetto, una per voce (Impostazioni del progetto).
     Q_PROPERTY(QStringList projectRules READ projectRules WRITE setProjectRules NOTIFY settingsChanged)
@@ -121,6 +129,7 @@ public:
     QVariantMap usage() const;
     bool offline() const { return m_offline; }
     bool pausedForConnection() const { return m_pauseConnection; }
+    bool pausedForCap() const { return m_pauseCap; }
     QStringList projectRules() const { return m_settings.profile.extra; }
     void setProjectRules(const QStringList &rules);
     QString styleName() const { return m_style.name; }
@@ -382,8 +391,22 @@ public:
     // (retryLater) e «Lascia stare» (dropLater). limited: vero se l'azione aspetta, e allora chi chiama non parte.
     // key: che cosa la distingue da un'altra con lo stesso titolo (la lezione dei dubbi, la figura…); la stessa due volte
     // aspetta una volta sola
-    bool limited(const QString &title, std::function<void()> again, const QString &key = {});
-    void later(const QString &title, std::function<void()> again, const QDateTime &until, const QString &key = {});
+    // capped: vale anche il tetto dei lavori (la chat no: il margine è per lei)
+    bool limited(const QString &title, std::function<void()> again, const QString &key = {}, bool capped = true);
+    // byCap: aspetta il tetto, non il limite (lo dice)
+    void later(const QString &title, std::function<void()> again, const QDateTime &until, const QString &key = {}, bool byCap = false);
+    QString pace() const;
+    void setPace(const QString &pace);
+    bool capOn() const { return m_capOn; }
+    void setCapOn(bool on);
+    int capPercent() const { return m_capPercent; }
+    void setCapPercent(int percent);
+    // Una stima in dollari detta in finestre di utilizzo, con ciò che Texfix ha imparato (usage::perDollar), il tetto e
+    // quanto resta adesso: known, text («Ci sta in questa finestra: circa il 35%…», «Circa 3 finestre di 5 ore…»),
+    // windows, hoursPercent, weekPercent. known falso finché non ha visto abbastanza chiamate.
+    Q_INVOKABLE QVariantMap windowsFor(double dollars) const;
+    // Quanto costerà «Avvia» di un piano: dollars, e le finestre (windowsFor).
+    Q_INVOKABLE QVariantMap planCost(const QString &id) const;
     QVariantList waitingLimit() const;
     Q_INVOKABLE void retryLater(int index);
     Q_INVOKABLE void dropLater(int index);
@@ -524,6 +547,10 @@ private:
     QTimer m_runTimer;                                 // più eventi vicini, un aggiornamento solo
     bool m_closing = false;
     QDateTime m_pausedUntil;                           // il lavoro in corso aspetta la fine del limite di utilizzo
+    bool m_pauseCap = false;                           // la pausa del lavoro è per il tetto
+    bool m_runCap = false;                             // il lavoro di «Avvia» si è fermato al tetto
+    bool m_capOn = false;
+    int m_capPercent = 80;
     bool m_pauseConnection = false, m_offline = false;   // la pausa è per la connessione; le chiamate aspettano la rete
     void loadSettings();                               // impostazioni e stile, dal disco
 
@@ -559,6 +586,7 @@ private:
         std::function<void()> again;
         QDateTime until;
         QString key;
+        bool cap = false;                              // aspetta il tetto dei lavori, non il limite
     };
     QList<Later> m_later;
     bool m_tryAnyway = false;                          // «Adesso»: si prova una volta senza guardare il limite ricordato

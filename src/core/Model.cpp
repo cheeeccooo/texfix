@@ -12,18 +12,35 @@
 #include <QJsonObject>
 #include <QProcess>
 #include <QRegularExpression>
-#include <QSemaphore>
+#include <QMutex>
+#include <QWaitCondition>
 #include <QThread>
 #include <QTimeZone>
 
 namespace tx {
 
 namespace {
-QSemaphore g_slots(Model::PARALLEL);
+// i posti fra le chiamate in corso: quanti, lo dice la velocità, che può cambiare mentre si aspetta
+QMutex g_slotsMutex;
+QWaitCondition g_slotsFree;
+int g_running = 0;
+std::atomic<int> g_calls{Model::PARALLEL}, g_agents{2};
+QString g_pace = QStringLiteral("veloce");
 
 struct Slot {                                          // un posto fra le chiamate in corso, lasciato comunque
-    Slot() { g_slots.acquire(); }
-    ~Slot() { g_slots.release(); }
+    Slot()
+    {
+        QMutexLocker lock(&g_slotsMutex);
+        while (g_running >= g_calls.load())
+            g_slotsFree.wait(&g_slotsMutex);
+        ++g_running;
+    }
+    ~Slot()
+    {
+        QMutexLocker lock(&g_slotsMutex);
+        --g_running;
+        g_slotsFree.wakeAll();
+    }
 };
 
 const char *const SONNET = "claude-sonnet-5-5";
@@ -70,6 +87,9 @@ void JobControl::pause(const QDateTime &until, const QString &message, bool conn
     if (connection)
         log(QStringLiteral("Manca la connessione da più di %1 minuti: finisco ciò che è in corso e mi fermo; si riprende quando torna (%2)")
                 .arg(Model::OFFLINE_WAIT / 60000).arg(message.simplified()));
+    else if (m_pauseCap.load())
+        log(QStringLiteral("L'utilizzo di Claude è arrivato al tetto dei lavori: finisco ciò che è in corso e mi fermo; riprendo %1 (%2)")
+                .arg(Model::when(QDateTime::fromMSecsSinceEpoch(at)), message.simplified()));
     else
         log(QStringLiteral("Limite di utilizzo raggiunto: finisco ciò che è in corso e mi fermo; si può riprendere %1 (%2)")
                 .arg(Model::when(QDateTime::fromMSecsSinceEpoch(at)), message.simplified()));
@@ -88,8 +108,32 @@ void JobControl::waitingOnline(bool on)
         onOffline(on);
 }
 
-void JobControl::checkLimit() const
+void Model::setPace(const QString &pace)
 {
+    const QString chosen = pace == "piano" || pace == "normale" ? pace : QStringLiteral("veloce");
+    QMutexLocker lock(&g_slotsMutex);
+    g_pace = chosen;
+    g_calls.store(chosen == "piano" ? 2 : chosen == "normale" ? 4 : PARALLEL);
+    g_agents.store(chosen == "veloce" ? 2 : 1);
+    g_slotsFree.wakeAll();                             // più posti: chi aspetta parte subito
+}
+
+QString Model::pace()
+{
+    QMutexLocker lock(&g_slotsMutex);
+    return g_pace;
+}
+
+int Model::parallelCalls() { return g_calls.load(); }
+int Model::parallelAgents() { return g_agents.load(); }
+
+void JobControl::checkLimit()
+{
+    if (m_pausedUntil.load() == 0)
+        if (const QDateTime capped = usage::cappedUntil(); capped.isValid()) {
+            m_pauseCap.store(true);                    // prima della pausa: chi la sente sa già perché
+            pause(capped, QStringLiteral("tetto dei lavori al %1%").arg(qRound(usage::cap() * 100)));
+        }
     if (m_pausedUntil.load() > 0)
         throw LimitPause();
 }

@@ -60,9 +60,12 @@ public:
     // come se fosse stato fermato: si riprende con un clic. onPause: l'ora in cui si può riprendere.
     // La connessione che manca è come il limite (connection): ci si ferma allo stesso modo, ma si può riprendere subito.
     void pause(const QDateTime &until, const QString &message, bool connection = false);
-    void checkLimit() const;                           // lancia LimitPause se il limite è stato raggiunto
+    // lancia LimitPause se il limite è stato raggiunto, o se l'utilizzo è al tetto dei lavori (usage::cappedUntil): allora
+    // la pausa è per il tetto (pausedForCap) e dura fino all'azzeramento della finestra
+    void checkLimit();
     QDateTime pausedUntil() const;
     bool pausedForConnection() const { return m_pauseConnection.load(); }
+    bool pausedForCap() const { return m_pauseCap.load(); }
     std::function<void(const QDateTime &, bool connection)> onPause;
 
     // Le chiamate che aspettano che la connessione torni (Model::awaitOnline): onOffline dice quando comincia la prima
@@ -90,6 +93,7 @@ private:
     std::atomic<bool> m_stopped{false};
     std::atomic<qint64> m_pausedUntil{0};              // millisecondi dall'epoca; 0: nessuna pausa
     std::atomic<bool> m_pauseConnection{false};
+    std::atomic<bool> m_pauseCap{false};
     std::atomic<int> m_waitingOnline{0};
     std::atomic<int> m_calls{0};
     QMutex m_mutex;

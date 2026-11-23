@@ -1580,6 +1580,60 @@ private slots:
         usage::setFile({});
     }
 
+    // Quanto sale una finestra per un dollaro si impara dai salti dell'utilizzo e dai costi detti fra un salto e l'altro;
+    // il tetto ferma un lavoro (la pausa dice perché) finché la finestra non si azzera; la velocità cambia i posti.
+    void usageRateCapPace()
+    {
+        QTemporaryDir dir;
+        usage::setFile(dir.filePath("utilizzo.json"));
+        const qint64 hours = QDateTime::currentSecsSinceEpoch() + 3600, week = QDateTime::currentSecsSinceEpoch() + 5 * 86400;
+        auto event = [&](double h, double w, qint64 hoursReset) {
+            usage::record(QJsonObject{{"type", "rate_limit_event"}, {"rate_limit_info", QJsonObject{{"status", "allowed"}, {"unifiedWindows", QJsonObject{
+                {"five_hour", QJsonObject{{"utilization", h}, {"resetsAt", double(hoursReset)}, {"status", "allowed"}}},
+                {"seven_day", QJsonObject{{"utilization", w}, {"resetsAt", double(week)}, {"status", "allowed"}}}}}}}});
+        };
+        auto spent = [](double cost) { usage::record(QJsonObject{{"type", "result"}, {"total_cost_usd", cost}}); };
+        QVERIFY(!usage::perDollar().known());
+        event(0.10, 0.20, hours);
+        spent(0.25);
+        spent(0.25);
+        event(0.20, 0.22, hours);                                                       // +10% per 0,50 $: 0,2 a dollaro
+        QVERIFY(qAbs(usage::perDollar().hours - 0.2) < 1e-9);
+        QVERIFY(qAbs(usage::perDollar().week - 0.04) < 1e-9);
+        spent(1.0);
+        event(0.05, 0.25, hours + 18000);                                               // la finestra si è azzerata: niente da imparare
+        QVERIFY(qAbs(usage::perDollar().hours - 0.2) < 1e-9);
+        usage::setFile(dir.filePath("utilizzo.json"));                                  // si ricorda
+        QVERIFY(qAbs(usage::perDollar().hours - 0.2) < 1e-9);
+
+        // il tetto: al 30% la finestra (al 5%) va bene, al 4% no
+        event(0.05, 0.02, hours);                                                       // la settimana lontana dal tetto
+        usage::setCap(0.3);
+        QVERIFY(!usage::cappedUntil().isValid());
+        usage::setCap(0.04);
+        QCOMPARE(usage::cappedUntil().toSecsSinceEpoch(), hours);
+        JobControl control;
+        bool paused = false;
+        control.onPause = [&](const QDateTime &until, bool connection) { paused = until.toSecsSinceEpoch() == hours && !connection; };
+        QVERIFY_THROWS_EXCEPTION(LimitPause, control.checkLimit());
+        QVERIFY(paused && control.pausedForCap());
+        usage::setCap(0);                                                               // spento: si lavora
+        QVERIFY(!usage::cappedUntil().isValid());
+        event(0.05, 0.02, QDateTime::currentSecsSinceEpoch() - 10);                    // una finestra già azzerata non è al tetto
+        usage::setCap(0.04);
+        QVERIFY(!usage::cappedUntil().isValid());
+        usage::setCap(0);
+        usage::setFile({});
+
+        Model::setPace("piano");
+        QCOMPARE(Model::parallelCalls(), 2);
+        QCOMPARE(Model::parallelAgents(), 1);
+        Model::setPace("boh");
+        QCOMPARE(Model::pace(), "veloce");
+        QCOMPARE(Model::parallelCalls(), Model::PARALLEL);
+        QCOMPARE(Model::parallelAgents(), 2);
+    }
+
     // «Aggiungi materiale a questa lezione…» mette solo in arrivo e ricorda la lezione, finché il file è lì; «Smista» la
     // dice al modello, file per file.
     void sortChosenLesson()
@@ -3037,6 +3091,31 @@ private slots:
         QVERIFY(files::read(dir.filePath("ripreso.txt")).contains("--resume s1"));
         QVERIFY(files::read(p.path("src/src1.tex")).contains("Mezzo esempio."));          // la lezione è rimasta com'era a metà
         QCOMPARE(run::load(p, "20261123-120000").value("compiti").toArray()[0].toObject().value("stato").toString(), "fatta");
+
+        // dopo una pausa lunga la conversazione non si riprende (rileggerla costerebbe tutto): un agente nuovo guarda la
+        // lezione com'è e fa il resto
+        QJsonObject state = run::load(p, "20261123-120000");
+        QJsonArray tasks = state.value("compiti").toArray();
+        QJsonObject again1 = tasks[0].toObject();
+        again1["stato"] = "limite";
+        again1["fermo_alle"] = QDateTime::currentDateTime().addSecs(-3600).toString(Qt::ISODate);
+        tasks[0] = again1;
+        state["compiti"] = tasks;
+        state["stato"] = "fermato";
+        run::save(p, "20261123-120000", state);
+        QJsonObject planAgain = plans::load(p, "20261123-120000");
+        planAgain["stato"] = "in_corso";
+        plans::save(p, "20261123-120000", planAgain);
+        files::write(dir.filePath("claude"), QString("#!/bin/sh\nmsg=$(cat)\nprintf '%s\\n' \"$*\" > '%1/argomenti.txt'\nprintf '%s\\n' \"$msg\" > '%1/messaggio.txt'\n"
+                                                     "cat '%1/fine.json'\n").arg(dir.path()));
+        QFile(dir.filePath("claude")).setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
+        JobControl third;
+        const run::Result fresh = run::execute(p, Settings::load(p), Style::classic(), "20261123-120000", &third);
+        qunsetenv("TEXFIX_CLAUDE");
+        QVERIFY2(!fresh.stopped, qPrintable(fresh.failure));
+        QVERIFY(!files::read(dir.filePath("argomenti.txt")).contains("--resume"));
+        QVERIFY(files::read(dir.filePath("messaggio.txt")).contains("Un agente prima di te"));
     }
 
     // Il piano dell'agente non si esegue nella chat: «Avvia» lo fa diventare un lavoro, un compito per sezione con voci da
