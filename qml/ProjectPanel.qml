@@ -199,9 +199,25 @@ Rectangle {
         x: Theme.gap
         y: Theme.gap
         spacing: 6
-        TxButton { text: "＋ Aggiungi materiale"; width: root.width - 2 * Theme.gap; hint: "Texfix lo riconosce e propone un piano: lezioni nuove, da completare, già nel corso (⇧⌘K)"; onClicked: root.materialAsked() }
+        // ciò che è in arrivo e non è ancora in un piano: lo riconosce «Smista», quando l'utente vuole
+        readonly property var toSort: Workspace.queue.filter(q => q.state === "smistare" || q.state === "errore")
+        readonly property real room: root.width - 2 * Theme.gap
+        TxButton {
+            text: "＋ Aggiungi materiale"
+            width: entries.toSort.length > 0 ? Math.round((entries.room - entries.spacing) * 0.6) : entries.room
+            hint: "Porta dei file fra quelli in arrivo, senza far partire niente: poi «Smista» (⇧⌘K)"
+            onClicked: root.materialAsked()
+        }
+        TxButton {
+            visible: entries.toSort.length > 0
+            width: entries.room - entries.spacing - Math.round((entries.room - entries.spacing) * 0.6)
+            text: "Smista " + entries.toSort.length
+            primary: true
+            hint: "Riconosce ciò che è in arrivo e propone un piano: lezioni nuove, da completare, già nel corso"
+            onClicked: Workspace.sortMaterial(entries.toSort.map(q => q.file))
+        }
     }
-    // i file trascinati sull'albero sono materiale nuovo: si riconoscono, e c'è un piano
+    // i file trascinati sull'albero vanno in arrivo, come con «Aggiungi materiale»
     DropArea {
         anchors.fill: parent
         onDropped: drop => { if (drop.hasUrls) Workspace.addMaterial(Workspace.localPaths(drop.urls)) }
@@ -281,12 +297,12 @@ Rectangle {
             }
             FileGroup {
                 // ogni file ha uno stato: nel piano, in lavorazione, da riconoscere, non riconosciuto
-                // (il perché nel suggerimento), da smistare (rimasto da prima)
+                // (il perché nel suggerimento), da smistare. «Smista» sta sopra, accanto ad Aggiungi materiale
                 title: "In arrivo"
                 files: Workspace.queue
                 visible: files.length > 0
-                action: files.some(q => q.state === "errore") ? "Riprova" : files.some(q => q.state === "smistare") ? "Smista" : ""
-                onActionAsked: Workspace.sortMaterial(files.filter(q => q.state === "errore" || q.state === "smistare").map(q => q.file))
+                action: files.some(q => q.state === "errore") ? "Riprova" : ""
+                onActionAsked: Workspace.sortMaterial(files.filter(q => q.state === "errore").map(q => q.file))
             }
             FileGroup { title: "Documento"; files: Workspace.documentFiles }
             FileGroup { title: "Fonti senza lezione"; files: Workspace.strays; visible: files.length > 0 }

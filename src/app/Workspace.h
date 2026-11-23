@@ -267,10 +267,11 @@ public:
     Q_INVOKABLE void discardPlan(const QString &id);
     Q_INVOKABLE void archivePlan(const QString &id);
 
-    // Aggiungi materiale, la porta sola (SPEC §3.4). addMaterial porta dei file fra quelli in arrivo e li riconosce: ne
-    // esce sempre un piano. `lesson`: la lezione (o l'argomento) a cui l'utente li ha aggiunti. newVersion: un file che
-    // l'utente dice versione nuova di una fonte usata (arriva con il suo nome, e il piano lo riconosce). sortMaterial
-    // riconosce ciò che è già in arrivo; se un lavoro gira aspetta la sua fine. startSortPlan avvia il lavoro intero
+    // Aggiungi materiale, la porta sola (SPEC §3.4). addMaterial porta dei file fra quelli in arrivo, e basta:
+    // li riconosce «Smista» (sortMaterial), che ne fa il piano. `lesson`: la lezione (o l'argomento) a cui l'utente li ha
+    // aggiunti, ricordata finché sono in arrivo (newlesson::chosenLessons). newVersion: un file che l'utente dice versione
+    // nuova di una fonte usata (arriva con il suo nome, e il piano lo riconosce). sortMaterial riconosce ciò che è in
+    // arrivo; se un lavoro gira aspetta la sua fine. startSortPlan avvia il lavoro intero
     // (core/Run, nella finestra «lavoro:<piano>»): le lezioni nuove si convertono e l'agente fa il resto, insieme; reviseSortPlan
     // rifà il piano con le istruzioni, le scelte e i ruoli dell'utente. Ciò che non si riconosce resta in arrivo con il
     // perché (il dettaglio della sua riga) e si riprova con sortMaterial.
@@ -278,7 +279,7 @@ public:
     Q_INVOKABLE void newVersion(const QString &used, const QString &path);
     Q_INVOKABLE void addDocuments(const QStringList &paths);               // copia dei file fra quelli da consultare (docs/)
     Q_INVOKABLE static QStringList localPaths(const QList<QUrl> &urls);
-    Q_INVOKABLE void sortMaterial(const QStringList &sources, const QString &lesson = {});
+    Q_INVOKABLE void sortMaterial(const QStringList &sources);
     Q_INVOKABLE void startSortPlan(const QString &id);
     Q_INVOKABLE void reviseSortPlan(const QString &id);
     Q_INVOKABLE void askSettings() { emit settingsAsked(); }
@@ -458,7 +459,7 @@ private:
     void paginateLessons(const QStringList &lessons, const QString &title);
     void convertFinished(const tx::Convert::Result &result);
     void decided(const QString &lesson, const QString &title, const QString &error);
-    void sortJob(const QStringList &sources, const QJsonObject &previous, const QString &replaces, const QString &lesson);
+    void sortJob(const QStringList &sources, const QJsonObject &previous, const QString &replaces);
     void nextSort();                                   // il riconoscimento che aspettava la fine di un lavoro
     void saveUnrecognized();                           // ciò che non si è riconosciuto, e perché: build/lavori/smistamento/
     // il lavoro di «Avvia»: gli eventi dal thread del lavoro, la fine, ciò che la finestra mostra (e build/…/vista.json)
@@ -503,7 +504,7 @@ private:
     QStringList m_jobLog;
     QStringList m_console, m_hiddenMarks;
     QHash<QString, QString> m_unrecognized;            // in arrivo, non riconosciuto → perché
-    QList<std::pair<QStringList, QString>> m_sortWaiting;   // da riconoscere appena niente lavora: file e lezione scelta
+    QList<QStringList> m_sortWaiting;                  // da riconoscere appena niente lavora (la lezione scelta: newlesson::chosenLessons)
     QStringList m_converting;                          // le fonti della conversione in corso
     QVariantList m_tags;
     QString m_outcomeHead;                             // una riga in testa al prossimo esito di Converti

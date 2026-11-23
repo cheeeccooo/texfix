@@ -3,6 +3,7 @@
 #include "core/Project.h"
 #include "core/TexSource.h"
 
+#include <QHash>
 #include <QStringList>
 
 // Le lezioni nuove e le fonti: numeri e nomi liberi, la coda, la chiusura di una lezione dell'agente, le versioni, le
@@ -14,8 +15,14 @@ int nextNumber(const Project &project);
 // argomento ricorda per il ritorno per data): il prossimo file nuovo è quello dopo.
 int lastFile(const Project &project);
 // Porta dei file fra le fonti da convertire (un nome già preso diventa «nome (2)»). Restituisce dove sono finiti,
-// relativi alla radice; ciò che è già in fonti/coda resta dov'è.
-QStringList toQueue(const Project &project, const QStringList &paths);
+// relativi alla radice; ciò che è già in fonti/coda resta dov'è. Non riconosce niente: lo fa «Smista». lesson: la
+// lezione a cui l'utente li ha aggiunti («Aggiungi materiale a questa lezione…»), ricordata finché sono in arrivo.
+QStringList toQueue(const Project &project, const QStringList &paths, const QString &lesson = {});
+// La lezione scelta per i file in arrivo (file → lezione, relativi alla radice), in salvataggi/in-arrivo.json: solo
+// quelli che ci sono ancora. Smista la dice al modello.
+constexpr const char *CHOSEN = "salvataggi/in-arrivo.json";
+QHash<QString, QString> chosenLessons(const Project &project);
+void chooseLesson(const Project &project, const QStringList &files, const QString &lesson);
 // In un progetto per argomento, dove vanno le lezioni che scrive l'agente di un lavoro («collocazioni»: file → argomento,
 // titolo, dopo): le colloca chiudi_lezione. Restano alla chiusura.
 constexpr const char *PROCEDURES = "salvataggi/procedure.json";

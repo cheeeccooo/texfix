@@ -55,7 +55,7 @@ QString fileSafe(const QString &title)
 }
 }
 
-Outcome plan(const Project &project, const Settings &settings, const QStringList &files, JobControl *control, const QJsonObject &previous, const QString &target)
+Outcome plan(const Project &project, const Settings &settings, const QStringList &files, JobControl *control, const QJsonObject &previous)
 {
     Outcome out;
     // senza modello: doppioni, versioni nuove, file che non si leggono
@@ -96,10 +96,13 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
     concepts::Survey s;
     if (!survey.isEmpty()) {
         QString instructions = previous.isEmpty() ? QString() : previousPlan(previous);
-        if (!target.isEmpty())
-            for (const Lesson &lesson : project.lessons())
-                if (lesson.file == target)
-                    instructions += QStringLiteral("\nTHE USER ADDED THIS MATERIAL TO THE UNIT «%1»: its concepts go there, unless one clearly belongs elsewhere.").arg(lesson.title);
+        const QHash<QString, QString> chosen = newlesson::chosenLessons(project);   // «Aggiungi materiale a questa lezione…»
+        for (const QString &rel : std::as_const(survey))
+            if (const QString target = chosen.value(rel); !target.isEmpty())
+                for (const Lesson &lesson : project.lessons())
+                    if (lesson.file == target)
+                        instructions += QStringLiteral("\nTHE USER ADDED THE MATERIAL «%1» TO THE UNIT «%2»: its concepts go there, unless one clearly belongs elsewhere.")
+                                            .arg(QFileInfo(rel).completeBaseName(), lesson.title);
         s = concepts::survey(project, settings.quality, survey, control, instructions);
         out.cost = s.cost;
         known += s.known;
@@ -244,7 +247,7 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
     if (!s.failure.isEmpty())
         summary << QStringLiteral("Attenzione: %1").arg(s.failure.trimmed());
     QJsonObject document{{"titolo", "Aggiungi materiale"}, {"riepilogo", summary.join("\n\n")}, {"stato", "piano"}, {"tipo", "materiale"},
-                         {"formato", "concetti"}, {"file", QJsonArray::fromStringList(inPlan)}, {"lezione_scelta", target},
+                         {"formato", "concetti"}, {"file", QJsonArray::fromStringList(inPlan)},
                          {"fonti", sources}, {"corso", course}, {"concetti", concepts}, {"comuni", shared}, {"destinazioni", destinations},
                          {"salta", [&] {
                              QJsonArray out;

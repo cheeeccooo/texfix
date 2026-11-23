@@ -297,7 +297,7 @@ Item {
             } else if (name === "mappa") {
                 Workspace.conceptSurvey(Workspace.queue.map(q => q.file))
             } else if (name === "smista") {
-                Workspace.sortMaterial(Workspace.queue.map(q => q.file))
+                Workspace.sortMaterial(Workspace.queue.filter(q => q.state === "smistare" || q.state === "errore").map(q => q.file))
             } else if (name === "avvia-materiale") {
                 if (Workspace.jobs.length > 0)
                     Workspace.startSortPlan(Workspace.jobs[0].id)

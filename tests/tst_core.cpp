@@ -1423,6 +1423,45 @@ private slots:
         QCOMPARE(plan.value("destinazioni").toArray().size(), 1);
     }
 
+    // «Aggiungi materiale a questa lezione…» mette solo in arrivo e ricorda la lezione, finché il file è lì; «Smista» la
+    // dice al modello, file per file.
+    void sortChosenLesson()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        files::write(p.path("src/src1.tex"), "\\section{Limiti}\n\\lezione{1}{01/10/2026}\nuno\n");
+        files::write(dir.filePath("A.md"), "a1\na2\n");
+        files::write(dir.filePath("B.md"), "b1\n");
+        QCOMPARE(newlesson::toQueue(p, {dir.filePath("A.md")}, "src/src1.tex"), QStringList{"fonti/coda/A.md"});
+        QCOMPARE(newlesson::toQueue(p, {dir.filePath("B.md")}), QStringList{"fonti/coda/B.md"});
+        QCOMPARE(newlesson::chosenLessons(p), (QHash<QString, QString>{{"fonti/coda/A.md", "src/src1.tex"}}));
+
+        auto answer = [](const QJsonObject &o) {
+            return QJsonDocument(QJsonObject{{"type", "result"}, {"result", QString::fromUtf8(QJsonDocument(o).toJson())}, {"total_cost_usd", 0.01}}).toJson(QJsonDocument::Compact) + '\n';
+        };
+        files::writeBytes(dir.filePath("concetti.json"), answer(QJsonObject{{"concepts", QJsonArray{QJsonObject{{"title", "Primo"}, {"what", "il primo"}, {"where", "s"}, {"from", 1}, {"to", 1}}}}}));
+        files::writeBytes(dir.filePath("mappa.json"), answer(QJsonObject{{"shared", QJsonArray()}, {"skip", QJsonArray()},
+                                                                          {"place", QJsonArray{QJsonObject{{"concepts", QJsonArray{"A.1", "B.1"}}, {"into", "L1"}, {"why", "completa"}}}}}));
+        files::write(dir.filePath("claude"), QString("#!/bin/sh\nin=$(mktemp)\ncat > \"$in\"\nfor a; do case \"$a\" in *'List its CONCEPTS'*) cat '%1/concetti.json'; exit 0;; "
+                                                     "*'You compare the concepts'*) cp \"$in\" '%1/chiesto.txt'; cat '%1/mappa.json'; exit 0;; esac; done\nexit 1\n").arg(dir.path()));
+        QFile(dir.filePath("claude")).setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
+        JobControl control;
+        const sort::Outcome o = sort::plan(p, Settings(), {"fonti/coda/A.md", "fonti/coda/B.md"}, &control);
+        qunsetenv("TEXFIX_CLAUDE");
+        QVERIFY2(!o.plan.isEmpty(), qPrintable(o.failure));
+        const QString asked = files::read(dir.filePath("chiesto.txt"));
+        QVERIFY2(asked.contains("THE USER ADDED THE MATERIAL «A» TO THE UNIT «Limiti»"), qPrintable(asked));
+        QVERIFY(!asked.contains("MATERIAL «B» TO THE UNIT"));
+
+        QFile::remove(p.path("fonti/coda/A.md"));                                       // non più in arrivo: la scelta cade
+        QVERIFY(newlesson::chosenLessons(p).isEmpty());
+    }
+
     // Le pagine: i concetti di un PDF stanno su pagine, e «Avvia» ritaglia le pagine di ciascuno dove va.
     void sortConceptsPages()
     {

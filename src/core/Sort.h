@@ -24,9 +24,9 @@ struct Outcome {
     double cost = 0;
 };
 // previous: il piano di prima con le decisioni e le istruzioni dell'utente («Rivedi piano»): i concetti letti restano,
-// si rifà la mappa. target: la lezione (o l'argomento) a cui l'utente ha aggiunto il materiale; vuoto se non l'ha detto.
+// si rifà la mappa. La lezione a cui l'utente ha aggiunto un file (newlesson::chosenLessons) la si dice al modello.
 Outcome plan(const Project &project, const Settings &settings, const QStringList &files, JobControl *control,
-             const QJsonObject &previous = {}, const QString &target = {});
+             const QJsonObject &previous = {});
 
 // «Avvia»: di ogni fonte si prendono le righe (o le pagine) dei concetti che vanno in un posto, e diventano file fra
 // quelli in arrivo. Una lezione nuova di una fonte sola, o di soli .tex e testi, la scrive la conversione; ciò che va in

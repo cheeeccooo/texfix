@@ -47,7 +47,7 @@ int lastFile(const Project &project)
     return last;
 }
 
-QStringList toQueue(const Project &project, const QStringList &paths)
+QStringList toQueue(const Project &project, const QStringList &paths, const QString &lesson)
 {
     QStringList out;
     const QString queue = project.path("fonti/coda");
@@ -64,7 +64,35 @@ QStringList toQueue(const Project &project, const QStringList &paths)
         if (QFile::copy(path, target))
             out << project.relative(target);
     }
+    chooseLesson(project, out, lesson);
     return out;
+}
+
+QHash<QString, QString> chosenLessons(const Project &project)
+{
+    QHash<QString, QString> out;
+    const QJsonObject saved = QJsonDocument::fromJson(files::read(project.path(CHOSEN)).toUtf8()).object();
+    for (auto it = saved.begin(); it != saved.end(); ++it)
+        if (QFileInfo::exists(project.path(it.key())) && !it.value().toString().isEmpty())
+            out.insert(it.key(), it.value().toString());
+    return out;
+}
+
+void chooseLesson(const Project &project, const QStringList &files, const QString &lesson)
+{
+    QHash<QString, QString> chosen = chosenLessons(project);   // senza quelli che non sono più in arrivo
+    const qsizetype before = chosen.size();
+    for (const QString &file : files)
+        if (lesson.isEmpty())
+            chosen.remove(file);
+        else
+            chosen.insert(file, lesson);
+    if (chosen.isEmpty() && before == 0 && !QFileInfo::exists(project.path(CHOSEN)))
+        return;
+    QJsonObject saved;
+    for (auto it = chosen.begin(); it != chosen.end(); ++it)
+        saved.insert(it.key(), it.value());
+    files::write(project.path(CHOSEN), QString::fromUtf8(QJsonDocument(saved).toJson()));
 }
 
 bool addToMain(const Project &project, const QString &lesson, const QString &after)

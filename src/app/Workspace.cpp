@@ -607,7 +607,7 @@ void Workspace::refreshTree()
                 inPlan.insert(f.toString(), info.id);
     }
     QSet<QString> waiting;
-    for (const auto &[files, lesson] : std::as_const(m_sortWaiting))
+    for (const QStringList &files : std::as_const(m_sortWaiting))
         for (const QString &f : files)
             waiting.insert(f);
     QSet<QString> runFiles;                            // ciò che il lavoro di «Avvia» sta usando
@@ -2101,12 +2101,12 @@ void Workspace::addMaterial(const QStringList &paths, const QString &lesson)
     if (!hasProject() || paths.isEmpty())
         return;
     checkpoint(QStringLiteral("Modifiche a mano"));
-    const QStringList added = newlesson::toQueue(m_project, paths);
+    const QStringList added = newlesson::toQueue(m_project, paths, lesson);
     if (added.isEmpty())
         return say(QStringLiteral("Non riesco a copiare i file nel progetto."));
     checkpoint(QStringLiteral("Materiale aggiunto"));
-    refreshTree();
-    sortMaterial(added, lesson);                       // ogni volta che entra materiale si riconosce, e c'è un piano
+    refreshTree();                                     // resta in arrivo: lo riconosce «Smista», quando l'utente vuole
+    say(QStringLiteral("%1 in arrivo: «Smista» %2 riconosce e fa il piano.").arg(plural(added.size(), "file", "file"), added.size() == 1 ? "lo" : "li"));
 }
 
 void Workspace::newVersion(const QString &used, const QString &path)
@@ -2121,7 +2121,7 @@ void Workspace::newVersion(const QString &used, const QString &path)
         return say(QStringLiteral("Non riesco a copiare il file nel progetto."));
     checkpoint(QStringLiteral("Materiale aggiunto"));
     refreshTree();
-    sortMaterial({m_project.relative(target)});
+    say(QStringLiteral("%1 è in arrivo: «Smista» la riconosce come versione nuova.").arg(QFileInfo(target).fileName()));
 }
 
 void Workspace::addDocuments(const QStringList &paths)
@@ -2135,7 +2135,7 @@ void Workspace::addDocuments(const QStringList &paths)
     say(n == 1 ? QStringLiteral("Un file aggiunto fra quelli da consultare.") : QStringLiteral("%1 file aggiunti fra quelli da consultare.").arg(n));
 }
 
-void Workspace::sortMaterial(const QStringList &sources, const QString &lesson) { sortJob(sources, {}, {}, lesson); }
+void Workspace::sortMaterial(const QStringList &sources) { sortJob(sources, {}, {}); }
 
 void Workspace::reviseSortPlan(const QString &id)
 {
@@ -2144,22 +2144,22 @@ void Workspace::reviseSortPlan(const QString &id)
     for (const QJsonValue &f : plan.value("file").toArray())
         if (QFileInfo::exists(m_project.path(f.toString())))
             sources << f.toString();
-    sortJob(sources, plan, id, plan.value("lezione_scelta").toString());
+    sortJob(sources, plan, id);
 }
 
-void Workspace::sortJob(const QStringList &sources, const QJsonObject &previous, const QString &replaces, const QString &lesson)
+void Workspace::sortJob(const QStringList &sources, const QJsonObject &previous, const QString &replaces)
 {
     if (!hasProject() || sources.isEmpty())
         return;
     if (busy()) {                                      // si riconosce appena niente lavora: intanto la riga lo dice
-        m_sortWaiting.append({sources, lesson});
+        m_sortWaiting.append(sources);
         refreshTree();
         return say(QStringLiteral("Riconosco il materiale appena finisce il lavoro in corso."));
     }
     for (const QString &source : sources)
         m_unrecognized.remove(source);
-    startJob(QStringLiteral("Riconosco il materiale"), [this, sources, previous, replaces, lesson, project = m_project, settings = m_settings](JobControl *control) {
-        const sort::Outcome outcome = sort::plan(project, settings, sources, control, previous, lesson);
+    startJob(QStringLiteral("Riconosco il materiale"), [this, sources, previous, replaces, project = m_project, settings = m_settings](JobControl *control) {
+        const sort::Outcome outcome = sort::plan(project, settings, sources, control, previous);
         return std::function<void()>([this, outcome, sources, replaces, project] {
             for (auto it = outcome.unread.begin(); it != outcome.unread.end(); ++it)
                 m_unrecognized.insert(it.key(), it.value());
@@ -2202,12 +2202,12 @@ void Workspace::nextSort()
 {
     if (m_sortWaiting.isEmpty() || busy() || !hasProject())
         return;
-    const auto [sources, lesson] = m_sortWaiting.takeFirst();
+    const QStringList sources = m_sortWaiting.takeFirst();
     QStringList left;
     for (const QString &source : sources)
         if (QFileInfo::exists(m_project.path(source)))
             left << source;
-    sortJob(left, {}, {}, lesson);
+    sortJob(left, {}, {});
 }
 
 void Workspace::saveUnrecognized()

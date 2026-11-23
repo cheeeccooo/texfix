@@ -135,7 +135,10 @@ sua analisi, un esempio, un esercizio) va dove serve, anche se il file da cui vi
 
 - **[S]** **Il materiale entra in qualunque modo**: il tasto, file trascinati sul pannello, «Aggiungi materiale a questa
   lezione…» dal menu di una lezione (i concetti vanno lì, se uno non sta chiaramente altrove), «Carica una versione
-  nuova…» sul menu di una fonte usata. Ogni volta Texfix lo riconosce e **mostra sempre il piano**.
+  nuova…» sul menu di una fonte usata. Il materiale **va solo in arrivo**: lo riconosce **«Smista»**,
+  accanto ad Aggiungi materiale, quando l'utente vuole, e ne esce **sempre un piano** (decisione del 23/11/2026; prima
+  si riconosceva a ogni aggiunta). La lezione scelta con «Aggiungi materiale a questa lezione…» resta del file finché è in
+  arrivo.
 - **[S]** **Senza modello**, ciò che è meccanico e sicuro: un doppione di una fonte usata (si toglie), una *versione nuova*
   di una fonte usata («Porta le differenze», «Smistala come materiale nuovo», «Salta»), un file che non si legge (resta
   in arrivo con il perché), le lezioni di un `.tex` che il corso contiene tali e quali (marcatori dei blocchi, o testo).
@@ -185,8 +188,8 @@ sua analisi, un esempio, un esercizio) va dove serve, anche se il file da cui vi
 
 - **[S]** **In arrivo** (era «Da convertire»): il materiale aspetta in `fonti/coda/` finché un lavoro non lo porta fra le
   fonti usate. Nell'albero c'è solo se c'è qualcosa; un clic apre il file nell'editor, e ogni file dice il suo stato:
-  *nel piano* (il piano è sotto Lavori), *in lavorazione*, *non riconosciuto* con il motivo e «Riprova», *da smistare*
-  (rimasto da prima) con «Smista». Aprire un progetto non riconosce niente da sé.
+  *da smistare* (il conto è sul tasto «Smista»), *nel piano* (il piano è sotto Lavori), *in lavorazione*, *non
+  riconosciuto* con il motivo e «Riprova». Aprire un progetto non riconosce niente da sé.
 - **[S]** **Niente fallisce in silenzio.** Se il modello non risponde (connessione, limite d'uso, errore) il materiale resta
   in arrivo con il motivo scritto accanto e «Riprova»; il messaggio va anche nella barra e in Console. Se la mappa non
   torna (un concetto senza posto) si chiede di nuovo dicendo che cosa manca, poi lo si dice.
@@ -519,6 +522,9 @@ Decisioni del 18/11/2026 (§3.4, §3.5): una porta sola per il materiale, Aggiun
 il progetto è per data o per argomento, scelto alla creazione e cambiabile quando si vuole; il riconoscimento usa il
 modello a ogni aggiunta, ma niente fallisce in silenzio; si smista per concetti, con il grafo delle intersezioni in cima
 al piano, e la qualità viene prima del costo.
+
+Decisioni del 23/11/2026 (§3.4): Aggiungi materiale mette solo in arrivo, senza far partire niente; il riconoscimento e
+il piano partono con «Smista».
 
 Le domande D8–D10 come erano poste:
 - **D8. Come Texfix conosce uno stile importato.** (a) Lo stile porta un piccolo file di descrizione (ambienti e ruoli, macro, colori) accanto al `.sty`; `styles` lo avrà, per gli altri lo si scrive all'importazione. (b) All'importazione Texfix legge il `.sty`, trova ambienti e macro, il modello propone i ruoli e l'utente li conferma; il risultato si salva come in (a). Proposta: (b), che produce (a), così ogni stile funziona e quelli già descritti non costano niente.
