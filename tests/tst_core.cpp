@@ -13,6 +13,7 @@
 #include "core/Concepts.h"
 #include "core/Reorganize.h"
 #include "core/Run.h"
+#include "core/Worker.h"
 #include "core/Review.h"
 #include "core/Figures.h"
 #include "core/Files.h"
@@ -41,6 +42,7 @@
 
 #include <future>
 #include <QStandardPaths>
+#include <QProcess>
 #include <QTemporaryDir>
 #include <QTimeZone>
 #include <QImage>
@@ -3014,6 +3016,33 @@ private slots:
 
     // Il piano dell'agente non si esegue nella chat: «Avvia» lo fa diventare un lavoro, un compito per sezione con voci da
     // fare, uno dopo l'altro; l'esito resta nel piano e «Annulla tutto il lavoro» riporta il progetto com'era.
+    // Un agente rimasto acceso da un Texfix morto si ferma alla riapertura: solo se è ancora lui (il numero di processo
+    // si riusa).
+    void strayAgents()
+    {
+#ifdef Q_OS_WIN
+        QSKIP("su Windows la famiglia muore con Texfix (il contenitore)");
+#else
+        QTemporaryDir dir;
+        const Project p(dir.path());
+        QProcess stray, other;
+        tools::ownGroup(stray);
+        tools::start(stray, "sleep", {"60"});
+        QVERIFY(stray.waitForStarted());
+        tools::ownGroup(other);
+        tools::start(other, "sleep", {"61"});
+        QVERIFY(other.waitForStarted());
+        files::write(p.path("build/lavori/agenti.json"), QStringLiteral("{\"%1\": \"sleep 60\", \"%2\": \"claude\"}")
+                                                              .arg(stray.processId()).arg(other.processId()));
+        QCOMPARE(worker::stopStrays(p), 1);
+        QVERIFY(stray.waitForFinished(5000));
+        QVERIFY(!other.waitForFinished(500));                                           // un altro programma: resta
+        QVERIFY(!QFileInfo::exists(p.path("build/lavori/agenti.json")));
+        tools::stopGroup(other.processId());
+        other.waitForFinished(5000);
+#endif
+    }
+
     void agentPlanRun()
     {
         QTemporaryDir dir;

@@ -23,6 +23,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
+#if defined(Q_OS_LINUX)
+#include <sys/prctl.h>
+#endif
 #if defined(Q_OS_MACOS)
 #include <libproc.h>
 #include <sys/proc.h>
@@ -98,6 +101,11 @@ void adopt(QProcess &process)
     if (!info || process.state() == QProcess::NotRunning)
         return;
     HANDLE job = CreateJobObjectW(nullptr, nullptr);
+    if (job) {                                         // se Texfix muore il contenitore si chiude e la famiglia con lui
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits = {};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
+    }
     if (job && !AssignProcessToJobObject(job, info->hProcess)) {
         CloseHandle(job);
         job = nullptr;
@@ -173,7 +181,28 @@ void ownGroup(QProcess &process)
         t_starting = args->processInformation;
     });
 #else
-    process.setChildProcessModifier([] { ::setpgid(0, 0); });
+    process.setChildProcessModifier([] {
+        ::setpgid(0, 0);
+#if defined(Q_OS_LINUX)
+        ::prctl(PR_SET_PDEATHSIG, SIGKILL);            // muore con Texfix, anche se Texfix è ucciso
+#endif
+    });
+#endif
+}
+
+QString commandOf(qint64 pid)
+{
+    if (pid <= 1)
+        return {};
+#if defined(Q_OS_WIN)
+    return {};                                         // su Windows la famiglia muore con Texfix (il contenitore)
+#else
+    if (::kill(pid_t(pid), 0) != 0)
+        return {};
+    QProcess ps;
+    ps.start("ps", {"-o", "command=", "-p", QString::number(pid)});
+    ps.waitForFinished(5000);
+    return QString::fromUtf8(ps.readAllStandardOutput()).trimmed();
 #endif
 }
 

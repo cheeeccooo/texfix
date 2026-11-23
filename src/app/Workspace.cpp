@@ -294,6 +294,8 @@ void Workspace::open(const QString &path)
 {
     closeProject();
     m_project = Project(path);
+    // un agente rimasto acceso da un Texfix morto (ucciso, in crash) scriverebbe ancora nel progetto: prima di tutto si ferma
+    const int strays = worker::stopStrays(m_project);
     m_project.complete();                              // un progetto a cui manca qualcosa si completa da sé
     profiles::keepMine(m_project);                     // un progetto di prima: le sue regole anche nella libreria
     m_compiler.setProject(m_project);
@@ -319,6 +321,10 @@ void Workspace::open(const QString &path)
     refreshTree();
     emit projectChanged();
     emit pdfChanged();
+    if (strays > 0)
+        say(QStringLiteral("Texfix si era chiuso male e %1 di un lavoro %2 ancora: %3 fermat%4. Il lavoro si riprende da «Riprendi».")
+                .arg(strays == 1 ? QStringLiteral("un agente") : QStringLiteral("%1 agenti").arg(strays), strays == 1 ? "lavorava" : "lavoravano",
+                     strays == 1 ? "l'ho" : "li ho", strays == 1 ? "o" : "i"));
 }
 
 void Workspace::closeProject()

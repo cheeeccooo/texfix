@@ -9,6 +9,10 @@
 #include <QRegularExpression>
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QMutex>
+#include <QScopeGuard>
 #include <QElapsedTimer>
 #include <QJsonDocument>
 #include <QProcess>
@@ -21,6 +25,44 @@ QString program()
     const QString custom = qEnvironmentVariable("TEXFIX_CLAUDE");     // per le prove: un finto agente
     return custom.isEmpty() ? QStringLiteral("claude") : custom;
 }
+
+// Gli agenti al lavoro: build/lavori/agenti.json, pid → programma. Ognuno si toglie quando finisce; quelli che restano
+// sono di un Texfix morto senza fermarli.
+QMutex g_alive;
+QString aliveFile(const Project &project) { return project.path("build/lavori/agenti.json"); }
+
+void remember(const Project &project, qint64 pid, bool on)
+{
+    QMutexLocker lock(&g_alive);
+    QJsonObject alive = QJsonDocument::fromJson(files::read(aliveFile(project)).toUtf8()).object();
+    if (on)
+        alive[QString::number(pid)] = QFileInfo(program()).fileName();
+    else
+        alive.remove(QString::number(pid));
+    if (alive.isEmpty())
+        QFile::remove(aliveFile(project));
+    else
+        files::write(aliveFile(project), QString::fromUtf8(QJsonDocument(alive).toJson()));
+}
+
+}
+
+int stopStrays(const Project &project)
+{
+    QMutexLocker lock(&g_alive);
+    const QJsonObject alive = QJsonDocument::fromJson(files::read(aliveFile(project)).toUtf8()).object();
+    int stopped = 0;
+    for (auto it = alive.begin(); it != alive.end(); ++it) {
+        const qint64 pid = it.key().toLongLong();
+        const QString command = tools::commandOf(pid);
+        // solo se è ancora lui: un numero di processo si riusa
+        if (!command.isEmpty() && !it.value().toString().isEmpty() && command.contains(it.value().toString())) {
+            tools::stopGroup(pid);
+            ++stopped;
+        }
+    }
+    QFile::remove(aliveFile(project));
+    return stopped;
 }
 
 QJsonArray lines(const QJsonObject &output, const QString &root, QHash<QString, QString> *names)
@@ -155,6 +197,8 @@ Result run(const Project &project, const Settings &settings, const Style &style,
         const qint64 pid = process.processId();
         if (control)
             control->track(pid);
+        remember(project, pid, true);                  // se Texfix muore senza fermarlo, alla riapertura si ferma
+        const auto forget = qScopeGuard([&] { remember(project, pid, false); });
         process.write(QJsonDocument(QJsonObject{{"type", "user"}, {"message", QJsonObject{{"role", "user"}, {"content", message}}}}).toJson(QJsonDocument::Compact) + '\n');
         process.closeWriteChannel();
 

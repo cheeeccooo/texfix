@@ -34,6 +34,10 @@ struct Result {
 Result run(const Project &project, const Settings &settings, const Style &style, const QString &task, const QString &title,
            JobControl *control, const QString &session = {});
 
+// Gli agenti rimasti vivi da un Texfix morto senza fermarli (ucciso, o andato in crash): li ferma, e dice quanti erano.
+// Si chiama all'apertura del progetto e prima di riprendere un lavoro.
+int stopStrays(const Project &project);
+
 // Le righe del flusso da una riga dell'uscita del CLI: {tipo: testo | strumento | risultato, testo}. Il testo dell'agente,
 // uno strumento con il suo file («Legge src/src3.tex»), la risposta di uno strumento di Texfix (accorciata). names: gli
 // strumenti chiesti finora (id → nome), per riconoscere le risposte.

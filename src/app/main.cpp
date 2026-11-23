@@ -29,6 +29,13 @@
 
 Q_IMPORT_QML_PLUGIN(TexfixStylePlugin)    // lo stile dei controlli (qml/style)
 
+#ifdef Q_OS_UNIX
+#include <QSocketNotifier>
+#include <csignal>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
+
 namespace {
 
 QString serverName()
@@ -62,8 +69,8 @@ void listenForRequests(QQuickWindow *window)
         QObject::connect(socket, &QLocalSocket::disconnected, window, [socket, window] {
             const QString folder = QString::fromUtf8(socket->readAll());
             socket->deleteLater();
-            if (!folder.isEmpty())
-                Workspace::instance()->openFolder(folder);
+            if (!folder.isEmpty() && Workspace::instance()->openFolder(folder) == "prepara")
+                emit Workspace::instance()->prepareAsked(folder);   // non è un progetto: il foglio dell'inizio
             window->raise();
             window->requestActivate();
         });
@@ -144,6 +151,36 @@ void runHandsFree(QQuickWindow *window, QStringList gestures, const QString &pho
 
 }
 
+#ifdef Q_OS_UNIX
+// Chiuso da fuori (il terminale, il sistema che si spegne, kill): come chiudere la finestra. Così un lavoro si ferma e
+// i suoi processi (latexmk, gli agenti) non restano a lavorare sul progetto senza il programma. Il gestore scrive solo
+// un byte su una coppia di socket; il resto lo fa il ciclo degli eventi.
+int quitPipe[2] = {-1, -1};
+void onQuitSignal(int)
+{
+    const char byte = 1;
+    [[maybe_unused]] const auto written = ::write(quitPipe[1], &byte, 1);
+}
+void quitOnSignals(QCoreApplication &app)
+{
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, quitPipe) != 0)
+        return;
+    auto *notifier = new QSocketNotifier(quitPipe[0], QSocketNotifier::Read, &app);
+    QObject::connect(notifier, &QSocketNotifier::activated, &app, [notifier] {
+        notifier->setEnabled(false);
+        char byte;
+        [[maybe_unused]] const auto read = ::read(quitPipe[0], &byte, 1);
+        QCoreApplication::quit();
+    });
+    struct sigaction action = {};
+    action.sa_handler = onQuitSignal;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = SA_RESTART;
+    for (int signal : {SIGTERM, SIGINT, SIGHUP})
+        sigaction(signal, &action, nullptr);
+}
+#endif
+
 int main(int argc, char *argv[])
 {
     // il passacarte degli strumenti dell'agente: senza finestra
@@ -162,6 +199,9 @@ int main(int argc, char *argv[])
     QCoreApplication::setOrganizationDomain("texfix.checco.it");
     QCoreApplication::setApplicationName("Texfix (nuovo)");
     tx::tools::adoptPath();
+#ifdef Q_OS_UNIX
+    quitOnSignals(app);
+#endif
 
     QCommandLineParser parser;
     parser.addPositionalArgument("cartella", "Il progetto da aprire.");

@@ -22,6 +22,8 @@ void start(QProcess &process, const QString &name, const QStringList &arguments)
 // dopo `ownGroup` si avvia sempre con `start`, che lo mette nel contenitore e lo fa ripartire.
 void ownGroup(QProcess &process);
 void stopGroup(qint64 pid);
+// La riga di comando di un processo vivo (vuota se non c'è più, e su Windows, dove la famiglia muore con Texfix).
+QString commandOf(qint64 pid);
 // Il processo non c'è più, o è finito e nessuno l'ha ancora raccolto.
 bool gone(qint64 pid);
 void reap(qint64 pid);

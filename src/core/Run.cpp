@@ -78,6 +78,7 @@ Result execute(const Project &project, const Settings &settings, const Style &st
         out.failure = QStringLiteral("Il piano non c'è più.");
         return out;
     }
+    worker::stopStrays(project);                       // un agente di prima ancora acceso non scrive insieme a quello nuovo
     QJsonObject state = load(project, id);
     const QString copy = folder(project, id) + "/prima";
     if (!state.value("preparato").toBool()) {
