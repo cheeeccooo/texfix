@@ -1385,6 +1385,44 @@ private slots:
         QVERIFY(QFileInfo::exists(p.path("fonti/coda/x.xyz")));                         // resta in arrivo, con il suo perché
     }
 
+    // Una fonte in cui il modello non trova concetti (un PDF che esce bianco) resta in arrivo con il perché: le altre
+    // fanno la mappa e il piano lo stesso (prima un file solo fermava tutti, anche con «Riprova»).
+    void sortOneUnread()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        files::write(p.path("src/src1.tex"), "\\section{Limiti}\n\\lezione{1}{01/10/2026}\nuno\n");
+        files::write(p.path("fonti/coda/A.md"), "a1\na2\n");
+        files::write(p.path("fonti/coda/vuoto.md"), "niente\n");
+        auto answer = [](const QJsonObject &o) {
+            return QJsonDocument(QJsonObject{{"type", "result"}, {"result", QString::fromUtf8(QJsonDocument(o).toJson())}, {"total_cost_usd", 0.01}}).toJson(QJsonDocument::Compact) + '\n';
+        };
+        files::writeBytes(dir.filePath("concetti.json"), answer(QJsonObject{{"concepts", QJsonArray{QJsonObject{{"title", "Primo"}, {"what", "il primo"}, {"where", "s"}, {"from", 1}, {"to", 2}}}}}));
+        files::writeBytes(dir.filePath("vuoto.json"), answer(QJsonObject{{"concepts", QJsonArray()}}));
+        files::writeBytes(dir.filePath("mappa.json"), answer(QJsonObject{{"shared", QJsonArray()}, {"skip", QJsonArray()},
+                                                                          {"place", QJsonArray{QJsonObject{{"concepts", QJsonArray{"A.1"}}, {"into", "L1"}, {"why", "completa"}}}}}));
+        files::write(dir.filePath("claude"), QString("#!/bin/sh\nin=$(mktemp)\ncat > \"$in\"\nfor a; do case \"$a\" in *'List its CONCEPTS'*) "
+                                                     "if grep -q 'MATERIAL «vuoto»' \"$in\"; then cat '%1/vuoto.json'; else cat '%1/concetti.json'; fi; exit 0;; "
+                                                     "*'You compare the concepts'*) cat '%1/mappa.json'; exit 0;; esac; done\nexit 1\n").arg(dir.path()));
+        QFile(dir.filePath("claude")).setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
+        JobControl control;
+        const sort::Outcome o = sort::plan(p, Settings(), {"fonti/coda/A.md", "fonti/coda/vuoto.md"}, &control);
+        qunsetenv("TEXFIX_CLAUDE");
+        QCOMPARE(o.failure, QString());
+        QVERIFY(!o.plan.isEmpty());
+        QCOMPARE(o.unread.value("fonti/coda/vuoto.md"), "il modello non ha trovato concetti");
+        const QJsonObject plan = plans::load(p, o.plan);
+        QCOMPARE(plan.value("file").toArray(), QJsonArray{"fonti/coda/A.md"});          // il file illeggibile non è nel piano
+        QCOMPARE(plan.value("fonti").toArray().size(), 1);
+        QVERIFY(plan.value("illeggibili").toArray()[0].toString().startsWith("vuoto.md"));
+        QCOMPARE(plan.value("destinazioni").toArray().size(), 1);
+    }
+
     // Le pagine: i concetti di un PDF stanno su pagine, e «Avvia» ritaglia le pagine di ciascuno dove va.
     void sortConceptsPages()
     {
@@ -1412,6 +1450,15 @@ private slots:
         QCOMPARE(Pages::size(p.path("fonti/coda/S · Uno e due.pdf")), 2);
         QCOMPARE(Pages::size(p.path("fonti/coda/S · Tre.pdf")), 2);
         QVERIFY(prepared.tasks.first().message.contains("fonti/coda/S · Tre.pdf"));
+        // l'agente non apre il PDF (il suo strumento un PDF lungo lo legge solo a pezzi, e a pezzi non riesce): ne legge le pagine
+        const QStringList made = QDir(p.path("build/lavori/leggibili")).entryList({"pagine-*"}, QDir::Dirs);
+        QCOMPARE(made.size(), 2);                                                         // una cartella per PDF dato all'agente
+        const auto named = [&](const QString &folder) {
+            return QStringLiteral("`fonti/coda/S · Tre.pdf` (non aprire il PDF: leggi le sue 2 pagine, le immagini da "
+                                  "`build/lavori/leggibili/%1/full-1.png` a `build/lavori/leggibili/%1/full-2.png`, tutte)").arg(folder);
+        };
+        QVERIFY2(prepared.tasks.first().message.contains(named(made[0])) || prepared.tasks.first().message.contains(named(made[1])),
+                 qPrintable(prepared.tasks.first().message));
         QVERIFY(QFileInfo::exists(p.path("fonti/usate/smistate/S.pdf")));
     }
 
@@ -2674,6 +2721,43 @@ private slots:
         }
         QVERIFY(limited);
         qunsetenv("TEXFIX_CLAUDE");
+    }
+
+    // Un agente che non riesce ad aprire una fonte non ripiega sulle altre: dice «FONTE ILLEGGIBILE», il compito non riesce e
+    // il lavoro si ferma con il perché (si riprende dopo aver sistemato la fonte).
+    void runStopsOnUnreadableSource()
+    {
+        QTemporaryDir dir;
+        const QString root = dir.filePath("prova");
+        QCOMPARE(Project::create(root), QString());
+        const Project p(root);
+        QString main = files::read(p.path("main.tex"));
+        files::write(p.path("main.tex"), main.replace("\\end{document}", "\\input{src/src1.tex}\n\\end{document}"));
+        files::write(p.path("src/src1.tex"), "\\section{Limiti}\n\\lezione{1}{01/10/2026}\n\nIl limite.\n");
+        files::write(p.path("fonti/coda/B.md"), "Un esempio di limite.\n");
+        const QJsonObject plan{{"titolo", "Aggiungi materiale"}, {"stato", "piano"}, {"tipo", "materiale"}, {"formato", "concetti"},
+                               {"file", QJsonArray{"fonti/coda/B.md"}},
+                               {"fonti", QJsonArray{QJsonObject{{"key", "B"}, {"name", "B"}, {"source", "fonti/coda/B.md"}, {"file", "B"}, {"pagine", false}}}},
+                               {"corso", QJsonArray{QJsonObject{{"key", "L1"}, {"name", "Lezione 1 · Limiti"}, {"source", "src/src1.tex"}}}},
+                               {"concetti", QJsonObject{{"B.1", QJsonObject{{"title", "Esempio"}, {"from", 1}, {"to", 1}}}}},
+                               {"destinazioni", QJsonArray{QJsonObject{{"into", "L1"}, {"concepts", QJsonArray{"B.1"}}, {"fare", true}, {"nota", ""}}}}};
+        QVERIFY(plans::save(p, "20261122-190000", plan));
+        auto line = [](const QJsonObject &o) { return QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)) + '\n'; };
+        files::write(dir.filePath("agente.json"), line({{"type", "system"}, {"subtype", "init"}, {"session_id", "s1"}})
+            + line({{"type", "result"}, {"result", "FONTE ILLEGGIBILE: B.md è protetto da password."}, {"total_cost_usd", 0.1}, {"session_id", "s1"}}));
+        files::write(dir.filePath("claude"), QString("#!/bin/sh\ncat > /dev/null\ncat '%1/agente.json'\n").arg(dir.path()));
+        QFile(dir.filePath("claude")).setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        qputenv("TEXFIX_CLAUDE", dir.filePath("claude").toUtf8());
+        JobControl control;
+        const run::Result r = run::execute(p, Settings::load(p), Style::classic(), "20261122-190000", &control);
+        qunsetenv("TEXFIX_CLAUDE");
+        QVERIFY(r.stopped);
+        QVERIFY2(r.failure.contains("Una fonte non si apre: B.md è protetto da password."), qPrintable(r.failure));
+        QVERIFY(r.failure.contains("«Riprendi»"));
+        const QJsonObject state = run::load(p, "20261122-190000");
+        QCOMPARE(state.value("stato").toString(), "fermato");
+        QCOMPARE(state.value("compiti").toArray()[0].toObject().value("stato").toString(), "fallita");
+        QCOMPARE(files::read(p.path("src/src1.tex")), "\\section{Limiti}\n\\lezione{1}{01/10/2026}\n\nIl limite.\n");   // niente scritto
     }
 
     // «Avvia» è un lavoro solo: la conversione scrive la lezione nuova e, insieme, l'agente completa la lezione del corso

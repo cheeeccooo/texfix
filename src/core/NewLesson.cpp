@@ -8,6 +8,7 @@
 #include "core/Settings.h"
 #include "core/TexSource.h"
 #include "core/Tools.h"
+#include <QCryptographicHash>
 #include <QDirIterator>
 #include <QFile>
 #include <QJsonArray>
@@ -253,6 +254,24 @@ QString readable(const Project &project, const QString &file)
     return ok && QFileInfo::exists(made.filePath()) ? copy : QString();
 }
 
+// Le pagine di un PDF in immagini, per l'agente: lo strumento con cui legge i PDF un PDF lungo lo apre solo a pezzi, e a
+// pezzi non riesce (dice «protetto da password» anche di un PDF che non lo è); le immagini le legge sempre, e così anche un
+// PDF protetto o che poppler disegna bianco. Relative al progetto; vuoto se il PDF non si legge.
+QStringList pagesForAgent(const Project &project, const QString &file)
+{
+    // una cartella dal nome semplice: poppler su Windows non scrive dove il percorso ha lettere come «·»
+    const QString dir = project.path(QStringLiteral("build/lavori/leggibili/pagine-%1")
+                                         .arg(QString::fromLatin1(QCryptographicHash::hash(file.toUtf8(), QCryptographicHash::Sha1).toHex().left(10))));
+    try {
+        QStringList out;
+        for (const QString &page : Pages::read(project.path(file), dir).full)
+            out << project.relative(page);
+        return out;
+    } catch (const std::runtime_error &) {
+        return {};
+    }
+}
+
 QStringList forAgent(const Project &project, const QStringList &sources)
 {
     QStringList out;
@@ -264,6 +283,12 @@ QStringList forAgent(const Project &project, const QStringList &sources)
                 if (lesson.date == ref.date && lesson.nth == ref.nth)
                     named = QStringLiteral("`%1` (solo la parte `\\section{%2}`%3)")
                                 .arg(ref.path, lesson.heading, ref.nth > 1 ? QStringLiteral(", la %1 con questo titolo").arg(texsource::label(ref).section(' ', 0, 0)) : QString());
+        } else if (ref.path.endsWith(".pdf", Qt::CaseInsensitive)) {
+            const QStringList pages = pagesForAgent(project, ref.path);
+            named = pages.isEmpty() ? QStringLiteral("`%1` (le sue pagine non si leggono)").arg(ref.path)
+                  : pages.size() == 1 ? QStringLiteral("`%1` (non aprire il PDF: leggi la sua pagina, l'immagine `%2`)").arg(ref.path, pages.first())
+                                      : QStringLiteral("`%1` (non aprire il PDF: leggi le sue %2 pagine, le immagini da `%3` a `%4`, tutte)")
+                                            .arg(ref.path).arg(pages.size()).arg(pages.first(), pages.last());
         } else if (const QString copy = readable(project, source); !copy.isEmpty()) {
             named = QStringLiteral("`%1` (non lo puoi aprire: leggi la copia `%2`)").arg(source, copy);
         }
@@ -381,7 +406,7 @@ QString unite(const Project &project, const QStringList &sources, const QList<in
         pieces << pdf;
     }
     const QString target = files::freeName(project.path(QStringLiteral("fonti/coda/lezione %1.pdf").arg(number)));
-    if (!tools::run("pdfunite", pieces + QStringList{target}, work, 120000).ok || !QFileInfo::exists(target))
+    if (!Pages::unite(pieces, target, work))
         return {};
     for (const QString &source : sources)              // le fonti sono dentro il file unito: quelle in coda non servono più
         if (source.startsWith("fonti/coda/"))

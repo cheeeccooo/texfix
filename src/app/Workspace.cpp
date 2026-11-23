@@ -2040,7 +2040,22 @@ void Workspace::setPlanComment(const QString &id, const QString &text)
     plans::save(m_project, id, plan);
 }
 
-bool Workspace::planHasInstructions(const QString &id) const { return plans::hasInstructions(plans::load(m_project, id)); }
+void Workspace::setOutlineNote(const QString &id, const QString &text)
+{
+    QJsonObject plan = plans::load(m_project, id);
+    if (!hasProject() || plan.isEmpty())
+        return;
+    plan["nota_scaletta"] = text;
+    plans::save(m_project, id, plan);
+}
+
+// Ci sono istruzioni per rifare il piano: quelle scritte, o (nel piano dei concetti) un programma del corso diverso da
+// quello con cui è stata fatta la mappa.
+bool Workspace::planHasInstructions(const QString &id) const
+{
+    const QJsonObject plan = plans::load(m_project, id);
+    return plans::hasInstructions(plan) || (plan.value("formato").toString() == "concetti" && plan.value("stato").toString() == "piano" && plan.value("programma").toString() != m_settings.program);
+}
 
 QString Workspace::planMessage(const QString &id, const QString &how)
 {
@@ -2258,6 +2273,8 @@ void Workspace::runFinished(const run::Result &result)
         say(result.failure);
     } else if (result.stopped) {
         m_runState = m_closing ? QStringLiteral("interrotto") : QStringLiteral("fermato");
+        if (!m_closing && !result.failure.isEmpty())   // fermato da sé (una fonte che non si apre): il perché, in barra e in Attività
+            say(result.failure);
         if (m_closing) {                               // chiuso il programma: alla riapertura si riprende con un clic
             QJsonObject s = state;
             s["stato"] = "interrotto";

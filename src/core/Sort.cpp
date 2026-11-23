@@ -103,10 +103,13 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
         s = concepts::survey(project, settings.quality, survey, control, instructions);
         out.cost = s.cost;
         known += s.known;
+        for (auto it = s.unread.begin(); it != s.unread.end(); ++it)   // restano in arrivo, non riconosciuti, con il perché
+            out.unread.insert(it.key(), it.value());
         if (!s.failure.isEmpty() && (s.map.isEmpty() || s.fresh.isEmpty())) {
             out.failure = s.failure.trimmed();
             for (const QString &rel : std::as_const(survey))
-                out.unread.insert(rel, out.failure);
+                if (!out.unread.contains(rel))
+                    out.unread.insert(rel, out.failure);
             if (versions.isEmpty() && known.isEmpty())
                 return out;
         }
@@ -229,16 +232,19 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
         if (proposed == now.mid(0, proposed.size()) && proposed.size() == now.size())
             order = {};                                // gli argomenti di prima restano come sono: niente da proporre
     }
-    QStringList unread;
+    QStringList unread, inPlan;                        // un file che non si legge non è nel piano: resta in arrivo, con «Riprova»
     for (auto it = out.unread.begin(); it != out.unread.end(); ++it)
         unread << QStringLiteral("%1 (%2)").arg(QFileInfo(it.key()).fileName(), it.value());
+    for (const QString &rel : files)
+        if (!out.unread.contains(rel))
+            inPlan << rel;
 
     QStringList summary{QStringLiteral("Il materiale nuovo, per concetti: prima ciò che compare in più punti, poi dove va ciò che resta di quei file, "
                                        "poi ciò che è tutto nuovo.")};
     if (!s.failure.isEmpty())
         summary << QStringLiteral("Attenzione: %1").arg(s.failure.trimmed());
     QJsonObject document{{"titolo", "Aggiungi materiale"}, {"riepilogo", summary.join("\n\n")}, {"stato", "piano"}, {"tipo", "materiale"},
-                         {"formato", "concetti"}, {"file", QJsonArray::fromStringList(files)}, {"lezione_scelta", target},
+                         {"formato", "concetti"}, {"file", QJsonArray::fromStringList(inPlan)}, {"lezione_scelta", target},
                          {"fonti", sources}, {"corso", course}, {"concetti", concepts}, {"comuni", shared}, {"destinazioni", destinations},
                          {"salta", [&] {
                              QJsonArray out;
@@ -246,7 +252,7 @@ Outcome plan(const Project &project, const Settings &settings, const QStringList
                                  out.append(QJsonObject{{"concepts", v.toObject().value("concepts")}, {"why", plain(v.toObject().value("why"))}});
                              return out;
                          }()}, {"gia", QJsonArray::fromStringList(known)}, {"versioni", versions},
-                         {"illeggibili", QJsonArray::fromStringList(unread)}, {"commento", ""}, {"impostazioni", settingsLine(settings)},
+                         {"illeggibili", QJsonArray::fromStringList(unread)}, {"commento", ""}, {"nota_scaletta", ""}, {"programma", settings.program}, {"impostazioni", settingsLine(settings)},
                          {"ordine", QJsonObject{{"proposta", order}, {"valore", !order.isEmpty()}}},
                          {"stima", Convert::estimate(settings.quality, estimated)}, {"costo", out.cost}, {"sezioni", QJsonArray()},
                          {"domande", QJsonArray()}};
@@ -282,6 +288,8 @@ QString previousPlan(const QJsonObject &document)
         if (!d.value("nota").toString().trimmed().isEmpty())
             lines << QStringLiteral("- %1 (%2): USER: %3").arg(where, ids.join(", "), d.value("nota").toString().trimmed());
     }
+    if (!document.value("nota_scaletta").toString().trimmed().isEmpty())
+        lines << QStringLiteral("USER, about the outline of the course (which units, how they are split, their order): %1").arg(document.value("nota_scaletta").toString().trimmed());
     if (!document.value("commento").toString().trimmed().isEmpty())
         lines << QStringLiteral("USER, about the whole plan: %1").arg(document.value("commento").toString().trimmed());
     return lines.join('\n');
@@ -415,8 +423,9 @@ Prepared prepare(const Project &project, const QJsonObject &document)
                     }
                 std::sort(parts.begin(), parts.end());
                 const QString target = files::freeName(project.path(QStringLiteral("fonti/coda/%1 · %2.pdf").arg(src.value("file").toString(), fileSafe(title))));
-                if (parts.isEmpty() || (parts.size() == 1 ? !QFile::copy(parts.first(), target) : !tools::run("pdfunite", parts + QStringList{target}, work, 120000).ok)) {
-                    *failure = QStringLiteral("Non riesco a ritagliare le pagine di %1 (serve poppler).").arg(src.value("name").toString());
+                if (!Pages::unite(parts, target, work)) {
+                    *failure = parts.isEmpty() ? QStringLiteral("Non riesco a ritagliare le pagine di %1 (pdfseparate di poppler non le separa).").arg(src.value("name").toString())
+                                               : QStringLiteral("Non riesco a rimettere insieme le pagine di %1.").arg(src.value("name").toString());
                     return {};
                 }
                 made << project.relative(target);

@@ -305,6 +305,7 @@ Regole che valgono sempre:
 - le righe `% @L3.7 · fonte p.2` sono i marcatori dei blocchi e `% img src3-01` i segni delle figure: restano con il loro blocco, non si tolgono e non si inventano;
 - le aggiunte tue vanno in `addedtext`, le correzioni alla fonte in `correction`;
 - dove le fonti non sono chiare o non concordano scegli la lettura più fedele e dillo nell'esito;
+- ogni fonte del compito va letta: se una non si apre o non si legge (protetta da password, rovinata, vuota) e non ce n'è una copia leggibile, non ripiegare sulle altre e non scrivere niente. Il tuo ultimo messaggio comincia allora con «FONTE ILLEGGIBILE:» e dice quale fonte e perché; Texfix ferma il lavoro;
 - alla fine chiama chiudi_lezione con la lezione e le fonti che hai usato;
 - il tuo ultimo messaggio è l'esito per l'utente: in italiano, breve, a punti. Che cosa hai aggiunto o cambiato e dove (vicino a quale blocco), e che cosa resta da decidere a lui.
 )") + "\nREGOLE EDITORIALI\n\n" + rules::forPrompt(rules::allIds(), settings.profile) + "\n\nSTILE DEL DOCUMENTO\n\n" + style.forPrompt();

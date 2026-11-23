@@ -301,8 +301,11 @@ QJsonObject Survey::toJson() const
         }
         return out;
     };
+    QJsonObject unreadJson;
+    for (auto it = unread.begin(); it != unread.end(); ++it)
+        unreadJson.insert(it.key(), it.value());
     return QJsonObject{{"course", holders(course)}, {"fresh", holders(fresh)}, {"known", QJsonArray::fromStringList(known)},
-                       {"map", map}, {"failure", failure}, {"cost", cost}};
+                       {"map", map}, {"failure", failure}, {"unread", unreadJson}, {"cost", cost}};
 }
 
 Survey survey(const Project &project, const QString &quality, const QStringList &files, JobControl *control, const QString &previous)
@@ -365,8 +368,8 @@ Survey survey(const Project &project, const QString &quality, const QStringList 
                 job.pages = Pages::read(path, project.path("build/lavori/converti/" + hashOf(f.readAll()).left(12) + "/pagine"));
                 jobs << job;
             }
-        } catch (const std::exception &e) {
-            out.failure += QStringLiteral("%1: %2. ").arg(QFileInfo(file).fileName(), QString::fromUtf8(e.what()));
+        } catch (const std::exception &e) {            // un file che non si legge resta fuori, gli altri vanno avanti
+            out.unread.insert(file, QString::fromUtf8(e.what()));
         }
     }
     // tutti insieme (Model ne fa girare al più PARALLEL)
@@ -391,10 +394,21 @@ Survey survey(const Project &project, const QString &quality, const QStringList 
         r.get();
     if (control)
         control->check();
+    // una fonte nuova senza concetti resta fuori (con tutte le lezioni del suo .tex: il file è uno), le altre vanno avanti;
+    // una lezione del corso che non si legge ferma la mappa, che senza di lei metterebbe le cose nel posto sbagliato
+    for (const Holder &h : std::as_const(read))
+        if (!h.course && !h.failure.isEmpty()) {
+            const QString file = texsource::parseSpec(h.source).path;
+            out.unread.insert(file, out.unread.contains(file) ? out.unread.value(file) + "; " + h.failure : h.failure);
+        }
     for (const Holder &h : std::as_const(read)) {
-        if (!h.failure.isEmpty())
-            out.failure += QStringLiteral("%1: %2. ").arg(h.name, h.failure);
-        (h.course ? out.course : out.fresh) << h;
+        if (h.course) {
+            if (!h.failure.isEmpty())
+                out.failure += QStringLiteral("%1: %2. ").arg(h.name, h.failure);
+            out.course << h;
+        } else if (!out.unread.contains(texsource::parseSpec(h.source).path)) {
+            out.fresh << h;
+        }
     }
     auto limited = [control] {                         // il limite, o la rete che non torna: un motivo solo, non uno per file
         return control->pausedForConnection() ? QStringLiteral("Manca la connessione a internet: riprova quando torna. I concetti già letti restano.")

@@ -53,7 +53,7 @@ qt_add_library(texfix_core STATIC
 file(GLOB_RECURSE RULE_FILES CONFIGURE_DEPENDS RELATIVE ${CMAKE_SOURCE_DIR} regole/*.md profili/*.md stili/*.json stili/*.sty)
 qt_add_resources(texfix_core "regole" PREFIX "/" FILES ${RULE_FILES})
 target_include_directories(texfix_core PUBLIC src)
-target_link_libraries(texfix_core PUBLIC Qt6::Core Qt6::Gui)
+target_link_libraries(texfix_core PUBLIC Qt6::Core Qt6::Gui Qt6::Pdf)
 
 option(TEXFIX_APP "Compila anche il programma, non solo il motore e le prove" ON)
 if(TEXFIX_APP)

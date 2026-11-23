@@ -4,6 +4,7 @@
 #include "core/Pages.h"
 #include "core/Project.h"
 
+#include <QHash>
 #include <QJsonObject>
 #include <QList>
 #include <QString>
@@ -71,7 +72,8 @@ struct Survey {
     QList<Holder> course, fresh;
     QStringList known;                     // «labss1 · 29 settembre: già nel corso, nella lezione 1 · …»
     QJsonObject map;
-    QString failure;
+    QString failure;                       // ciò che ferma la mappa (il limite, la rete, una lezione del corso)
+    QHash<QString, QString> unread;        // i file nuovi di cui non si legge niente, con il perché: restano fuori, gli altri vanno avanti
     double cost = 0;
     QJsonObject toJson() const;
 };

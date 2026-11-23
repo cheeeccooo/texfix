@@ -1,10 +1,12 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import Texfix
 
-// Il piano di Aggiungi materiale per concetti (core/Sort, formato «concetti»): in cima il grafo di dove il materiale si
-// interseca, poi i concetti in comune con la decisione, poi dove va ciò che resta di quei file, poi ciò che è tutto
+// Il piano di Aggiungi materiale per concetti (core/Sort, formato «concetti»): in cima, se il corso non c'è ancora, la
+// scaletta in breve (con che cosa cambiare e il programma del corso), poi il grafo di dove va il materiale (dai file nuovi alla scaletta; gli archi fra file
+// che si intersecano), poi i concetti in comune con la decisione, poi dove va ciò che resta di quei file, poi ciò che è tutto
 // nuovo; in fondo le versioni, ciò che è già nel corso, le impostazioni e i tasti. Ogni modifica passa da Workspace.
 Rectangle {
     id: root
@@ -26,6 +28,8 @@ Rectangle {
     onVisibleChanged: if (visible) reload()
     Connections {
         target: Workspace
+        // un programma del corso nuovo (o tolto) rifà la mappa: «Avvia» diventa «Rivedi piano»
+        function onSettingsChanged() { root.instructions = Workspace.planHasInstructions(root.planId) }
         // dopo il gestore del clic: rileggere ricrea le righe, anche quella che ha ricevuto il clic
         function onPlanEdited(id) { if (id === root.planId) Qt.callLater(root.reload) }
         function onPlanReady(id) { if (id === root.planId) Qt.callLater(root.reload) }
@@ -56,8 +60,8 @@ Rectangle {
         return out
     }
     function holderOf(id) { return id.split(".")[0] }
-    function nameOf(key) { return root.holders[key] ? root.holders[key].name : key }
-    function colorOf(key) { return root.holders[key] ? root.holders[key].color : Theme.textFaint }
+    function nameOf(key) { return root.holders[key] ? root.holders[key].name : key.startsWith("new:") ? key.slice(4) : key }
+    function colorOf(key) { return root.holders[key] ? root.holders[key].color : key.startsWith("new:") ? Theme.accent : Theme.textFaint }
     function titleOf(id) { const c = (root.plan.concetti || {})[id]; return c ? c.title : id }
     function whatOf(id) { const c = (root.plan.concetti || {})[id]; return c ? c.what : "" }
     readonly property var sharedIds: (plan.comuni || []).reduce((all, g) => all.concat(Array.from(g.items)), [])
@@ -115,8 +119,64 @@ Rectangle {
         return out
     }
     readonly property var leftKeys: (plan.fonti || []).map(s => s.key)
-    readonly property var rightKeys: (plan.corso || []).map(c => c.key).filter(k => Object.keys(pairs).some(p => p.split("|").includes(k))
-                                                                                     || (plan.destinazioni || []).some(d => d.into === k))
+
+    // la scaletta: il corso come sarà, le lezioni che hai e quelle nuove al loro posto (dopo quella che dice «after»; le
+    // nuove con la data in ordine di data, quelle senza posto in fondo). Una lezione nuova ha la chiave «new:<titolo>».
+    function unitKey(d) { return d.into === "new" ? "new:" + d.title : d.into }
+    readonly property var units: {
+        const dests = plan.destinazioni || []
+        const seq = (plan.corso || []).map(c => c.key)
+        const pending = dests.filter(d => d.into === "new")
+                             .sort((a, b) => (a.date || "").split("/").reverse().join("").localeCompare((b.date || "").split("/").reverse().join("")))
+        let firsts = 0
+        while (pending.length) {
+            let moved = false
+            for (let j = 0; j < pending.length; ++j) {
+                const after = (pending[j].after || "").trim()
+                const at = after === "first" ? firsts++ : after === "" ? seq.length : seq.indexOf(after) >= 0 ? seq.indexOf(after) + 1 : -1
+                if (at < 0)
+                    continue
+                seq.splice(at, 0, unitKey(pending[j]))
+                pending.splice(j--, 1)
+                moved = true
+            }
+            if (!moved) {                              // un «after» che non c'è: in fondo, nell'ordine del piano
+                for (const d of pending)
+                    seq.push(unitKey(d))
+                break
+            }
+        }
+        return seq.map(key => {
+            const index = dests.findIndex(d => unitKey(d) === key)
+            const d = index >= 0 ? dests[index] : null
+            return { key: key, fresh: key.startsWith("new:"), title: key.startsWith("new:") ? key.slice(4) : nameOf(key),
+                     index: index, date: d ? d.date || "" : "", fare: d ? d.fare : true, count: d ? d.concepts.length : 0,
+                     from: d ? d.concepts.map(holderOf).filter((k, i, a) => a.indexOf(k) === i && leftKeys.includes(k)) : [] }
+        })
+    }
+    // dove finisce un concetto: la lezione del corso che lo ha, o quella della scaletta che lo riceve
+    function unitOf(id) {
+        const h = holderOf(id)
+        if (holders[h] && holders[h].course)
+            return h
+        const d = (plan.destinazioni || []).find(d => d.concepts.includes(id))
+        return d ? unitKey(d) : ""
+    }
+    // a destra nel grafo: le lezioni nuove e quelle che hai che ricevono qualcosa, in ordine di scaletta
+    readonly property var rightKeys: units.filter(u => u.fresh || u.index >= 0).map(u => u.key)
+    // le linee: quanti concetti di un file nuovo vanno in una lezione della scaletta
+    readonly property var flows: {
+        const out = {}
+        for (const d of plan.destinazioni || [])
+            for (const id of d.concepts) {
+                const h = holderOf(id)
+                if (leftKeys.includes(h)) {
+                    const k = h + "|" + unitKey(d)
+                    out[k] = (out[k] || 0) + 1
+                }
+            }
+        return out
+    }
 
     component Chip: Rectangle {
         id: chip
@@ -184,6 +244,7 @@ Rectangle {
         border.width: 1
         border.color: Theme.border
         opacity: item.fare ? 1 : 0.55
+        visible: root.focusKey === "" || root.unitKey(item) === root.focusKey || item.concepts.some(id => root.holderOf(id) === root.focusKey)
         ColumnLayout {
             id: destColumn
             x: Theme.gap + 2; y: Theme.gap + 2
@@ -214,7 +275,7 @@ Rectangle {
             }
             Text {
                 Layout.fillWidth: true
-                text: root.pretty(dest.item.into === "new" ? dest.item.title : root.nameOf(dest.item.into))
+                text: (root.units.findIndex(u => u.key === root.unitKey(dest.item)) + 1) + ". " + root.pretty(dest.item.into === "new" ? dest.item.title : root.nameOf(dest.item.into))
                 textFormat: Text.RichText
                 color: Theme.text
                 font.pixelSize: Theme.textSize + 2
@@ -297,11 +358,82 @@ Rectangle {
                 elide: Text.ElideNone
             }
 
-            // 1. dove il materiale si interseca
+            // 1. un corso che non c'è ancora: prima di tutto, in breve, la scaletta che nasce da questo materiale; la si fa
+            // cambiare con una riga, o dando (o cambiando) il programma del corso, e il piano si rifà
+            Rectangle {
+                id: preview
+                visible: (root.plan.corso || []).length === 0 && root.units.length > 0
+                Layout.fillWidth: true
+                implicitHeight: previewColumn.implicitHeight + 2 * Theme.gap + 4
+                radius: Theme.radius + 2
+                color: Theme.surface
+                border.width: 1
+                border.color: Theme.border
+                ColumnLayout {
+                    id: previewColumn
+                    x: Theme.gap + 2; y: Theme.gap + 2
+                    width: parent.width - 2 * Theme.gap - 4
+                    spacing: 8
+                    TxLabel { Layout.fillWidth: true; text: "La scaletta del corso"; font.pixelSize: Theme.textSize + 2; font.weight: Font.DemiBold }
+                    TxLabel {
+                        Layout.fillWidth: true
+                        text: "Il corso non c'è ancora: da questo materiale nascono " + root.units.length + (Workspace.byTopic ? " argomenti" : " lezioni")
+                              + ", in quest'ordine. Sotto, che cosa entra in ciascuno e da dove."
+                        color: Theme.textMuted
+                        font.pixelSize: Theme.smallSize
+                        wrapMode: Text.WordWrap
+                        elide: Text.ElideNone
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.units.map((u, i) => "<b>" + (i + 1) + ".</b> " + root.pretty(u.title)).join("&nbsp;&nbsp;·&nbsp;&nbsp; ")
+                        textFormat: Text.RichText
+                        color: Theme.text
+                        font.pixelSize: Theme.textSize
+                        wrapMode: Text.WordWrap
+                        lineHeight: 1.25
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Theme.gap / 2
+                        TxLabel {
+                            Layout.fillWidth: true
+                            text: Workspace.program !== "" ? "Programma del corso: " + Workspace.program.split("/").pop()
+                                                           : "Senza programma del corso: l'ordine è quello più logico per il materiale."
+                            color: Theme.textMuted
+                            font.pixelSize: Theme.smallSize
+                        }
+                        TxButton {
+                            visible: root.editable
+                            text: Workspace.program !== "" ? "Cambia…" : "Dai il programma…"
+                            flat: true
+                            onClicked: programDialog.open()
+                        }
+                        TxButton { visible: root.editable && Workspace.program !== ""; text: "Togli"; flat: true; onClicked: Workspace.setProgram("") }
+                    }
+                    TxTextArea {
+                        Layout.fillWidth: true
+                        visible: root.editable || (root.plan.nota_scaletta || "") !== ""
+                        readOnly: !root.editable
+                        minHeight: Theme.rowHeight + 6
+                        placeholder: "Vuoi un'altra scaletta? Scrivilo qui (unisci, dividi, sposta, rinomina): il piano si rifà."
+                        Component.onCompleted: text = root.plan.nota_scaletta || ""
+                        onEdited: { Workspace.setOutlineNote(root.planId, text); root.instructions = Workspace.planHasInstructions(root.planId) }
+                    }
+                }
+            }
+            FileDialog {
+                id: programDialog
+                title: "Il programma, l'indice o la scaletta del corso"
+                onAccepted: Workspace.setProgram(Workspace.localPath(selectedFile))
+            }
+
+            // 2. dove va il materiale, e dove si interseca
             Heading {
-                visible: (root.plan.comuni || []).length > 0
-                title: "Dove il materiale si interseca"
-                detail: column.width >= 560 ? "A sinistra il materiale nuovo, a destra le lezioni che hai. Ogni linea dice quanti concetti hanno in comune. Un clic su un nome mostra solo i suoi."
+                visible: (root.plan.comuni || []).length > 0 || root.rightKeys.length > 0
+                title: "Dove va il materiale"
+                detail: column.width >= 560 ? "A sinistra il materiale nuovo, a destra la scaletta: ogni linea dice quanti concetti di un file vanno in quella "
+                                              + (Workspace.byTopic ? "parte" : "lezione") + ". Gli archi colorati a sinistra uniscono i file che hanno concetti in comune. Un clic su un nome mostra solo i suoi."
                                             : "Una riga per file nuovo: con chi ha concetti in comune, e quanti. Un clic mostra solo i suoi."
             }
             // poco spazio: al posto del grafo una riga per fonte nuova, con chi interseca e quanti concetti
@@ -339,7 +471,7 @@ Rectangle {
             }
             Rectangle {
                 id: graphBox
-                visible: (root.plan.comuni || []).length > 0 && column.width >= 560
+                visible: ((root.plan.comuni || []).length > 0 || root.rightKeys.length > 0) && column.width >= 560
                 Layout.fillWidth: true
                 readonly property int rowH: 30
                 readonly property int pad: 26
@@ -369,17 +501,19 @@ Rectangle {
                         ctx.reset()
                         ctx.font = Theme.smallSize + "px sans-serif"
                         const labels = []                  // i numeri già messi: uno non va sopra l'altro
-                        for (const k in root.pairs) {
+                        const many = Object.keys(root.flows).length > 40   // tante linee: i numeri solo di quelle scelte
+                        // le linee verso la scaletta (quanti concetti vanno lì), poi gli archi fra file nuovi (concetti in comune)
+                        const lines = Object.keys(root.flows).map(k => [k, root.flows[k], true])
+                                      .concat(Object.keys(root.pairs).filter(k => k.split("|").every(x => root.leftKeys.includes(x))).map(k => [k, root.pairs[k], false]))
+                        for (const [k, n, flow] of lines) {
                             const [a, b] = k.split("|")
-                            const la = root.leftKeys.includes(a), lb = root.leftKeys.includes(b)
-                            if ((!la && !root.rightKeys.includes(a)) || (!lb && !root.rightKeys.includes(b)))
-                                continue
-                            if (!la && !lb)                // due lezioni che hai: non è materiale nuovo
+                            const la = root.leftKeys.includes(a), lb = flow ? false : root.leftKeys.includes(b)
+                            if (flow && !root.rightKeys.includes(b))
                                 continue
                             const on = root.focusKey === "" || a === root.focusKey || b === root.focusKey
-                            ctx.globalAlpha = on ? 0.75 : 0.12
-                            ctx.strokeStyle = Theme.textFaint
-                            ctx.lineWidth = 1 + root.pairs[k]
+                            ctx.globalAlpha = on ? (flow ? 0.6 : 0.75) : 0.1
+                            ctx.strokeStyle = flow ? Theme.textFaint : Theme.accent
+                            ctx.lineWidth = Math.min(1 + n / 2, 6)
                             const ya = graphBox.yOf(a), yb = graphBox.yOf(b)
                             ctx.beginPath()
                             if (la !== lb) {
@@ -388,6 +522,8 @@ Rectangle {
                                 ctx.moveTo(x1, yl)
                                 ctx.bezierCurveTo(x1 + (x2 - x1) * 0.45, yl, x2 - (x2 - x1) * 0.45, yr, x2, yr)
                                 ctx.stroke()
+                                if (many && (root.focusKey === "" || !on))
+                                    continue
                                 // il numero sta sulla sua linea: a metà, o più avanti e più indietro se lì c'è già un altro
                                 const dx = (x2 - x1) * 0.45
                                 const at = t => {
@@ -412,7 +548,7 @@ Rectangle {
                                 ctx.stroke()
                                 ctx.fillStyle = Theme.text
                                 ctx.textAlign = "center"
-                                ctx.fillText(String(root.pairs[k]), mx, my + 4)
+                                ctx.fillText(String(n), mx, my + 4)
                             } else {                   // due file nuovi: un arco a sinistra
                                 const x = la ? graphBox.leftX : graphBox.rightX + graphBox.nodeW
                                 const bulge = Math.min(60, 20 + Math.abs(ya - yb) * 0.3) * (la ? -1 : 1)
@@ -436,7 +572,8 @@ Rectangle {
                         id: node
                         required property string modelData
                         readonly property bool atLeft: root.leftKeys.includes(modelData)
-                        readonly property bool lonely: !root.sharedHolders.includes(modelData)
+                        readonly property bool lonely: atLeft ? !root.sharedHolders.includes(modelData) && !Object.keys(root.flows).some(k => k.startsWith(modelData + "|"))
+                                                              : !Object.keys(root.flows).some(k => k.endsWith("|" + modelData))
                         x: atLeft ? graphBox.leftX : graphBox.rightX
                         y: graphBox.yOf(modelData) - height / 2
                         width: graphBox.nodeW
@@ -446,12 +583,14 @@ Rectangle {
                         border.width: 1
                         border.color: lonely ? Theme.border : root.colorOf(modelData)
                         Rectangle { x: 10; anchors.verticalCenter: parent.verticalCenter; width: 8; height: 8; radius: 4; color: root.colorOf(node.modelData) }
-                        TxLabel { x: 24; width: parent.width - 32; anchors.verticalCenter: parent.verticalCenter; text: root.nameOf(node.modelData); font.pixelSize: Theme.smallSize; color: node.lonely ? Theme.textMuted : Theme.text }
+                        TxLabel { id: nodeText; x: 24; width: parent.width - 32; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: Theme.smallSize; color: node.lonely ? Theme.textMuted : Theme.text
+                                  text: node.atLeft ? root.nameOf(node.modelData) : (root.units.findIndex(u => u.key === node.modelData) + 1) + ". " + root.nameOf(node.modelData) }
+                        LatexTip { text: nodeText.text; visible: nodeArea.containsMouse && nodeText.truncated }
                         MouseArea { id: nodeArea; anchors.fill: parent; hoverEnabled: true; onClicked: root.focusKey = root.focusKey === node.modelData ? "" : node.modelData }
                     }
                 }
                 TxLabel { x: graphBox.leftX; y: 6; text: "MATERIALE NUOVO"; color: Theme.textMuted; font.pixelSize: Theme.smallSize - 1; font.letterSpacing: 0.6 }
-                TxLabel { x: graphBox.rightX; y: 6; text: "LEZIONI CHE HAI"; color: Theme.textMuted; font.pixelSize: Theme.smallSize - 1; font.letterSpacing: 0.6 }
+                TxLabel { x: graphBox.rightX; y: 6; text: "LA SCALETTA"; color: Theme.textMuted; font.pixelSize: Theme.smallSize - 1; font.letterSpacing: 0.6 }
                 Flow {
                     id: legend
                     x: Theme.gap
@@ -468,16 +607,23 @@ Rectangle {
                         }
                     }
                     Row {
+                        visible: root.rightKeys.some(k => !k.startsWith("new:"))
                         spacing: 6
                         Rectangle { width: 8; height: 8; radius: 4; anchors.verticalCenter: parent.verticalCenter; color: Theme.textMuted }
-                        TxLabel { text: "le tue lezioni"; color: Theme.textMuted; font.pixelSize: Theme.smallSize }
+                        TxLabel { text: Workspace.byTopic ? "i tuoi argomenti" : "le tue lezioni"; color: Theme.textMuted; font.pixelSize: Theme.smallSize }
+                    }
+                    Row {
+                        visible: root.rightKeys.some(k => k.startsWith("new:"))
+                        spacing: 6
+                        Rectangle { width: 8; height: 8; radius: 4; anchors.verticalCenter: parent.verticalCenter; color: Theme.accent }
+                        TxLabel { text: Workspace.byTopic ? "argomenti nuovi" : "lezioni nuove"; color: Theme.textMuted; font.pixelSize: Theme.smallSize }
                     }
                 }
             }
             RowLayout {
                 visible: root.focusKey !== ""
                 Layout.fillWidth: true
-                TxLabel { Layout.fillWidth: true; text: "Solo i concetti di " + root.nameOf(root.focusKey); color: Theme.textMuted; font.pixelSize: Theme.smallSize }
+                TxLabel { Layout.fillWidth: true; text: "Solo ciò che riguarda " + root.nameOf(root.focusKey); color: Theme.textMuted; font.pixelSize: Theme.smallSize }
                 TxButton { text: "Mostra tutti"; flat: true; onClicked: root.focusKey = "" }
             }
             RowLayout {                        // due colonne quando c'è spazio, ognuna scorre per conto suo: niente buchi fra le righe
@@ -499,13 +645,19 @@ Rectangle {
                                 required property var modelData
                                 readonly property var group: modelData.g
                                 readonly property int index: modelData.i
-                                // dove sta la versione sola, detto corto: «nella lezione 5», «in labss1 · 20 ottobre»
+                                // dove va la versione sola, detto corto: la lezione della scaletta («nella lezione 5», «in «Le emozioni»»),
+                                // non la fonte da cui viene
+                                readonly property string unit: root.unitOf(group.ospite)
                                 readonly property string host: {
-                                    const key = root.holderOf(group.ospite)
-                                    return root.holders[key] && root.holders[key].course ? "nella " + root.nameOf(key).split(" · ")[0].toLowerCase() : "in " + root.nameOf(key)
+                                    if (unit === "")
+                                        return "in " + root.nameOf(root.holderOf(group.ospite))
+                                    if (unit.startsWith("new:"))
+                                        return "in «" + unit.slice(4) + "»"
+                                    const [head, ...rest] = root.nameOf(unit).split(" · ")
+                                    return (head.startsWith("Argomento") ? "nell'" : "nella ") + head.toLowerCase() + (rest.length ? " (" + rest.join(" · ") + ")" : "")
                                 }
                                 property bool open: false
-                                visible: root.focusKey === "" || group.items.some(id => root.holderOf(id) === root.focusKey)
+                                visible: root.focusKey === "" || shared.unit === root.focusKey || group.items.some(id => root.holderOf(id) === root.focusKey)
                                 Layout.fillWidth: true
                                 Layout.alignment: Qt.AlignTop
                                 implicitHeight: sharedColumn.implicitHeight + 2 * Theme.gap + 4

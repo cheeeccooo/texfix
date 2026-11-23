@@ -7,7 +7,14 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QImage>
+#include <QPainter>
+#include <QPageSize>
+#include <QPdfDocument>
+#include <QPdfWriter>
 #include <QRegularExpression>
+
+#include <algorithm>
 
 #include <stdexcept>
 
@@ -24,6 +31,43 @@ QStringList rendered(const QString &dir, const QString &prefix)
     for (const QString &name : QDir(dir).entryList({prefix + "*.png"}, QDir::Files, QDir::Name))
         out << dir + '/' + name;
     return out;
+}
+
+// Una pagina bianca: nessun segno scuro, al più qualche punto sporco (una pagina con una parola sola non è bianca).
+bool blank(const QString &png)
+{
+    const QImage image = QImage(png).convertToFormat(QImage::Format_Grayscale8);
+    if (image.isNull())
+        return false;
+    qint64 dark = 0;
+    for (int y = 0; y < image.height(); y += 2) {
+        const uchar *row = image.constScanLine(y);
+        for (int x = 0; x < image.width(); x += 2)
+            dark += row[x] < 160;
+    }
+    return dark < 8;
+}
+
+// Le pagine disegnate da Qt (pdfium), con i nomi di pdftoppm: per i PDF che poppler disegna bianchi (caratteri
+// incorporati rovinati), che pdfium legge.
+bool renderWithQt(const QString &source, const QString &dir)
+{
+    QPdfDocument document;
+    if (document.load(source) != QPdfDocument::Error::None || document.pageCount() == 0)
+        return false;
+    const int digits = int(QString::number(document.pageCount()).size());
+    for (const auto &[prefix, dpi] : {std::pair<const char *, int>{"full", 100}, {"thumb", 40}})
+        for (int p = 0; p < document.pageCount(); ++p) {
+            const QSize size = (document.pagePointSize(p) * dpi / 72.0).toSize();
+            QImage page(size, QImage::Format_RGB32);
+            page.fill(Qt::white);
+            QPainter painter(&page);
+            painter.drawImage(0, 0, document.render(p, size));
+            painter.end();
+            if (!page.save(QStringLiteral("%1/%2-%3.png").arg(dir, QString::fromLatin1(prefix)).arg(p + 1, digits, 10, QChar('0'))))
+                return false;
+        }
+    return true;
 }
 }
 
@@ -55,6 +99,15 @@ Pages Pages::read(const QString &source, const QString &dir, const QString &root
             files::write(stamp.filePath(), "");
         }
         pages.full = rendered(dir, "full");
+        if (!pages.full.isEmpty() && std::all_of(pages.full.begin(), pages.full.end(), blank)) {   // poppler non l'ha disegnato
+            for (const QString &old : QDir(dir).entryList({"*.png"}, QDir::Files))
+                QFile::remove(dir + '/' + old);
+            pages.full.clear();
+            if (renderWithQt(source, dir))
+                pages.full = rendered(dir, "full");
+            if (pages.full.isEmpty() || std::all_of(pages.full.begin(), pages.full.end(), blank))
+                throw std::runtime_error(("le pagine di " + info.fileName() + " escono bianche: il PDF è forse rovinato").toStdString());
+        }
         pages.thumb = rendered(dir, "thumb");
         if (pages.full.isEmpty())
             throw std::runtime_error((info.fileName() + " non ha pagine.").toStdString());
@@ -109,6 +162,49 @@ Pages Pages::read(const QString &source, const QString &dir, const QString &root
     if (pages.text.trimmed().isEmpty())
         throw std::runtime_error((info.fileName() + " è vuoto.").toStdString());
     return pages;
+}
+
+bool Pages::unite(const QStringList &pdfs, const QString &target, const QString &work)
+{
+    if (pdfs.isEmpty())
+        return false;
+    const bool locked = std::any_of(pdfs.begin(), pdfs.end(), encrypted);
+    if (!locked && (pdfs.size() == 1 ? QFile::copy(pdfs.first(), target) : tools::run("pdfunite", pdfs + QStringList{target}, work, 120000).ok && QFileInfo::exists(target)))
+        return true;
+    QFile::remove(target);
+    constexpr int dpi = 200;
+    QPdfWriter writer(target);
+    writer.setResolution(dpi);
+    writer.setPageMargins(QMarginsF(0, 0, 0, 0));
+    QPainter painter;
+    bool first = true;
+    for (const QString &pdf : pdfs) {
+        QPdfDocument document;
+        if (document.load(pdf) != QPdfDocument::Error::None || document.pageCount() == 0)
+            return false;
+        for (int p = 0; p < document.pageCount(); ++p) {
+            const QSizeF points = document.pagePointSize(p);
+            writer.setPageSize(QPageSize(points, QPageSize::Point));
+            if (first ? !painter.begin(&writer) : !writer.newPage())
+                return false;
+            first = false;
+            const QSize size = (points * dpi / 72.0).toSize();
+            QImage page(size, QImage::Format_RGB32);
+            page.fill(Qt::white);
+            QPainter onPage(&page);
+            onPage.drawImage(0, 0, document.render(p, size));
+            onPage.end();
+            painter.drawImage(QRect(QPoint(0, 0), size), page);
+        }
+    }
+    return painter.end() && QFileInfo(target).size() > 0;
+}
+
+bool Pages::encrypted(const QString &pdf)
+{
+    static const QRegularExpression yes(R"(^Encrypted:\s+yes)", QRegularExpression::MultilineOption);
+    const tools::Output r = tools::run("pdfinfo", {pdf}, QFileInfo(pdf).absolutePath(), 20000);
+    return yes.match(r.text).hasMatch() || r.text.contains("Incorrect password");
 }
 
 int Pages::size(const QString &source)
