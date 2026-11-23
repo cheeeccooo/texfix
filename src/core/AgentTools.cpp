@@ -232,13 +232,13 @@ QString call(const Project &project, const Style &style, const QString &name, co
         int skipped = 0;
         const QStringList added = newlesson::toQueue(project, paths, chosen, &skipped);
         if (added.isEmpty())
-            return fail(skipped > 0 ? QStringLiteral("Niente che Texfix sappia leggere.") : QStringLiteral("Non riesco a copiare i file fra quelli in arrivo."));
+            return fail(skipped > 0 ? QStringLiteral("Niente che Texfix sappia leggere: i file sono vuoti o di un tipo che non legge.") : QStringLiteral("Non riesco a copiare i file fra quelli in arrivo."));
         QStringList names;
         for (const QString &a : added)
             names << QFileInfo(a).fileName();
         return QStringLiteral("In arrivo, da smistare: %1%2. Ora fermati e di' all'utente di premere «Smista», accanto ad Aggiungi materiale: "
                               "Texfix lo riconosce per concetti e gli propone il piano.")
-            .arg(names.join(", "), skipped > 0 ? QStringLiteral(" (%1 file lasciati fuori: Texfix non sa leggerli)").arg(skipped) : QString());
+            .arg(names.join(", "), skipped > 0 ? QStringLiteral(" (%1 file lasciati fuori: vuoti, o Texfix non sa leggerli)").arg(skipped) : QString());
     }
     if (name == "consegna_piano") {
         QString why;

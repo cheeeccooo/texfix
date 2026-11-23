@@ -145,7 +145,7 @@ TxSheet {
     function covers(row, file) { return row.file !== undefined ? file === row.file : row.folder === "" || file.startsWith(row.folder + "/") }
     function whereOf(row) {                            // di una cartella: la scelta comune, o niente se i suoi file sono divisi
         const inside = root.files.filter(f => root.covers(row, f.file)).map(f => root.placement[f.file])
-        return inside.every(v => v === inside[0]) ? inside[0] : ""
+        return inside.length > 0 && inside.every(v => v === inside[0]) ? (inside[0] || "") : ""
     }
     function create() {
         if (root.organization === "")

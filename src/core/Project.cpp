@@ -148,6 +148,7 @@ QList<std::pair<QString, QString>> Project::loose(const QString &dir)
     std::sort(found.begin(), found.end(), [](const QString &a, const QString &b) { return a.compare(b, Qt::CaseInsensitive) < 0; });
     for (const QString &rel : std::as_const(found))
         out.append({rel, rel.startsWith("docs/") ? QStringLiteral("docs") : rel.startsWith("fonti/coda/") ? QStringLiteral("coda")
+                         : QFileInfo(QDir(dir).filePath(rel)).size() == 0 ? QStringLiteral("lascia")   // vuoto: non è materiale
                          : Pages::kindOf(rel) == "altro" ? QStringLiteral("docs") : QStringLiteral("coda")});
     return out;
 }
@@ -165,7 +166,7 @@ QString Project::create(const QString &dir, const QHash<QString, QString> &place
         const QString where = placement.value(rel, QStringLiteral("lascia"));
         if ((where == "docs" && rel.startsWith("docs/")) || (where == "coda" && rel.startsWith("fonti/coda/")) || where == "lascia")
             continue;                                  // è già dove va
-        const QString to = where == "coda" ? files::freeName(d.filePath("fonti/coda/" + QFileInfo(rel).fileName()))
+        const QString to = where == "coda" ? files::freeName(d.filePath("fonti/coda/" + rel.split('/').join(QStringLiteral(" - "))))   // il nome dice da quale cartella viene
                                            : files::freeName(d.filePath("docs/" + rel));
         QDir().mkpath(QFileInfo(to).absolutePath());
         if (!QDir().rename(d.filePath(rel), to)) {

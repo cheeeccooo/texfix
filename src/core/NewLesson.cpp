@@ -53,16 +53,17 @@ QStringList toQueue(const Project &project, const QStringList &paths, const QStr
     QStringList out;
     const QString queue = project.path("fonti/coda");
     QDir().mkpath(queue);
-    // le cartelle: tutto ciò che c'è sotto, in ordine, senza i nascosti; un file scelto da solo entra comunque
-    QStringList wanted;
+    // le cartelle: tutto ciò che c'è sotto, in ordine, senza i nascosti; un file scelto da solo entra comunque. Il nome
+    // in arrivo dice da quale sottocartella viene («cap1 - sotto - n1.txt»): file con lo stesso nome restano distinguibili
+    QList<std::pair<QString, QString>> wanted;         // il file, il nome in arrivo
     int left = 0;
     const QString root = QFileInfo(project.root()).canonicalFilePath(), queued = QFileInfo(queue).canonicalFilePath();
     for (const QString &path : paths) {
         if (!QFileInfo(path).isDir()) {
-            wanted << path;
+            wanted.append({path, QFileInfo(path).fileName()});
             continue;
         }
-        QStringList found;
+        QList<std::pair<QString, QString>> found;
         for (QDirIterator it(path, QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories); it.hasNext();) {
             const QString file = it.next();
             const QStringList parts = QDir(path).relativeFilePath(file).split('/');
@@ -76,25 +77,29 @@ QStringList toQueue(const Project &project, const QStringList &paths, const QStr
             if (Pages::kindOf(file) == "altro")
                 ++left;
             else
-                found << file;
+                found.append({file, parts.join(QStringLiteral(" - "))});
         }
-        found.sort(Qt::CaseInsensitive);
+        std::sort(found.begin(), found.end(), [](const auto &a, const auto &b) { return a.second.compare(b.second, Qt::CaseInsensitive) < 0; });
         wanted += found;
     }
-    if (skipped)
-        *skipped = left;
-    for (const QString &path : std::as_const(wanted)) {
+    for (const auto &[path, name] : std::as_const(wanted)) {
         const QFileInfo info(path);
         if (!info.isFile())
             continue;
+        if (info.size() == 0) {                        // un file vuoto non è materiale
+            ++left;
+            continue;
+        }
         if (info.absolutePath() == QFileInfo(queue).absoluteFilePath()) {
             out << project.relative(info.absoluteFilePath());
             continue;
         }
-        const QString target = files::freeName(queue + '/' + info.fileName());
+        const QString target = files::freeName(queue + '/' + name);
         if (QFile::copy(path, target))
             out << project.relative(target);
     }
+    if (skipped)
+        *skipped = left;
     chooseLesson(project, out, lesson);
     return out;
 }

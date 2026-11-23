@@ -2261,8 +2261,8 @@ void Workspace::addMaterial(const QStringList &paths, const QString &lesson)
     const QStringList added = newlesson::toQueue(m_project, paths, lesson, &skipped);
     // nella prima frase: la barra mostra solo quella
     const QString left = skipped == 0 ? QString()
-                       : skipped == 1 ? QStringLiteral(" (uno lasciato fuori: Texfix non sa leggerlo)")
-                       : QStringLiteral(" (%1 lasciati fuori: Texfix non sa leggerli)").arg(skipped);
+                       : skipped == 1 ? QStringLiteral(" (uno lasciato fuori: vuoto, o Texfix non sa leggerlo)")
+                       : QStringLiteral(" (%1 lasciati fuori: vuoti, o Texfix non sa leggerli)").arg(skipped);
     if (added.isEmpty())
         return say(skipped > 0 ? QStringLiteral("Niente da aggiungere%1.").arg(left) : QStringLiteral("Non riesco a copiare i file nel progetto."));
     checkpoint(QStringLiteral("Materiale aggiunto"));
