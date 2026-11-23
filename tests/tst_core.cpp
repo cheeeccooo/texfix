@@ -1535,7 +1535,7 @@ private slots:
                                                      QJsonObject{{"into", "new"}, {"concepts", QJsonArray{"T.2"}}, {"fare", false}}}},
                          {"comuni", QJsonArray{QJsonObject{{"items", QJsonArray{"L1.4", "T.3"}}, {"valore", "one"}, {"ospite", "L1.4"}}}}};
         sort::Estimate e = sort::estimate(p, plan, "normale");
-        QVERIFY(qAbs(e.lessons - 5 * 0.12) < 1e-9);                                       // cinque pagine
+        QVERIFY(qAbs(e.lessons - (0.08 + 5 * 0.12)) < 1e-9);                              // una lezione nuova di cinque pagine
         QVERIFY(qAbs(e.agent - (2 * 0.08 + 0.08 + 0.35)) < 1e-9);                         // duecento righe, cento, un compito sulla lezione 1
         QVERIFY(qAbs(sort::estimate(p, plan, "veloce").total() - 0.45 * e.total()) < 1e-9);
 

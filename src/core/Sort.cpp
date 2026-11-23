@@ -616,8 +616,10 @@ Prepared prepare(const Project &project, const QJsonObject &document)
 
 namespace {
 // le medie (in dollari, a qualità normale) delle conversioni della vecchia app: una pagina, cento righe di LaTeX, cento
-// di testo; un compito dell'agente costa quanto la conversione di ciò che legge, più una base (legge la lezione, compila)
-constexpr double PAGE = 0.12, TEX_LINES = 0.23, TEXT_LINES = 0.08, AGENT_BASE = 0.35;
+// di testo; un compito dell'agente costa quanto la conversione di ciò che legge, più una base (legge la lezione, compila).
+// Una lezione nuova ha in più un costo fisso, misurato con il modello vero il 23/11/2026 (una fonte di 15 righe: 0,09 $
+// contro 0,01 stimati): il prompt della trascrizione con regole e stile, la verifica, la scaletta e il titolo, un giro sulle righe
+constexpr double PAGE = 0.12, TEX_LINES = 0.23, TEXT_LINES = 0.08, AGENT_BASE = 0.35, LESSON_BASE = 0.08;
 
 QString estimatesFile() { return files::dataDir() + "/stime.json"; }
 
@@ -659,7 +661,7 @@ Estimate estimate(const Project &project, const QJsonObject &plan, const QString
         if (!d.value("fare").toBool(true))
             continue;
         if (d.value("into").toString() == "new") {
-            e.lessons += sum(d.value("concepts").toArray());
+            e.lessons += LESSON_BASE + sum(d.value("concepts").toArray());
         } else {
             e.agent += sum(d.value("concepts").toArray());
             touched.insert(d.value("into").toString());
